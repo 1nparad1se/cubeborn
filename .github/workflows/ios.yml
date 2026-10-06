@@ -1,0 +1,29 @@
+name: iOS build (unsigned IPA)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  ipa:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: npm run build
+      - run: bash ios/build-ipa.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Cubeborn-ipa
+          path: build/ios/Cubeborn.ipa
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "ios-${{ github.run_number }}" build/ios/Cubeborn.ipa --title "Cubeborn iOS ${{ github.run_number }}" --notes "Unsigned IPA for Sideloadly/AltStore."
