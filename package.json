@@ -1,0 +1,26 @@
+{
+  "name": "cubeborn",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cubeborn: Last Light - a voxel survivor-like roguelite",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host",
+    "typecheck": "tsc --noEmit",
+    "sim": "tsx tools/sim.ts"
+  },
+  "dependencies": {
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "@fontsource/press-start-2p": "*",
+    "@fontsource/rubik": "*",
+    "@types/node": "^26.6.4",
+    "@types/three": "*",
+    "tsx": "*",
+    "typescript": "*",
+    "vite": "*"
+  }
+}

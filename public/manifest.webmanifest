@@ -1,0 +1,10 @@
+{
+  "name": "Cubeborn",
+  "short_name": "Cubeborn",
+  "start_url": "./",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#120f1a",
+  "theme_color": "#120f1a",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

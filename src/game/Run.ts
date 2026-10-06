@@ -1,0 +1,385 @@
+import { BALANCE } from '../config/balance';
+import { EventBus } from '../core/EventBus';
+import { Rng } from '../core/Rng';
+import type { DifficultyDef, HeroDef, MapDef, StatMods } from '../data/types';
+import { WEAPON_BY_ID } from '../data/weapons';
+import { PASSIVE_BY_ID } from '../data/passives';
+import { modelMainColor } from '../models';
+import { Allies } from './Allies';
+import type { BossController } from './bosses/Boss';
+import { Combat } from './Combat';
+import { Effects } from './Effects';
+import { EnemyManager } from './EnemyManager';
+import { Hazards } from './Hazards';
+import { Leveling, Passives, type Choice } from './Leveling';
+import { generateTerrain } from './mapgen/generators';
+import { NavField } from './NavField';
+import { Perks } from './Perks';
+import { Pickups } from './Pickups';
+import { Player } from './Player';
+import { Projectiles } from './Projectiles';
+import { RunStats } from './RunStats';
+import { Spawner } from './Spawner';
+import { resolveStats, sumMods } from './Stats';
+import type { Terrain } from './Terrain';
+import { makeDamage, type FxSink } from './types';
+import { WeaponSystem, type WeaponInstance } from './weapons/Weapon';
+import './weapons/behaviors';
+
+export type RunState = 'playing' | 'levelup' | 'chest' | 'dead' | 'victory';
+
+export interface ChestReward {
+  kind: 'evolution' | 'weapon_up' | 'passive_up' | 'gold';
+  id: string;
+  level: number;
+  from?: string;
+}
+
+export interface RunEvents extends Record<string, unknown> {
+  levelup: Choice[];
+  chest: { rewards: ChestReward[]; gold: number; tier: number };
+  bossSpawn: BossController;
+  bossPhase: BossController;
+  bossDefeated: BossController;
+  gameover: void;
+  victory: void;
+  banner: string;
+  pickup: string;
+  evolution: string;
+}
+
+export interface RunOptions {
+  map: MapDef;
+  diff: DifficultyDef;
+  hero: HeroDef;
+  permanent: StatMods;
+  unlockedWeapons: Set<string>;
+  unlockedPassives: Set<string>;
+  fx: FxSink;
+  settings: { damageNumbers: boolean };
+  tr: (key: string) => string;
+  seed?: number;
+}
+
+/** One playthrough of a map: owns every gameplay system and advances the simulation. */
+export class Run {
+  readonly map: MapDef;
+  readonly diff: DifficultyDef;
+  readonly hero: HeroDef;
+  readonly rng: Rng;
+  readonly seed: number;
+  readonly fx: FxSink;
+  readonly terrain: Terrain;
+  readonly nav: NavField;
+  readonly events = new EventBus<RunEvents>();
+  readonly stats = new RunStats();
+  readonly player: Player;
+  readonly enemies: EnemyManager;
+  readonly projectiles: Projectiles;
+  readonly pickups: Pickups;
+  readonly hazards: Hazards;
+  readonly allies: Allies;
+  readonly effects = new Effects();
+  readonly combat: Combat;
+  readonly weapons: WeaponSystem;
+  readonly passives = new Passives();
+  readonly leveling: Leveling;
+  readonly spawner: Spawner;
+  readonly perks: Perks;
+  readonly bosses: BossController[] = [];
+  readonly unlockedWeapons: Set<string>;
+  readonly unlockedPassives: Set<string>;
+  readonly settings: { damageNumbers: boolean };
+  readonly tr: (key: string) => string;
+  readonly weather = { darkness: 0, blizzard: 0, surge: 0 };
+  readonly debug = { god: false };
+  readonly reviveBlast = makeDamage();
+  readonly nukeBlast = makeDamage();
+
+  time = 0;
+  state: RunState = 'playing';
+  /** Real-time slow motion factor (victory/death moments). */
+  timeScale = 1;
+  pendingChoices: Choice[] | null = null;
+  private permanent: StatMods;
+  private lastRevivalStat = 0;
+  private timers: { t: number; fn: () => void }[] = [];
+  private endTimer = -1;
+  private endState: RunState = 'playing';
+  // budgets let the client limit how many sounds fire per frame
+  hitSoundBudget = 0;
+  killSoundBudget = 0;
+  xpSoundBudget = 0;
+
+  constructor(o: RunOptions) {
+    this.map = o.map;
+    this.diff = o.diff;
+    this.hero = o.hero;
+    this.seed = o.seed ?? ((Math.random() * 1e9) | 0);
+    this.rng = new Rng(this.seed);
+    this.fx = o.fx;
+    this.settings = o.settings;
+    this.tr = o.tr;
+    this.permanent = o.permanent;
+    this.unlockedWeapons = o.unlockedWeapons;
+    this.unlockedPassives = o.unlockedPassives;
+    this.unlockedWeapons.add(o.hero.startWeapon);
+    this.terrain = generateTerrain(o.map, this.seed);
+    this.nav = new NavField(this.terrain);
+    const c = Math.floor(o.map.size / 2) + 0.5;
+    this.player = new Player(this, c, c);
+    this.recomputeStats();
+    this.player.hp = this.player.stats.maxHp;
+    this.player.revivals = this.player.stats.revival;
+    this.player.shield = o.hero.perk === 'bastion';
+    this.enemies = new EnemyManager(this);
+    this.projectiles = new Projectiles(this);
+    this.pickups = new Pickups(this);
+    this.hazards = new Hazards(this);
+    this.allies = new Allies(this);
+    this.combat = new Combat(this);
+    this.weapons = new WeaponSystem(this);
+    this.leveling = new Leveling(this);
+    this.leveling.initCounters();
+    this.spawner = new Spawner(this);
+    this.perks = new Perks(this, o.hero.perk);
+    this.weapons.add(o.hero.startWeapon);
+    this.stats.discovered.add(o.hero.startWeapon);
+    this.nav.update(0, this.player.x, this.player.z, true);
+    this.reviveBlast.damage = 200;
+    this.reviveBlast.knockback = 4;
+    this.reviveBlast.weaponId = 'revive';
+    this.nukeBlast.damage = 400;
+    this.nukeBlast.knockback = 2;
+    this.nukeBlast.weaponId = 'nuke';
+  }
+
+  /** Recomputes player stats from hero, permanent upgrades, passives. */
+  recomputeStats() {
+    const p = this.player;
+    const oldMax = p.stats?.maxHp ?? 0;
+    const mods = sumMods(this.hero.stats, this.permanent, this.passives.mods());
+    p.stats = resolveStats(this.hero.baseHp, mods);
+    if (oldMax > 0 && p.stats.maxHp > oldMax) p.hp += p.stats.maxHp - oldMax;
+    const newRev = p.stats.revival;
+    if (oldMax > 0 && newRev > this.lastRevivalStat) p.revivals += newRev - this.lastRevivalStat;
+    this.lastRevivalStat = newRev;
+  }
+
+  later(delay: number, fn: () => void) {
+    this.timers.push({ t: this.time + delay, fn });
+  }
+
+  enemyColor(id: string): number {
+    return modelMainColor(id);
+  }
+
+  spawnFallingRock(x: number, z: number, t: number, color: number) {
+    const e = this.effects.add('fall', x, z, t, color);
+    e.r = 1;
+  }
+
+  get isFinalPhase(): boolean {
+    return this.spawner.bossSpawnedFlag;
+  }
+
+  update(dt: number, ix: number, iz: number) {
+    if (this.endTimer >= 0) {
+      // slow-motion ending
+      this.endTimer -= dt;
+      dt *= this.timeScale;
+      if (this.endTimer < 0) {
+        this.state = this.endState;
+        this.events.emit(this.state === 'victory' ? 'victory' : 'gameover', undefined);
+        return;
+      }
+    }
+    if (this.state !== 'playing') return;
+    this.time += dt;
+    const p = this.player;
+    for (const k of ['darkness', 'blizzard', 'surge'] as const) if (this.weather[k] > 0) this.weather[k] -= dt;
+    if (!p.dead) p.update(dt, ix, iz);
+    this.nav.update(dt, p.x, p.z);
+    this.surgeBuff();
+    // timers
+    if (this.timers.length) {
+      const now = this.time;
+      const due = this.timers.filter((t) => t.t <= now);
+      if (due.length) {
+        this.timers = this.timers.filter((t) => t.t > now);
+        for (const t of due) t.fn();
+      }
+    }
+    if (!p.dead) {
+      this.spawner.update(dt);
+      this.weapons.update(dt);
+      this.perks.update(dt);
+    }
+    this.enemies.update(dt);
+    this.projectiles.update(dt);
+    this.allies.update(dt);
+    this.hazards.update(dt);
+    this.pickups.update(dt);
+    this.effects.update(dt, p.x, p.z);
+    this.stats.maxedWeapons = Math.max(this.stats.maxedWeapons, this.weapons.list.filter((w) => w.isMax).length);
+    if (p.pendingLevels > 0 && this.state === 'playing' && !p.dead && this.endTimer < 0) this.beginLevelUp();
+  }
+
+  private surgeBuff() {
+    // arcane surge: standing in a rune circle empowers the hero
+    if (this.weather.surge <= 0) return;
+    const p = this.player;
+    for (const m of this.terrain.markers) {
+      if (m.kind === 'rune' && (m.x - p.x) ** 2 + (m.z - p.z) ** 2 < 9) {
+        p.buffs.fury = Math.max(p.buffs.fury, 0.3);
+        return;
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------- level up
+  private beginLevelUp() {
+    this.state = 'levelup';
+    this.pendingChoices = this.leveling.roll();
+    this.fx.sound('levelup');
+    this.fx.burst(this.player.x, 1, this.player.z, 0x8affff, 30, 4, 0.16, 0.8, 'glow');
+    this.events.emit('levelup', this.pendingChoices);
+  }
+
+  choose(c: Choice | null) {
+    if (this.state !== 'levelup') return;
+    if (c) this.leveling.apply(c);
+    this.player.pendingLevels--;
+    this.pendingChoices = null;
+    this.state = 'playing';
+    if (this.player.pendingLevels > 0) this.beginLevelUp();
+  }
+
+  reroll(): Choice[] | null {
+    if (this.leveling.rerolls <= 0 || this.state !== 'levelup') return null;
+    this.leveling.rerolls--;
+    this.pendingChoices = this.leveling.roll();
+    return this.pendingChoices;
+  }
+
+  skip() {
+    if (this.leveling.skips <= 0) return;
+    this.leveling.skips--;
+    this.stats.gold += 5;
+    this.choose(null);
+  }
+
+  banish(id: string): Choice[] | null {
+    if (this.leveling.banishes <= 0 || this.state !== 'levelup') return null;
+    this.leveling.banishes--;
+    this.leveling.banished.add(id);
+    this.pendingChoices = this.leveling.roll();
+    return this.pendingChoices;
+  }
+
+  // ---------------------------------------------------------------- chests
+  openChest(tier: number) {
+    const rewards: ChestReward[] = [];
+    const luck = this.player.stats.luck;
+    let count = tier >= 1 ? 3 : 1;
+    const r = this.rng.next();
+    if (r < 0.04 * luck) count = 5;
+    else if (r < 0.18 * luck) count = Math.max(count, 3);
+    if (tier >= 1 && this.rng.chance(0.3 * luck)) count = 5;
+    const used = new Set<string>();
+    for (let i = 0; i < count; i++) {
+      const evo = this.weapons.evolvable().find((w) => !used.has(w.def.id));
+      if (evo) {
+        used.add(evo.def.id);
+        const nw = this.weapons.evolve(evo) as WeaponInstance;
+        rewards.push({ kind: 'evolution', id: nw.def.id, level: 1, from: evo.def.id });
+        this.stats.evolutions.push(nw.def.id);
+        this.stats.discovered.add(nw.def.id);
+        this.events.emit('evolution', nw.def.id);
+        continue;
+      }
+      const ups: ChestReward[] = [];
+      for (const w of this.weapons.list) if (!w.isMax && !w.def.evolved) ups.push({ kind: 'weapon_up', id: w.def.id, level: w.level + 1 });
+      for (const [id, lvl] of this.passives.levels) if (lvl < PASSIVE_BY_ID[id].maxLevel) ups.push({ kind: 'passive_up', id, level: lvl + 1 });
+      if (ups.length) {
+        const pick = this.rng.pick(ups);
+        if (pick.kind === 'weapon_up') this.weapons.get(pick.id)!.levelUp();
+        else {
+          this.passives.add(pick.id);
+          this.recomputeStats();
+        }
+        rewards.push(pick);
+      } else rewards.push({ kind: 'gold', id: 'gold', level: 0 });
+    }
+    const gold = Math.round((20 + this.rng.int(0, 40) + (tier >= 1 ? 100 : 0) + rewards.filter((x) => x.kind === 'gold').length * 50) * this.player.stats.greed);
+    this.stats.gold += gold;
+    this.stats.chests++;
+    this.player.heal(this.player.stats.maxHp * 0.1 * this.perks.healMul(), true);
+    this.state = 'chest';
+    this.fx.sound('chestOpen');
+    this.events.emit('chest', { rewards, gold, tier });
+  }
+
+  closeChest() {
+    if (this.state === 'chest') this.state = 'playing';
+  }
+
+  // ---------------------------------------------------------------- ending
+  onPlayerDeath() {
+    if (this.endTimer >= 0) return;
+    this.fx.sound('death');
+    this.fx.burst(this.player.x, 1, this.player.z, this.hero.color, 50, 6, 0.2, 1.2, 'debris');
+    this.fx.shake(0.6);
+    this.fx.vibrate(300);
+    this.endState = 'dead';
+    this.endTimer = 1.6;
+    this.timeScale = 0.25;
+  }
+
+  onFinalBossDefeated() {
+    if (this.endTimer >= 0) return;
+    this.endState = 'victory';
+    this.endTimer = 2.5;
+    this.timeScale = 0.3;
+    this.hazards.clearAll();
+    // remaining enemies flee into dust
+    for (const e of this.enemies.list) if (e.alive && !e.boss) this.combat.killEnemy(e, true);
+    this.fx.sound('victory');
+  }
+
+  get ending(): boolean {
+    return this.endTimer >= 0;
+  }
+
+  /** Summary used by the results screen and meta progression. */
+  summary() {
+    const p = this.player;
+    return {
+      time: this.time,
+      kills: this.stats.kills,
+      level: p.level,
+      gold: Math.round(this.stats.gold),
+      weapons: this.weapons.list.map((w) => ({ id: w.def.id, level: w.level, damage: Math.round(this.stats.damageBy[w.def.id] ?? 0) })),
+      passives: [...this.passives.levels.entries()].map(([id, level]) => ({ id, level })),
+      victory: this.state === 'victory' || this.endState === 'victory',
+      bosses: [...this.stats.bossesKilled],
+      evolutions: [...this.stats.evolutions],
+      elites: this.stats.elites,
+      chests: this.stats.chests,
+      maxedWeapons: this.stats.maxedWeapons,
+      weaponCount: this.weapons.list.length,
+      treasureSprites: this.stats.treasureSprites,
+      discovered: [...this.stats.discovered],
+      seen: [...this.stats.seen],
+    };
+  }
+
+  static goldReward(summary: ReturnType<Run['summary']>, diffReward: number): number {
+    const base = summary.gold + summary.kills * BALANCE.goldPerKill + (summary.time / 60) * BALANCE.goldPerMinute + summary.bosses.length * BALANCE.goldBossBonus + (summary.victory ? BALANCE.goldVictoryBonus : 0);
+    return Math.round(base * diffReward);
+  }
+
+  weaponName(id: string) {
+    return WEAPON_BY_ID[id]?.name;
+  }
+}

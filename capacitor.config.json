@@ -1,0 +1,8 @@
+{
+  "appId": "com.cubeborn.game",
+  "appName": "Cubeborn",
+  "webDir": "dist",
+  "backgroundColor": "#120f1a",
+  "android": { "allowMixedContent": false },
+  "ios": { "contentInset": "never" }
+}
