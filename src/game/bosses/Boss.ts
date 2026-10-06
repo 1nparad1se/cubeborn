@@ -1,3 +1,4 @@
+import { BALANCE } from '../../config/balance';
 import type { BossAttack, BossDef, BossPhase } from '../../data/types';
 import { BOSS_BY_ID } from '../../data/bosses';
 import { TAU } from '../../core/math';
@@ -72,7 +73,7 @@ export class BossController {
     const e = run.enemies.spawn(bossEnemyDef(def), x, z, { noScale: true });
     if (!e) return null;
     // re-skin the pooled enemy as the boss
-    e.maxHp = e.hp = def.hp * run.diff.hp * hpMul * (1 + (run.player.stats.curse - 1) * 0.5);
+    e.maxHp = e.hp = def.hp * BALANCE.bossHpMul * run.diff.hp * hpMul * (1 + (run.player.stats.curse - 1) * 0.5);
     e.damage = def.damage * run.diff.damage;
     e.speed = 0;
     e.radius = def.radius;

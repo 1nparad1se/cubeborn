@@ -40,8 +40,9 @@ export class Spawner {
     const run = this.run;
     const seg = this.segment;
     const curse = run.player.stats.curse;
-    const rate = (seg.rate / 60) * run.diff.spawn * curse * this.bossDamp();
-    const max = Math.min(BALANCE.hardCap, seg.max * run.diff.spawn * curse);
+    const ramp = Math.min(1, run.time / BALANCE.runDuration);
+    const rate = (seg.rate / 60) * (1 + (BALANCE.spawnRateMul - 1) * ramp) * run.diff.spawn * curse * this.bossDamp();
+    const max = Math.min(BALANCE.hardCap, seg.max * (1 + (BALANCE.spawnMaxMul - 1) * ramp) * run.diff.spawn * curse);
     this.acc += rate * dt;
     // catch up faster when the field is nearly empty
     if (run.enemies.aliveCount < max * 0.3) this.acc += rate * dt * 2;
