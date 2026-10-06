@@ -57,6 +57,11 @@ export class Menus {
     this.render();
   }
 
+  /** True when a screen other than the main menu is open. */
+  get canGoBack(): boolean {
+    return this.stack.length > 1 || (this.stack.length === 1 && this.stack[0] !== 'main');
+  }
+
   back() {
     this.api.sfx('uiBack');
     this.stack.pop();

@@ -82,6 +82,8 @@ export class App implements MenuApi {
     this.hud.onPause = () => this.togglePause();
     this.hud.setVisible(false);
     this.menus = new Menus(root, this);
+    // Android back button (APK shell): pause / resume / step back through menus.
+    (window as unknown as { cubebornBack: () => boolean }).cubebornBack = () => this.handleBack();
     this.menus.setVisible(false);
     this.modals = new RunModals(root, this);
     this.toasts = h('div.toasts');
@@ -267,6 +269,23 @@ export class App implements MenuApi {
     });
     run.events.on('gameover', () => this.finishRun(false));
     run.events.on('victory', () => this.finishRun(true));
+  }
+
+  private handleBack(): boolean {
+    const confirm = this.root.querySelector('.modal-back.confirm');
+    if (confirm) {
+      confirm.remove();
+      return true;
+    }
+    if (this.mode === 'run') {
+      if (this.run?.state === 'playing' && !this.run.ending) this.togglePause();
+      return true;
+    }
+    if (this.mode === 'menu' && this.menus.canGoBack) {
+      this.menus.back();
+      return true;
+    }
+    return this.mode === 'results' || this.mode === 'splash' ? this.mode === 'results' : false;
   }
 
   private togglePause() {
