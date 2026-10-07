@@ -150,10 +150,12 @@ public static class BuildScript
         PlayerSettings.defaultScreenHeight = 720;
         PlayerSettings.resizableWindow = true;
         PlayerSettings.SetScriptingBackend(NamedBuildTarget.Standalone, ScriptingImplementation.Mono2x);
+        var path = OutputPath("build/StandaloneLinux64/Cubeborn.x86_64");
+        if (!path.EndsWith(".x86_64")) path += ".x86_64";
         Run(new BuildPlayerOptions
         {
             scenes = new[] { ScenePath },
-            locationPathName = OutputPath("build/StandaloneLinux64/Cubeborn.x86_64"),
+            locationPathName = path,
             target = BuildTarget.StandaloneLinux64,
             options = BuildOptions.None,
         });

@@ -89,7 +89,8 @@ jobs:
       - name: Capture screenshots
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libglu1-mesa > /dev/null
-          EXE=$(find game -maxdepth 2 -name "*.x86_64" | head -1)
+          ls -la game
+          EXE=$(find game -maxdepth 2 -type f \( -name "*.x86_64" -o -name "Cubeborn" \) | head -1)
           chmod +x "$EXE"
           mkdir -p shots
           timeout 300 xvfb-run -a -s "-screen 0 1280x720x24" "$EXE" -force-glcore -screen-fullscreen 0 \
@@ -108,7 +109,7 @@ jobs:
         run: |
           gh release view unity-shots --repo "${{ github.repository }}" > /dev/null 2>&1 || \
             gh release create unity-shots --repo "${{ github.repository }}" --prerelease --title "Unity CI screenshots" --notes "Latest CI screenshots"
-          gh release upload unity-shots shots/* --clobber --repo "${{ github.repository }}"
+          ls shots/* > /dev/null 2>&1 && gh release upload unity-shots shots/* --clobber --repo "${{ github.repository }}"
 
   ipa:
     needs: build
