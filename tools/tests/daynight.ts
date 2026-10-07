@@ -29,7 +29,7 @@ ok(dn.period === 'day' && dn.night === 0, 'runs start in daylight');
 const seen: string[] = [];
 run.events.on('dayPeriod', (p) => seen.push(p));
 const moth = run.enemies.spawnById('dusk_moth', run.player.x + 30, run.player.z)!;
-const sporeling = run.enemies.spawnById('sporeling', run.player.x + 8, run.player.z + 2)!;
+const sporeling = run.enemies.spawnById('spore_spitter', run.player.x + 8, run.player.z + 2)!;
 const zombie = run.enemies.spawnById('rot_zombie', run.player.x + 8, run.player.z - 2)!;
 const gargoyle = run.enemies.spawnById('gargoyle', run.player.x + 9, run.player.z + 4)!;
 for (const e of [moth, sporeling, zombie, gargoyle]) {
@@ -53,11 +53,17 @@ for (let t = 0; t < 300 * 0.55; t += dt) {
 ok(seen.join(',') === 'dusk,night', `periods: ${seen.join(',')}`);
 ok(monotonic, 'dusk darkens smoothly');
 ok(dn.night === 1 && dn.light.sun < 0.5 && dn.light.warm < 0, `night lighting: sun ${dn.light.sun.toFixed(2)}, warm ${dn.light.warm}`);
-ok(Math.abs(moth.todHp - (dn.bloodMoon ? 1.8 : 1.5)) < 1e-6 && Math.abs(moth.todSpd - 1.2) < 1e-6, `nocturnal at night ×1.5 hp ×1.2 speed (${moth.todHp}, ${moth.todSpd})`);
+// the first night runs at DAY_NIGHT.nightRamp[0] strength; later nights reach the full ×1.5 / ×1.2
+const r0 = DAY_NIGHT.nightRamp[0];
+ok(Math.abs(moth.todHp - (1 + 0.5 * r0) * (dn.bloodMoon ? 1.2 : 1)) < 1e-6 && Math.abs(moth.todSpd - (1 + 0.2 * r0)) < 1e-6, `nocturnal, first night (${moth.todHp}, ${moth.todSpd})`);
+dn.nights = 3;
+dn.apply(moth);
+ok(Math.abs(moth.todHp - (dn.bloodMoon ? 1.8 : 1.5)) < 1e-6 && Math.abs(moth.todSpd - 1.2) < 1e-6, `nocturnal, full night ×1.5 hp ×1.2 speed (${moth.todHp}, ${moth.todSpd})`);
 ok(Math.abs(moth.maxHp / moth.todHp - base.moth) < 1e-6, 'health rescaled, base kept');
 ok(Math.abs(sporeling.todDmg - 0.2) < 1e-6, `diurnal at night ×0.2 damage (${sporeling.todDmg})`);
 ok(!gargoyle.asleep, 'gargoyle awake at night');
-ok(dn.poolFor([['rot_zombie', 1], ['wraith', 1]]).length > 2, 'night visitors join the pool');
+ok(dn.poolFor([['rot_zombie', 1], ['wraith', 1]]).length > 2, 'night visitors join the pool from the second night');
+dn.nights = 1;
 ok(run.stats.nights === 1, 'night counted');
 // on to dawn
 for (let t = 0; t < 300 * 0.42; t += dt) step(run, dt);
