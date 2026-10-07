@@ -110,6 +110,7 @@ namespace Cubeborn
             Phase("profile");
             prof = new Profile();
             var s = prof.data.settings;
+            if (shotsDir != null) s.lang = Arg("-cblang") ?? s.lang;
             I18n.SetLang(s.lang);
 
             Phase("kit");
@@ -788,7 +789,10 @@ namespace Cubeborn
             Shot("05_run_30s");
             yield return WaitRunTime(75);
             Shot("06_run_75s");
+            float guard = Time.realtimeSinceStartup + 20;
+            while ((run.state != RunState.Playing || modals.IsOpen) && Time.realtimeSinceStartup < guard) yield return null;
             TogglePause();
+            Debug.Log($"[cbshots] paused={paused} state={run.state} modal={modals.IsOpen}");
             yield return new WaitForSecondsRealtime(1f);
             Shot("07_pause");
             TogglePause();
