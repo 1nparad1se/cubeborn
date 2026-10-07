@@ -28,6 +28,8 @@ export interface MenuApi {
   /** True when a setting changed that only applies after a restart. */
   needsRestart(): boolean;
   setShowcase(modelId: string): void;
+  /** Slides the menu showcase model toward the right edge (0 = centred, 1 = right third). */
+  setMenuShift(v: number): void;
   applySettings(): void;
   resetProgress(): void;
   version: string;
@@ -36,6 +38,14 @@ export interface MenuApi {
 type ScreenId = 'main' | 'heroes' | 'maps' | 'weapons' | 'collection' | 'upgrades' | 'achievements' | 'settings';
 
 const RARITY_COLOR: Record<string, string> = { common: '#c8ccd8', uncommon: '#6aff8a', rare: '#5ab4ff', epic: '#c77dff', legendary: '#ffb02e' };
+/** Tabs along the top bar of the menu screens (Q / E cycle through them). */
+const TABS: ScreenId[] = ['heroes', 'weapons', 'collection', 'upgrades', 'achievements', 'settings'];
+/** Screens where the 3D showcase stays visible on the right instead of an item preview. */
+const SHOWCASE: ScreenId[] = ['main', 'heroes', 'maps'];
+
+function pill(text: string, color: string): HTMLElement {
+  return h('span.pill', { style: `--pc:${color}` }, text);
+}
 
 /** Builds the out-of-run menu screens inside a single container. */
 export class Menus {
@@ -53,6 +63,44 @@ export class Menus {
     this.selHero = last.hero;
     this.selMap = last.map;
     this.selDiff = last.diff;
+    window.addEventListener('keydown', (e) => this.onKey(e));
+  }
+
+  private get current(): ScreenId {
+    return this.stack[this.stack.length - 1] ?? 'main';
+  }
+
+  private onKey(e: KeyboardEvent) {
+    if (e.defaultPrevented || e.repeat || this.root.classList.contains('hidden')) return;
+    if (document.querySelector('.modal-back')) return;
+    const id = this.current;
+    if (id === 'main') return;
+    if (e.code === 'KeyQ' || e.code === 'KeyE') {
+      e.preventDefault();
+      this.cycleTab(e.code === 'KeyQ' ? -1 : 1);
+    } else if (e.code === 'Enter' && this.selectMode) {
+      e.preventDefault();
+      (this.root.querySelector('.detail .btn.primary') as HTMLElement | null)?.click();
+    }
+  }
+
+  private tabs(): ScreenId[] {
+    return this.selectMode ? ['heroes', 'maps'] : TABS;
+  }
+
+  private cycleTab(dir: number) {
+    const tabs = this.tabs();
+    const i = tabs.indexOf(this.current);
+    if (i < 0) return;
+    const next = tabs[(i + dir + tabs.length) % tabs.length];
+    if (this.selectMode && next === 'maps' && !this.api.profile.isHeroUnlocked(this.selHero)) return;
+    this.api.sfx('ui');
+    this.switchTo(next);
+  }
+
+  private switchTo(id: ScreenId) {
+    this.stack[this.stack.length - 1] = id;
+    this.render();
   }
 
   setVisible(v: boolean) {
@@ -89,6 +137,7 @@ export class Menus {
     const el = this.build(id);
     el.classList.add('screen', 'screen-' + id);
     this.root.appendChild(el);
+    this.api.setMenuShift(id === 'main' ? 0 : 1);
     this.root.scrollTop = 0;
   }
 
@@ -109,12 +158,56 @@ export class Menus {
       case 'achievements':
         return this.achievementScreen();
       case 'settings':
-        return h('div', this.header(t('menu_settings')), settingsPanel(this.api, () => this.render()));
+        return this.frame(h('div.mcol', settingsPanel(this.api, () => this.render())));
     }
   }
 
-  private header(title: string, extra?: HTMLElement): HTMLElement {
-    return h('div.screen-head', h('button.btn.back', { onclick: () => this.back() }, '‹'), h('h2', title), extra ?? h('div.gold-chip', h('i.ic-coin'), fmtNum(this.api.profile.data.gold)));
+  /**
+   * Dungeon-crawler style screen frame: tab bar with Q/E key chips and currency on top,
+   * content in the middle, key hints along the bottom.
+   */
+  private frame(body: HTMLElement, opts: { extra?: HTMLElement; gold?: HTMLElement } = {}): HTMLElement {
+    const id = this.current;
+    const tabs = this.tabs();
+    const bar = h('div.mtabs');
+    tabs.forEach((tid, i) => {
+      const label = this.selectMode ? `${i + 1}. ${t(tid === 'heroes' ? 'choose_hero' : 'choose_map')}` : t('menu_' + tid);
+      bar.append(
+        h('button.mtab' + (tid === id ? '.sel' : ''), {
+          onclick: () => {
+            if (tid === id) return;
+            if (this.selectMode && tid === 'maps' && !this.api.profile.isHeroUnlocked(this.selHero)) return;
+            this.api.sfx('ui');
+            this.switchTo(tid);
+          },
+        }, label),
+      );
+    });
+    const hint = (label: string, keys: string[], onclick: () => void) => h('button.mhint', { onclick }, h('span', label), ...keys.map((k) => h('span.key', k)));
+    const hints = [hint(t('btn_back'), ['Esc'], () => this.back())];
+    if (tabs.length > 1) hints.unshift(hint(t('hint_tabs'), ['Q', 'E'], () => this.cycleTab(1)));
+    if (this.selectMode) hints.unshift(hint(id === 'maps' ? t('btn_start') : t('btn_next'), ['Enter'], () => (this.root.querySelector('.detail .btn.primary') as HTMLElement | null)?.click()));
+    return h(
+      'div.mframe' + (SHOWCASE.includes(id) ? '.showcase' : ''),
+      h(
+        'div.mtop',
+        h('div.mtop-l'),
+        h('div.mtop-c', h('span.key.tabkey', { onclick: () => this.cycleTab(-1) }, 'Q'), bar, h('span.key.tabkey', { onclick: () => this.cycleTab(1) }, 'E')),
+        h('div.mtop-r', opts.extra ?? null, opts.gold ?? h('div.gold-chip', h('i.ic-coin'), fmtNum(this.api.profile.data.gold))),
+      ),
+      h('div.mbody', body),
+      h('div.mfoot', ...hints),
+    );
+  }
+
+  /** Marks the clicked cell of a grid as selected. */
+  private selectable(grid: HTMLElement): HTMLElement {
+    grid.addEventListener('click', (e) => {
+      const cell = (e.target as HTMLElement).closest('.icon-cell');
+      if (!cell) return;
+      for (const c of grid.children) c.classList.toggle('sel', c === cell);
+    });
+    return grid;
   }
 
   private btn(label: string, onclick: () => void, cls = ''): HTMLElement {
@@ -179,7 +272,7 @@ export class Menus {
       const w = WEAPON_BY_ID[hero.startWeapon];
       const ach = ACHIEVEMENTS.find((a) => a.reward?.kind === 'hero' && a.reward.id === id);
       put(detail, 
-        h('div.detail-title', h('h3', { style: `color:${hex(hero.color)}` }, L(hero.name)), h('div.sub', L(hero.title))),
+        h('div.detail-title', h('h3', L(hero.name)), pill(L(hero.title), hex(hero.color))),
         h('p', L(hero.desc)),
         h('div.perk', h('b', L(hero.perkName)), h('span', L(hero.perkDesc))),
         h('div.kv', h('span', t('start_weapon')), h('span.inline', iconImg(w.icon, w.color, 'icon sm'), L(w.name))),
@@ -210,7 +303,7 @@ export class Menus {
       );
     }
     setTimeout(() => show(this.selHero));
-    return h('div', this.header(this.selectMode ? t('choose_hero') : t('menu_heroes')), h('div.split', grid, detail));
+    return this.frame(h('div.split', grid, detail));
   }
 
   // ------------------------------------------------------------------ maps
@@ -354,25 +447,30 @@ export class Menus {
       );
     }
     setTimeout(() => show(this.selMap));
-    return h('div', this.header(t('choose_map')), h('div.split', list, detail));
+    return this.frame(h('div.split', list, detail));
   }
 
   // ------------------------------------------------------------------ weapons
   private weaponScreen(): HTMLElement {
     const p = this.api.profile;
-    const grid = h('div.icon-grid');
+    const grid = this.selectable(h('div.icon-grid'));
     const detail = h('div.detail');
+    const preview = h('div.preview');
     const show = (w: WeaponDef) => {
       clear(detail);
+      clear(preview);
       const known = !w.evolved || p.data.discovered.weapons.includes(w.id);
       const unlocked = p.isWeaponUnlocked(w.id);
       if (!known) {
         const base = WEAPONS.find((x) => x.evolution?.into === w.id);
         put(detail, h('h3', '???'), h('p', t('evo_unknown')), base ? h('div.recipe', recipe(base, w)) : null);
+        put(preview, h('span.q', '?'));
         return;
       }
+      put(preview, iconImg(w.icon, w.color, 'icon xl'));
+      preview.style.setProperty('--rc', RARITY_COLOR[w.rarity]);
       put(detail, 
-        h('div.detail-title', iconImg(w.icon, w.color, 'icon lg'), h('div', h('h3', L(w.name)), h('div.sub', { style: `color:${RARITY_COLOR[w.rarity]}` }, t('rarity_' + w.rarity) + (w.evolved ? ' · ' + t('evolution') : '')))),
+        h('div.detail-title', h('h3', L(w.name)), pill(t('rarity_' + w.rarity), RARITY_COLOR[w.rarity]), w.evolved ? pill(t('evolution'), '#ffd23d') : null),
         h('p', L(w.desc)),
         !unlocked ? h('div.locked-note', '🔒 ' + lockText(w.id, 'weapon')) : null,
         h('div.stats-table', ...baseStatRows(w)),
@@ -392,6 +490,7 @@ export class Menus {
           h(
             'button.icon-cell' + (def.evolved ? '.evo' : '') + (unlocked ? '' : '.locked'),
             {
+              style: `--rc:${RARITY_COLOR[def.rarity]}`,
               onclick: () => {
                 this.api.sfx('select');
                 show(def);
@@ -402,9 +501,9 @@ export class Menus {
         );
       }
     }
-    setTimeout(() => show(all[0]));
+    setTimeout(() => (grid.firstChild as HTMLElement | null)?.click());
     const found = WEAPONS.filter((w) => !w.evolved || p.data.discovered.weapons.includes(w.id)).length;
-    return h('div', this.header(t('menu_weapons'), h('div.count', `${found}/${WEAPONS.length}`)), h('div.split', grid, detail));
+    return this.frame(h('div.split.tri', grid, detail, preview), { extra: h('div.count', `${found}/${WEAPONS.length}`) });
   }
 
   // ------------------------------------------------------------------ collection
@@ -412,10 +511,16 @@ export class Menus {
   private collectionScreen(): HTMLElement {
     const p = this.api.profile;
     const tabs = h('div.tabs');
-    const body = h('div.split');
-    const grid = h('div.icon-grid');
+    const body = h('div.split.tri');
+    const grid = this.selectable(h('div.icon-grid'));
     const detail = h('div.detail');
-    body.append(grid, detail);
+    const preview = h('div.preview');
+    const look = (node: HTMLElement, color: string) => {
+      clear(preview);
+      preview.append(node);
+      preview.style.setProperty('--rc', color);
+    };
+    body.append(grid, detail, preview);
     const render = () => {
       clear(tabs);
       for (const id of ['passives', 'enemies', 'bosses', 'relics']) {
@@ -431,23 +536,26 @@ export class Menus {
       }
       clear(grid);
       clear(detail);
+      clear(preview);
       if (this.tab === 'passives') {
         for (const ps of PASSIVES) {
           const ok = p.isPassiveUnlocked(ps.id);
           grid.append(
             h('button.icon-cell' + (ok ? '' : '.locked'), {
+              style: `--rc:${RARITY_COLOR.uncommon}`,
               onclick: () => {
                 clear(detail);
+                look(iconImg(ps.icon, ps.color, 'icon xl'), RARITY_COLOR.uncommon);
                 const evo = WEAPONS.filter((w) => w.evolution?.passive === ps.id);
                 put(detail, 
-                  h('div.detail-title', iconImg(ps.icon, ps.color, 'icon lg'), h('div', h('h3', L(ps.name)), h('div.sub', t('max_level', { n: ps.maxLevel })))),
+                  h('div.detail-title', h('h3', L(ps.name)), pill(t('max_level', { n: ps.maxLevel }), RARITY_COLOR.uncommon)),
                   h('p', L(ps.desc)),
                   h('div.mods', ...statModLines(ps.perLevel).map((s) => h('div.mod', s + ' ' + t('per_level')))),
                   ...evo.map((w) => h('div.recipe', recipe(w, WEAPON_BY_ID[w.evolution!.into]))),
                   ok ? null : h('div.locked-note', '🔒 ' + lockText(ps.id, 'passive')),
                 );
               },
-            }, iconImg(ps.icon, ps.color)),
+            }, iconImg(ps.icon, ps.color), h('span.cell-n', String(ps.maxLevel))),
           );
         }
       } else if (this.tab === 'enemies') {
@@ -463,9 +571,9 @@ export class Menus {
                   put(detail, h('h3', '???'), h('p', t('not_seen')));
                   return;
                 }
+                look(thumbImg(e.model, 'thumb huge'), RARITY_COLOR.common);
                 put(detail, 
-                  h('div.detail-title', h('h3', L(e.name)), h('div.sub', t('cat_' + e.category))),
-                  thumbImg(e.model, 'thumb big'),
+                  h('div.detail-title', h('h3', L(e.name)), pill(t('cat_' + e.category), RARITY_COLOR.common)),
                   h('div.kv', h('span', t('stat_maxHp')), h('span', String(e.hp))),
                   h('div.kv', h('span', t('ws_damage')), h('span', String(e.damage))),
                   h('div.kv', h('span', t('stat_moveSpeed')), h('span', String(e.speed))),
@@ -481,6 +589,7 @@ export class Menus {
           const seen = p.data.discovered.bosses.includes(b.id);
           grid.append(
             h('button.icon-cell.thumb-cell' + (seen ? '' : '.locked'), {
+              style: `--rc:${RARITY_COLOR.epic}`,
               onclick: () => {
                 clear(detail);
                 if (!seen) {
@@ -488,9 +597,9 @@ export class Menus {
                   return;
                 }
                 const relic = RELICS.find((r) => r.id === b.relic);
+                look(thumbImg(b.model, 'thumb huge'), RARITY_COLOR.epic);
                 put(detail, 
-                  h('div.detail-title', h('h3', { style: `color:${hex(b.color)}` }, L(b.name)), h('div.sub', L(b.title))),
-                  thumbImg(b.model, 'thumb big'),
+                  h('div.detail-title', h('h3', L(b.name)), pill(L(b.title), hex(b.color))),
                   h('div.kv', h('span', t('stat_maxHp')), h('span', fmtNum(b.hp))),
                   h('div.kv', h('span', t('phases')), h('span', String(b.phases.length))),
                   h('div.kv', h('span', t('killed')), h('span', fmtNum(p.stat('boss_' + b.id)))),
@@ -505,11 +614,13 @@ export class Menus {
           const got = p.data.discovered.relics.includes(r.id);
           grid.append(
             h('button.icon-cell' + (got ? '' : '.locked'), {
+              style: `--rc:${RARITY_COLOR.legendary}`,
               onclick: () => {
                 clear(detail);
+                if (got) look(iconImg('crystal', r.color, 'icon xl'), RARITY_COLOR.legendary);
                 const boss = BOSSES.find((b) => b.relic === r.id);
                 put(detail, 
-                  h('div.detail-title', iconImg('crystal', r.color, 'icon lg'), h('h3', got ? L(r.name) : '???')),
+                  h('div.detail-title', h('h3', got ? L(r.name) : '???'), got ? pill(t('relic'), RARITY_COLOR.legendary) : null),
                   h('p', got ? L(r.desc) : t('relic_hint', { boss: boss ? L(boss.name) : '?' })),
                   got ? h('div.mods', ...statModLines(r.stats).map((s) => h('div.mod', s))) : null,
                 );
@@ -522,7 +633,7 @@ export class Menus {
       (grid.firstChild as HTMLElement | null)?.click();
     };
     render();
-    return h('div', this.header(t('menu_collection')), tabs, body);
+    return this.frame(h('div.mcol', tabs, body));
   }
 
   // ------------------------------------------------------------------ upgrades
@@ -567,7 +678,7 @@ export class Menus {
         render();
       });
     }, '.small');
-    return h('div', this.header(t('menu_upgrades'), gold), list, h('div.center', refund));
+    return this.frame(h('div.mcol', list, h('div.center', refund)), { gold });
   }
 
   // ------------------------------------------------------------------ achievements
@@ -592,7 +703,7 @@ export class Menus {
         ),
       );
     }
-    return h('div', this.header(t('menu_achievements'), h('div.count', `${p.data.achievements.length}/${ACHIEVEMENTS.length}`)), list);
+    return this.frame(h('div.mcol', list), { extra: h('div.count', `${p.data.achievements.length}/${ACHIEVEMENTS.length}`) });
   }
 }
 

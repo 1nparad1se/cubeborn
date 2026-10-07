@@ -125,6 +125,10 @@ export class App implements MenuApi {
     this.renderer.setShowcase(modelId);
   }
 
+  setMenuShift(v: number) {
+    this.renderer.menuShift = v;
+  }
+
   applySettings() {
     const s = this.profile.data.settings;
     audio.setVolumes(s.master, s.sfx, s.music, s.ui);
@@ -490,7 +494,8 @@ export class App implements MenuApi {
     const dt = Math.min(realDt, 1 / 20);
     const run = this.run;
     if (run && this.mode !== 'menu') {
-      const [ix, iz] = this.input.update();
+      const [sx, sz] = this.input.update();
+      const [ix, iz] = this.renderer.rig.screenToWorld(sx, sz);
       const active = !this.paused && !this.modals.isOpen && run.state === 'playing';
       if (active || run.ending) {
         // fixed-ish sub-steps keep collisions stable on slow frames

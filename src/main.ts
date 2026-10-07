@@ -4,6 +4,10 @@ import '@fontsource/rubik/cyrillic-500.css';
 import '@fontsource/rubik/latin-500.css';
 import '@fontsource/rubik/cyrillic-700.css';
 import '@fontsource/rubik/latin-700.css';
+import '@fontsource/pixelify-sans/cyrillic-500.css';
+import '@fontsource/pixelify-sans/latin-500.css';
+import '@fontsource/pixelify-sans/cyrillic-700.css';
+import '@fontsource/pixelify-sans/latin-700.css';
 import './style.css';
 import { App } from './App';
 

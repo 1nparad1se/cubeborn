@@ -2,17 +2,18 @@ import type { Run } from '../game/Run';
 import { CELL } from '../game/Terrain';
 import { h } from './dom';
 
-const SHRINE_COLOR: Record<string, string> = { heal: '#6aff9a', fury: '#ff5a5a', magnet: '#8ad8ff', gold: '#ffd23d' };
-const RARITY_COLOR = ['#e8e4f0', '#6aff8a', '#5ab4ff', '#c77dff', '#ffb02e'];
-
-function shade(c: number, k: number): [number, number, number] {
-  return [Math.min(255, ((c >> 16) & 255) * k), Math.min(255, ((c >> 8) & 255) * k), Math.min(255, (c & 255) * k)];
-}
+const SHRINE_COLOR: Record<string, string> = { heal: '#6aff9a', fury: '#ff6a6a', magnet: '#8ad8ff', gold: '#ffd23d' };
+const RARITY_COLOR = ['#f2f2f2', '#6aff8a', '#5ab4ff', '#c77dff', '#ffb02e'];
+/** Pixels per map cell in the baked terrain image (outlines stay one pixel thin). */
+const PX = 3;
+/** World units visible across the corner minimap. */
+const LOCAL_SPAN = 64;
 
 /**
- * Whole-map minimap in the HUD corner: terrain baked once per run, then the hero, bosses,
- * elites, chests, shrines and points of interest redrawn ~12 times a second.
- * Regular enemies are intentionally not shown.
+ * Dungeon-crawler style minimap: muted terrain with thin white outlines along walls and
+ * water, rotated to match the diagonal camera. The corner view follows the hero; the big
+ * view (M) shows the whole map. Bosses, elites, chests, shrines and points of interest are
+ * shown as icons; regular enemies are intentionally not shown.
  */
 export class Minimap {
   readonly root: HTMLElement;
@@ -21,8 +22,8 @@ export class Minimap {
   private base: HTMLCanvasElement | null = null;
   private run: Run | null = null;
   private acc = 1;
-  private size = 0;
   private pulse = 0;
+  private yaw = Math.PI / 4;
   big = false;
 
   constructor() {
@@ -38,32 +39,76 @@ export class Minimap {
     if (!run) return;
     const t = run.terrain;
     const n = t.size;
+    const W = n * PX;
     const img = document.createElement('canvas');
-    img.width = n;
-    img.height = n;
+    img.width = W;
+    img.height = W;
     const c = img.getContext('2d')!;
-    const data = c.createImageData(n, n);
+    const data = c.createImageData(W, W);
     const pal = run.map.palette;
     const tileCol = t.tileNames.map((name) => (pal.tiles[name] ?? [0x555555])[0]);
-    const blockCol = shade(Object.values(pal.blocks)[0]?.[0] ?? 0x444444, 0.55);
+    // blocked mask; small obstacle clusters (trees, rocks, props) are dropped so only
+    // real walls, cliffs and water get contour lines
+    const blocked = new Uint8Array(n * n);
     for (let i = 0; i < n * n; i++) {
-      const cell = t.cell[i];
-      let rgb: [number, number, number];
-      if (cell === CELL.wall) rgb = [12, 10, 16];
-      else if (cell === CELL.solid) {
-        const hgt = t.height[i];
-        rgb = hgt > 0 ? shade((blockCol[0] << 16) | (blockCol[1] << 8) | blockCol[2], 0.8 + Math.min(4, hgt) * 0.08) : [24, 20, 28];
-      } else if (cell === CELL.liquid) rgb = shade(tileCol[t.tile[i]] ?? 0x2255aa, 1.05);
-      else if (cell === CELL.hazard) {
-        const b = shade(tileCol[t.tile[i]] ?? 0x885533, 1);
-        rgb = [Math.min(255, b[0] * 0.7 + 90), b[1] * 0.6, b[2] * 0.6];
-      } else rgb = shade(tileCol[t.tile[i]] ?? 0x666666, 0.72);
-      const o = i * 4;
-      data.data[o] = rgb[0];
-      data.data[o + 1] = rgb[1];
-      data.data[o + 2] = rgb[2];
-      data.data[o + 3] = 255;
+      const k = t.cell[i];
+      blocked[i] = k === CELL.floor || k === CELL.hazard || k === CELL.ice ? 0 : 1;
     }
+    const comp = new Int32Array(n * n).fill(-1);
+    const stack: number[] = [];
+    const members: number[] = [];
+    for (let i = 0; i < n * n; i++) {
+      if (!blocked[i] || comp[i] >= 0) continue;
+      members.length = 0;
+      stack.push(i);
+      comp[i] = i;
+      let liquid = false;
+      while (stack.length) {
+        const j = stack.pop()!;
+        members.push(j);
+        if (t.cell[j] === CELL.liquid) liquid = true;
+        const x = j % n;
+        const z = (j / n) | 0;
+        const nb = [x > 0 ? j - 1 : -1, x < n - 1 ? j + 1 : -1, z > 0 ? j - n : -1, z < n - 1 ? j + n : -1];
+        for (const q of nb)
+          if (q >= 0 && blocked[q] && comp[q] < 0) {
+            comp[q] = i;
+            stack.push(q);
+          }
+      }
+      if (!liquid && members.length < 14) for (const j of members) blocked[j] = 0;
+    }
+    const walk = (x: number, z: number) => x >= 0 && z >= 0 && x < n && z < n && !blocked[z * n + x];
+    const tint = (hexc: number, base: [number, number, number], f: number): [number, number, number] => [
+      base[0] + (((hexc >> 16) & 255) - base[0]) * f,
+      base[1] + (((hexc >> 8) & 255) - base[1]) * f,
+      base[2] + ((hexc & 255) - base[2]) * f,
+    ];
+    for (let z = 0; z < n; z++)
+      for (let x = 0; x < n; x++) {
+        const i = z * n + x;
+        const cell = t.cell[i];
+        const open = !blocked[i];
+        let rgba: [number, number, number, number];
+        if (open) {
+          const c3 = cell === CELL.hazard ? tint(0xc04030, [44, 48, 54], 0.35) : tint(tileCol[t.tile[i]] ?? 0x666666, [44, 48, 54], 0.14);
+          rgba = [c3[0], c3[1], c3[2], 200];
+        } else if (cell === CELL.liquid) {
+          const c3 = tint(tileCol[t.tile[i]] ?? 0x2255aa, [30, 44, 66], 0.25);
+          rgba = [c3[0], c3[1], c3[2], 150];
+        } else rgba = [12, 14, 17, 95];
+        for (let py = 0; py < PX; py++)
+          for (let px = 0; px < PX; px++) {
+            let c4 = rgba;
+            // thin bright contour on the walkable side of every edge
+            if (open && ((px === 0 && !walk(x - 1, z)) || (px === PX - 1 && !walk(x + 1, z)) || (py === 0 && !walk(x, z - 1)) || (py === PX - 1 && !walk(x, z + 1)))) c4 = [236, 240, 244, 255];
+            const o = ((z * PX + py) * W + x * PX + px) * 4;
+            data.data[o] = c4[0];
+            data.data[o + 1] = c4[1];
+            data.data[o + 2] = c4[2];
+            data.data[o + 3] = c4[3];
+          }
+      }
     c.putImageData(data, 0, 0);
     this.base = img;
     this.acc = 1;
@@ -80,102 +125,160 @@ export class Minimap {
     if (!run || !this.base) return;
     this.pulse += dt;
     this.acc += dt;
-    if (this.acc < 1 / 12) return;
+    if (this.acc < 1 / 15) return;
     this.acc = 0;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const css = this.root.clientWidth || 180;
-    const px = Math.round(css * dpr);
-    if (px !== this.size) {
-      this.size = px;
-      this.canvas.width = this.canvas.height = px;
+    const cw = Math.round((this.root.clientWidth || 250) * dpr);
+    const ch = Math.round((this.root.clientHeight || 210) * dpr);
+    if (cw !== this.canvas.width || ch !== this.canvas.height) {
+      this.canvas.width = cw;
+      this.canvas.height = ch;
     }
     const ctx = this.ctx;
     const n = run.terrain.size;
-    const k = px / n;
-    ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(this.base, 0, 0, px, px);
-    const dot = (x: number, z: number, r: number, color: string, stroke = 'rgba(0,0,0,0.85)') => {
-      ctx.beginPath();
-      ctx.arc(x * k, z * k, r * dpr, 0, Math.PI * 2);
-      ctx.fillStyle = color;
-      ctx.fill();
-      ctx.lineWidth = dpr;
-      ctx.strokeStyle = stroke;
-      ctx.stroke();
+    const p = run.player;
+    // view: centre (world) and scale (canvas px per world unit)
+    const cx = this.big ? n / 2 : p.x;
+    const cz = this.big ? n / 2 : p.z;
+    const scale = this.big ? Math.min(cw, ch) / (n * Math.SQRT2) : cw / LOCAL_SPAN;
+    const cos = Math.cos(this.yaw);
+    const sin = Math.sin(this.yaw);
+    const toScreen = (x: number, z: number): [number, number] => {
+      const dx = (x - cx) * scale;
+      const dz = (z - cz) * scale;
+      return [cw / 2 + dx * cos - dz * sin, ch / 2 + dx * sin + dz * cos];
     };
-    // points of interest
-    for (const p of run.features.pois) {
-      const x = p.x * k;
-      const z = p.z * k;
-      if (p.kind === 'poi') {
-        ctx.fillStyle = p.sub === 'village' ? 'rgba(255,214,150,0.9)' : p.sub === 'camp' ? 'rgba(255,150,80,0.85)' : p.sub === 'tower' ? 'rgba(220,220,240,0.85)' : p.sub === 'ruin' ? 'rgba(190,180,170,0.8)' : 'rgba(140,220,120,0.55)';
-        const s = (p.sub === 'village' ? 2.6 : 1.8) * dpr;
-        ctx.fillRect(x - s, z - s, s * 2, s * 2);
-      } else if (p.kind === 'shrine') {
-        const s = 3 * dpr;
-        ctx.beginPath();
-        ctx.moveTo(x, z - s);
-        ctx.lineTo(x + s, z);
-        ctx.lineTo(x, z + s);
-        ctx.lineTo(x - s, z);
-        ctx.closePath();
-        ctx.fillStyle = p.used ? '#55505e' : SHRINE_COLOR[p.sub ?? 'heal'] ?? '#fff';
-        ctx.fill();
-        ctx.strokeStyle = '#000';
-        ctx.lineWidth = dpr;
-        ctx.stroke();
-      } else if (p.kind === 'secret' && p.found) {
-        ctx.font = `${Math.round(9 * dpr)}px "Press Start 2P", monospace`;
+    ctx.clearRect(0, 0, cw, ch);
+    ctx.save();
+    ctx.translate(cw / 2, ch / 2);
+    ctx.rotate(this.yaw);
+    ctx.scale(scale / PX, scale / PX);
+    ctx.translate(-cx * PX, -cz * PX);
+    ctx.imageSmoothingEnabled = !this.big;
+    ctx.drawImage(this.base, 0, 0);
+    ctx.restore();
+
+    const u = dpr * (this.big ? 1.2 : 1);
+    const inView = (sx: number, sy: number, m = 0) => sx >= -m && sy >= -m && sx <= cw + m && sy <= ch + m;
+    const outline = (draw: () => void, fill: string) => {
+      ctx.lineWidth = 2.5 * u;
+      ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+      ctx.lineJoin = 'round';
+      draw();
+      ctx.stroke();
+      ctx.fillStyle = fill;
+      ctx.fill();
+    };
+    // points of interest as small white glyphs
+    for (const poi of run.features.pois) {
+      const [sx, sy] = toScreen(poi.x, poi.z);
+      if (!inView(sx, sy, 10)) continue;
+      if (poi.kind === 'poi') {
+        const s = 4.5 * u;
+        if (poi.sub === 'village') {
+          outline(() => {
+            ctx.beginPath();
+            ctx.moveTo(sx - s, sy + s);
+            ctx.lineTo(sx - s, sy - s * 0.2);
+            ctx.lineTo(sx, sy - s);
+            ctx.lineTo(sx + s, sy - s * 0.2);
+            ctx.lineTo(sx + s, sy + s);
+            ctx.closePath();
+          }, '#ffffff');
+        } else if (poi.sub === 'camp') {
+          outline(() => {
+            ctx.beginPath();
+            ctx.moveTo(sx, sy - s);
+            ctx.lineTo(sx + s, sy + s * 0.8);
+            ctx.lineTo(sx - s, sy + s * 0.8);
+            ctx.closePath();
+          }, '#ffd9a8');
+        } else if (poi.sub === 'tower') {
+          outline(() => {
+            ctx.beginPath();
+            ctx.rect(sx - s * 0.45, sy - s * 1.1, s * 0.9, s * 2.2);
+          }, '#ffffff');
+        } else if (poi.sub === 'ruin') {
+          outline(() => {
+            ctx.beginPath();
+            ctx.rect(sx - s * 0.8, sy - s * 0.2, s * 1.6, s);
+          }, '#d8d2c8');
+        }
+      } else if (poi.kind === 'shrine') {
+        const s = 4 * u;
+        outline(() => {
+          ctx.beginPath();
+          ctx.moveTo(sx, sy - s);
+          ctx.lineTo(sx + s, sy);
+          ctx.lineTo(sx, sy + s);
+          ctx.lineTo(sx - s, sy);
+          ctx.closePath();
+        }, poi.used ? '#6a6670' : SHRINE_COLOR[poi.sub ?? 'heal'] ?? '#fff');
+      } else if (poi.kind === 'secret' && poi.found) {
+        ctx.font = `700 ${Math.round(12 * u)}px "Pixelify Sans", sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
+        ctx.lineWidth = 3 * u;
+        ctx.strokeStyle = '#000';
+        ctx.strokeText('?', sx, sy);
         ctx.fillStyle = '#ffd23d';
-        ctx.fillText('?', x, z);
+        ctx.fillText('?', sx, sy);
       }
     }
-    // chests lying on the ground
+    // chests
     for (const pk of run.pickups.list) {
       if (!pk.active || pk.kind !== 'chest') continue;
-      const s = 2.6 * dpr;
-      ctx.fillStyle = RARITY_COLOR[pk.rarity] ?? '#ffd23d';
-      ctx.fillRect(pk.x * k - s, pk.z * k - s, s * 2, s * 2);
-      ctx.strokeStyle = '#000';
-      ctx.lineWidth = dpr;
-      ctx.strokeRect(pk.x * k - s, pk.z * k - s, s * 2, s * 2);
+      const [sx, sy] = toScreen(pk.x, pk.z);
+      if (!inView(sx, sy, 6)) continue;
+      const s = 3.6 * u;
+      outline(() => {
+        ctx.beginPath();
+        ctx.rect(sx - s, sy - s * 0.7, s * 2, s * 1.4);
+      }, RARITY_COLOR[pk.rarity] ?? '#ffd23d');
     }
     // elites and the treasure sprite (regular enemies are hidden)
     for (const e of run.enemies.list) {
       if (!e.alive || e.boss) continue;
-      if (e.elite) dot(e.x, e.z, 1.8, '#ffa030');
-      else if (e.def.id === 'treasure_sprite') dot(e.x, e.z, 2.2, '#fff06a');
+      const elite = !!e.elite;
+      if (!elite && e.def.id !== 'treasure_sprite') continue;
+      const [sx, sy] = toScreen(e.x, e.z);
+      if (!inView(sx, sy)) continue;
+      outline(() => {
+        ctx.beginPath();
+        ctx.arc(sx, sy, (elite ? 2.6 : 3) * u, 0, Math.PI * 2);
+      }, elite ? '#ffa030' : '#fff06a');
     }
-    // bosses pulse
+    // bosses pulse; off-screen bosses stick to the minimap border
     for (const b of run.bosses) {
       if (!b.e.active || b.isClone) continue;
-      const r = 3.6 + Math.sin(this.pulse * 6) * 0.8;
-      dot(b.e.x, b.e.z, r, '#ff2a4a', '#fff');
+      let [sx, sy] = toScreen(b.e.x, b.e.z);
+      const m = 9 * u;
+      sx = Math.max(m, Math.min(cw - m, sx));
+      sy = Math.max(m, Math.min(ch - m, sy));
+      const r = (5 + Math.sin(this.pulse * 6) * 1.2) * u;
+      outline(() => {
+        ctx.beginPath();
+        ctx.arc(sx, sy, r, 0, Math.PI * 2);
+      }, '#ff2a4a');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(sx - r * 0.35, sy - r * 0.35, r * 0.25, r * 0.25);
+      ctx.fillRect(sx + r * 0.1, sy - r * 0.35, r * 0.25, r * 0.25);
     }
-    // camera view and hero arrow
-    const p = run.player;
-    ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-    ctx.lineWidth = dpr;
-    const vw = 22 * k;
-    const vh = 14 * k;
-    ctx.strokeRect(p.x * k - vw, p.z * k - vh, vw * 2, vh * 2);
-    const a = Math.atan2(p.fz, p.fx);
-    const s = 4.5 * dpr;
+    // the hero: white arrow in the facing direction
+    const [hx, hy] = toScreen(p.x, p.z);
+    const a = Math.atan2(p.fz, p.fx) + this.yaw;
+    const s = 6.5 * u;
     ctx.save();
-    ctx.translate(p.x * k, p.z * k);
+    ctx.translate(hx, hy);
     ctx.rotate(a);
-    ctx.beginPath();
-    ctx.moveTo(s, 0);
-    ctx.lineTo(-s * 0.7, -s * 0.65);
-    ctx.lineTo(-s * 0.35, 0);
-    ctx.lineTo(-s * 0.7, s * 0.65);
-    ctx.closePath();
-    ctx.fillStyle = '#ffffff';
-    ctx.fill();
-    ctx.strokeStyle = '#000';
-    ctx.stroke();
+    outline(() => {
+      ctx.beginPath();
+      ctx.moveTo(s, 0);
+      ctx.lineTo(-s * 0.75, -s * 0.7);
+      ctx.lineTo(-s * 0.35, 0);
+      ctx.lineTo(-s * 0.75, s * 0.7);
+      ctx.closePath();
+    }, '#ffffff');
     ctx.restore();
   }
 }

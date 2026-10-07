@@ -240,6 +240,8 @@ export interface MapPalette {
   sun: number;
   sunIntensity: number;
   hemiGround: number;
+  /** Color of the light pool that follows the hero on dark maps. */
+  heroLight?: number;
   /** Tile colors by tile type name. */
   tiles: Record<string, number[]>;
   /** Block colors for obstacle materials. */

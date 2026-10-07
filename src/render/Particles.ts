@@ -22,7 +22,7 @@ interface P {
   kind: number; // 0 glow, 1 debris, 2 smoke, 3 ambient glow, 4 snow
 }
 
-export type AmbientKind = 'spores' | 'fireflies' | 'dust' | 'embers' | 'snow' | 'motes';
+export type AmbientKind = 'spores' | 'fireflies' | 'dust' | 'embers' | 'snow' | 'motes' | 'rain';
 
 /**
  * CPU particle pool rendered as instanced voxel cubes: additive glow sparks, lit debris
@@ -78,7 +78,7 @@ export class Particles {
   }
 
   private spawnAmbient(cx: number, cz: number, dt: number, blizzard: number) {
-    const rate = (this.ambient === 'snow' ? 40 : 14) + blizzard * 160;
+    const rate = (this.ambient === 'snow' ? 40 : this.ambient === 'rain' ? 110 : 14) + blizzard * 160;
     this.ambientAcc += dt * rate;
     const c = this.ambientColor;
     while (this.ambientAcc >= 1) {
@@ -89,6 +89,16 @@ export class Particles {
       p.z = cz + (Math.random() - 0.5) * 34 - 2;
       p.spin = (Math.random() - 0.5) * 2;
       p.rot = Math.random() * 6;
+      if (this.ambient === 'rain' && Math.random() < 0.94) {
+        p.y = 9 + Math.random() * 5;
+        p.vx = -1.2;
+        p.vz = -1.2;
+        p.vy = -24 - Math.random() * 4;
+        p.size = 0.025;
+        p.life = p.max = 1.2;
+        p.kind = 5;
+        continue;
+      }
       const snow = this.ambient === 'snow' || (blizzard > 0 && Math.random() < 0.85);
       if (snow) {
         p.y = 8 + Math.random() * 6;
@@ -191,6 +201,20 @@ export class Particles {
             p.y = 0.05;
           }
           this.glow.pushFast(p.x, p.y, p.z, p.rot, p.size, p.size, 0.7 * Math.min(1, k * 4), 0.75 * Math.min(1, k * 4), 0.8 * Math.min(1, k * 4));
+          break;
+        }
+        case 5: {
+          // rain streak, then a tiny splash ring on the ground
+          if (p.y <= 0.02) {
+            if (p.vy !== 0) {
+              p.vx = p.vy = p.vz = 0;
+              p.y = 0.02;
+              p.life = Math.min(p.life, 0.18);
+              p.max = 0.18;
+            }
+            const sp = 0.12 + (1 - p.life / 0.18) * 0.18;
+            this.glow.pushFast(p.x, p.y, p.z, 0.785, sp, 0.02, 0.22, 0.26, 0.3);
+          } else this.glow.pushFast(p.x, p.y, p.z, 0.785, p.size, 0.55, 0.2, 0.24, 0.3);
           break;
         }
       }

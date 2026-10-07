@@ -12,13 +12,18 @@ import { LightPool } from './LightPool';
 import { makeBlobTexture, makeBlockTexture } from './Textures';
 import { ArticulatedModel } from './ArticulatedModel';
 import { getModel } from '../models';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 
 import type { Settings } from '../meta/Save';
 
 export type Quality = 'low' | 'medium' | 'high';
 
 const AMBIENT: Record<string, [AmbientKind, number]> = {
-  forest: ['spores', 0xc58aff],
+  forest: ['rain', 0xc58aff],
   city: ['fireflies', 0xffd37a],
   catacombs: ['dust', 0x9affd8],
   volcano: ['embers', 0xff8a2a],
@@ -30,6 +35,20 @@ export interface FxHooks {
   sound(id: string, volume?: number): void;
   vibrate(ms: number): void;
 }
+
+/** Gentle color grade applied before tone mapping: richer saturation and warm highlights. */
+const GradeShader = {
+  uniforms: { tDiffuse: { value: null }, uSat: { value: 1.06 }, uWarm: { value: 0.04 } },
+  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float uSat; uniform float uWarm; varying vec2 vUv;
+void main() {
+  vec4 c = texture2D(tDiffuse, vUv);
+  float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
+  c.rgb = max(vec3(0.0), mix(vec3(l), c.rgb, uSat));
+  c.rgb *= vec3(1.0 + uWarm, 1.0, 1.0 - uWarm);
+  gl_FragColor = c;
+}`,
+};
 
 /** Owns the WebGL context and draws either the in-run world or the menu diorama. */
 export class Renderer {
@@ -60,8 +79,13 @@ export class Renderer {
   private showId = '';
   private menuMode = false;
   private menuAngle = 0;
+  /** 0 keeps the menu showcase centred; 1 slides it into the right third of the screen. */
+  menuShift = 0;
+  private menuShiftNow = 0;
   private w = 1;
   private h = 1;
+  private composer: EffectComposer | null = null;
+  private bloom: UnrealBloomPass | null = null;
 
   constructor(private container: HTMLElement, settings: Settings) {
     this.s = settings;
@@ -127,7 +151,14 @@ export class Renderer {
     }
     // post processing: filmic tone mapping (the CSS vignette is toggled by the app)
     this.gl.toneMapping = st.postProcessing ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping;
-    this.gl.toneMappingExposure = st.postProcessing ? 1.35 : 1;
+    this.gl.toneMappingExposure = st.postProcessing ? 1.1 : 1;
+    if (st.postProcessing && !this.composer) this.makeComposer();
+    else if (!st.postProcessing && this.composer) {
+      this.composer.dispose();
+      this.composer = null;
+      this.bloom = null;
+    }
+    if (this.bloom) this.bloom.strength = st.effects === 'low' ? 0.25 : 0.42;
     this.viewMul = { near: 0.8, medium: 1, far: 1.3, max: 1.7 }[st.viewDistance] ?? 1;
     this.rig.camera.far = 200 * this.viewMul;
     this.rig.camera.updateProjectionMatrix();
@@ -141,6 +172,18 @@ export class Renderer {
     }
     if (this.scene.fog && this.run) this.setAtmosphere(this.run.map);
     this.resize();
+  }
+
+  /** Scene -> bloom -> color grade -> tone mapping and sRGB output. */
+  private makeComposer() {
+    const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: this.msaa ? 4 : 0 });
+    const c = new EffectComposer(this.gl, rt);
+    c.addPass(new RenderPass(this.scene, this.rig.camera));
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.42, 0.55, 0.82);
+    c.addPass(this.bloom);
+    c.addPass(new ShaderPass(GradeShader));
+    c.addPass(new OutputPass());
+    this.composer = c;
   }
 
   /** Current camera zoom (smoothly follows the target set by the wheel). */
@@ -173,6 +216,10 @@ export class Renderer {
     if (this.s.antiAliasing === 'ssaa') ratio *= 1.5;
     this.gl.setPixelRatio(Math.max(0.5, Math.min(3, ratio)));
     this.gl.setSize(w, h, false);
+    if (this.composer) {
+      this.composer.setPixelRatio(this.gl.getPixelRatio());
+      this.composer.setSize(w, h);
+    }
     this.gl.domElement.style.width = w + 'px';
     this.gl.domElement.style.height = h + 'px';
     this.rig.resize(w, h);
@@ -181,13 +228,13 @@ export class Renderer {
 
   private setAtmosphere(map: MapDef) {
     const p = map.palette;
-    this.scene.background = new THREE.Color(p.sky);
+    this.scene.background = new THREE.Color(p.fog);
     this.scene.fog = new THREE.Fog(p.fog, (p.fogNear + 8) * this.viewMul, (p.fogFar + 12) * this.viewMul);
     this.hemi.color.setHex(p.ambient);
     this.hemi.groundColor.setHex(p.hemiGround);
-    this.hemi.intensity = p.ambientIntensity * 2.2;
+    this.hemi.intensity = p.ambientIntensity * 3.0;
     this.sun.color.setHex(p.sun);
-    this.sun.intensity = p.sunIntensity * 1.6;
+    this.sun.intensity = p.sunIntensity * 2.4;
   }
 
   private buildWorld(terrain: Terrain, map: MapDef) {
@@ -300,7 +347,8 @@ export class Renderer {
     }
     lights.end(dt, t.x, t.z);
     this.world?.update(this.time, this.run?.weather.surge ?? 0);
-    this.gl.render(this.scene, this.rig.camera);
+    if (this.composer) this.composer.render(dt);
+    else this.gl.render(this.scene, this.rig.camera);
     this.overlay.draw(dt, this.rig.camera, this.menuMode ? null : this.run);
   }
 
@@ -310,8 +358,15 @@ export class Renderer {
     const cam = this.rig.camera;
     const portrait = this.h > this.w;
     const dist = portrait ? 13 : 10;
-    cam.position.set(c + Math.sin(this.menuAngle) * dist, portrait ? 7.5 : 6, c + Math.cos(this.menuAngle) * dist);
-    cam.lookAt(c, 1.4, c);
+    this.menuShiftNow += (this.menuShift - this.menuShiftNow) * (1 - Math.exp(-6 * dt));
+    // pan the camera sideways so the model sits right of centre, leaving room for panels
+    const off = portrait ? 0 : this.menuShiftNow * dist * Math.tan((cam.fov * Math.PI) / 360) * cam.aspect * 0.58;
+    const fx = -Math.sin(this.menuAngle);
+    const fz = -Math.cos(this.menuAngle);
+    const ox = fz * off;
+    const oz = -fx * off;
+    cam.position.set(c + Math.sin(this.menuAngle) * dist + ox, portrait ? 7.5 : 6, c + Math.cos(this.menuAngle) * dist + oz);
+    cam.lookAt(c + ox, 1.4, c + oz);
     this.sun.position.set(c + 10, 25, c + 6);
     this.sun.target.position.set(c, 0, c);
     if (this.showModel) {
@@ -334,8 +389,8 @@ export class Renderer {
     // weather
     const pal = run.map.palette;
     const dark = run.weather.darkness;
-    this.hemi.intensity = pal.ambientIntensity * 2.2 * (1 - dark * 0.72);
-    this.sun.intensity = pal.sunIntensity * 1.6 * (1 - dark * 0.8);
+    this.hemi.intensity = pal.ambientIntensity * 3.0 * (1 - dark * 0.72);
+    this.sun.intensity = pal.sunIntensity * 2.4 * (1 - dark * 0.8);
     const fog = this.scene.fog as THREE.Fog;
     const bl = run.weather.blizzard;
     const storm = Math.min(1, run.weather.storm);
@@ -356,9 +411,12 @@ export class Renderer {
       this.world?.cull(t.x, t.z, fog.far + 6);
     }
     // sun follows the camera so the shadow map covers the view
-    this.sun.position.set(t.x + 8, 26, t.z + 10);
-    this.sun.target.position.set(t.x, 0, t.z - 2);
+    this.sun.position.set(t.x + 3, 26, t.z - 12);
+    this.sun.target.position.set(t.x, 0, t.z);
     this.world?.uniforms.uFocus.value.set(p.x, 0, p.z);
+    this.world?.uniforms.uCamDir.value.set(this.rig.toCam.x, this.rig.toCam.z);
+    // a warm light pool follows the hero on dark maps
+    if (pal.heroLight) this.lights.request(p.x, 2.6, p.z, pal.heroLight, 1.6 + dark * 0.8, 9, t.x, t.z);
     this.entities!.update(dt, t.x, t.z);
     this.particles!.update(dt, t.x, t.z, bl);
   }

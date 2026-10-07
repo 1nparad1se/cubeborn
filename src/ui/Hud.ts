@@ -64,9 +64,9 @@ export class Hud {
   constructor(parent: HTMLElement) {
     this.xpFill = h('div.xp-fill');
     this.xpText = h('div.xp-text');
-    this.lvl = h('div.lvl-badge');
-    this.hpFill = h('div.hp-fill');
-    this.hpText = h('div.hp-text');
+    this.lvl = h('div.hb-hex-num');
+    this.hpFill = h('div.heart-fill');
+    this.hpText = h('div.heart-text');
     this.time = h('div.hud-time');
     this.kills = h('span');
     this.gold = h('span');
@@ -80,7 +80,16 @@ export class Hud {
     this.waveStrip = h('div.wave-strip');
     this.mods = h('div.wave-mods');
     this.record = h('div.wave-record');
-    this.wavePanel = h('div.wave-panel', h('div.wave-head', this.waveTitle, this.waveType), h('div.wave-track', this.waveFill), this.waveNext, this.waveStrip, this.mods, this.record);
+    this.wavePanel = h(
+      'div.wave-panel',
+      h('div.wave-head', this.waveTitle, h('span.key', 'J')),
+      h('div.wave-rule'),
+      h('div.wave-sub', this.waveType, this.waveNext),
+      h('div.wave-track', this.waveFill),
+      this.waveStrip,
+      this.mods,
+      this.record,
+    );
     this.bossName = h('div.boss-name');
     this.bossFill = h('div.boss-fill');
     this.bossPhase = h('div.boss-phase');
@@ -91,19 +100,32 @@ export class Hud {
     this.vignette = h('div.vignette');
     this.fps = h('div.fps.hidden');
     this.hint = h('div.hint.hidden');
-    const pause = h('button.pause-btn', { 'aria-label': 'pause', title: 'Esc', onclick: () => this.onPause() }, h('span'), h('span'));
-    this.mapBox = h('div.map-box', this.minimap.root, h('div.map-stats', h('div.hud-stat', h('i.ic-skull'), this.kills), h('div.hud-stat', h('i.ic-coin'), this.gold), pause));
+    const pause = h('button.hb-key', { 'aria-label': 'pause', title: 'Esc', onclick: () => this.onPause() }, h('i.ic-pause', h('span'), h('span')), h('span.key', 'Esc'));
+    const mapKey = h('button.hb-key', { 'aria-label': 'map', title: 'M', onclick: () => this.toggleMap() }, h('i.ic-map'), h('span.key', 'M'));
+    this.mapBox = h('div.map-box', this.minimap.root, h('span.key.map-key', 'M'));
+    // pixel heart: a dark heart with a red heart clipped to the current HP fraction
+    const heart = h('div.heart', h('div.heart-bg'), this.hpFill, this.hpText);
     this.root = h(
       'div.hud',
       this.vignette,
-      h('div.xp-bar', this.xpFill, this.xpText),
-      h('div.hud-left', h('div.hp-row', this.lvl, h('div.hp-bar', this.hpFill, this.hpText)), this.slotsW, this.slotsP, this.buffs),
-      h('div.hud-center', this.time, this.wavePanel),
-      this.mapBox,
+      h('div.hud-tl', this.fps, this.buffs),
+      h('div.hud-top', this.time, this.bossBox),
+      h('div.hud-tr', this.mapBox, this.wavePanel),
       bannerBox,
-      this.bossBox,
-      this.fps,
       this.hint,
+      h(
+        'div.hotbar',
+        h('div.hb-wing.left', h('div.hb-item', h('i.ic-coin'), this.gold), pause, mapKey),
+        h('div.heart-frame', heart),
+        h(
+          'div.hb-mid',
+          h('div.hb-kills', h('i.ic-skull'), this.kills),
+          this.slotsW,
+          h('div.xp-row', this.xpText, h('div.xp-bar', this.xpFill, h('div.xp-seg'))),
+        ),
+        h('div.hb-hex', h('div.hb-hex-inner', h('small', t('hud_lv')), this.lvl)),
+        h('div.hb-wing.right', this.slotsP),
+      ),
     );
     parent.appendChild(this.root);
     this.bannerBox = bannerBox;
@@ -180,14 +202,15 @@ export class Hud {
     const p = run.player;
     const xpk = p.xpNext > 0 ? Math.min(1, p.xp / p.xpNext) : 0;
     this.set('xp', Math.round(xpk * 400), () => (this.xpFill.style.transform = `scaleX(${xpk})`));
-    this.set('xpt', `${Math.floor(p.xp)}/${p.xpNext}`, () => (this.xpText.textContent = `${fmtNum(Math.floor(p.xp))} / ${fmtNum(p.xpNext)} XP`));
-    this.set('lvl', p.level, () => (this.lvl.textContent = t('hud_level', { n: p.level })));
+    this.set('xpt', p.level, () => (this.xpText.textContent = String(p.level)));
+    this.set('lvl', p.level, () => (this.lvl.textContent = String(p.level)));
     const hpk = Math.max(0, p.hp / p.stats.maxHp);
     this.set('hp', Math.round(hpk * 300), () => {
-      this.hpFill.style.transform = `scaleX(${hpk})`;
-      this.hpFill.classList.toggle('low', hpk < 0.3);
+      // the red heart drains from the top
+      this.hpFill.style.clipPath = `inset(${((1 - hpk) * 100).toFixed(1)}% 0 0 0)`;
+      this.hpFill.parentElement!.parentElement!.classList.toggle('low', hpk < 0.3);
     });
-    this.set('hpt', `${Math.ceil(Math.max(0, p.hp))}/${Math.round(p.stats.maxHp)}`, () => (this.hpText.textContent = `${Math.ceil(Math.max(0, p.hp))} / ${Math.round(p.stats.maxHp)}`));
+    this.set('hpt', Math.ceil(Math.max(0, p.hp)), () => (this.hpText.textContent = String(Math.ceil(Math.max(0, p.hp)))));
     this.set('time', Math.floor(run.time), () => (this.time.textContent = fmtTime(run.time)));
     this.set('kills', run.stats.kills, () => (this.kills.textContent = fmtNum(run.stats.kills)));
     this.set('gold', Math.round(run.stats.gold), () => (this.gold.textContent = fmtNum(run.stats.gold)));
@@ -199,7 +222,7 @@ export class Hud {
       const endless = wd.mode === 'endless';
       this.set('wave', w.n, () => {
         this.waveTitle.textContent = endless ? t('hud_wave_endless', { n: w.n }) : t('hud_wave', { n: w.n, total: CAMPAIGN_WAVES });
-        this.waveType.textContent = t('wave_' + w.type);
+        this.waveType.textContent = t('wave_' + w.type) + ' · ';
         this.waveType.style.color = WAVE_TYPE_COLOR[w.type];
         this.wavePanel.style.setProperty('--wc', WAVE_TYPE_COLOR[w.type]);
         const pips = this.waveStrip.children;
@@ -232,8 +255,8 @@ export class Hud {
         const w = run.weapons.list[i];
         this.slotsW.append(
           w
-            ? h('div.slot' + (w.def.evolved ? '.evo' : w.isMax ? '.max' : ''), { title: L(WEAPON_BY_ID[w.def.id].name) }, iconImg(w.def.icon, w.def.color), h('b', w.def.evolved ? '★' : w.isMax ? 'M' : String(w.level)))
-            : h('div.slot.empty'),
+            ? h('div.slot' + (w.def.evolved ? '.evo' : w.isMax ? '.max' : ''), { title: L(WEAPON_BY_ID[w.def.id].name) }, iconImg(w.def.icon, w.def.color), h('b', w.def.evolved ? '★' : w.isMax ? 'MAX' : String(w.level)), h('span.slot-n', String(i + 1)))
+            : h('div.slot.empty', h('span.slot-n', String(i + 1))),
         );
       }
       const ps = [...run.passives.levels];

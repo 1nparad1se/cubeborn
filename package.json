@@ -15,6 +15,7 @@
     "three": "^0.180.0"
   },
   "devDependencies": {
+    "@fontsource/pixelify-sans": "^5.3.0",
     "@fontsource/press-start-2p": "*",
     "@fontsource/rubik": "*",
     "@types/node": "^26.6.4",
