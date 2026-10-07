@@ -495,6 +495,8 @@ export class App implements MenuApi {
       p.testBase = null;
     }
     if (silent) return;
+    // live unlock toasts would cover the results, which list the same achievements
+    this.toasts.querySelectorAll('.ach-toast').forEach((el) => el.remove());
     this.mode = 'results';
     audio.playMusic(victory ? 'victory' : 'menu');
     const newUnlocks: string[] = [];
@@ -538,6 +540,7 @@ export class App implements MenuApi {
   }
 
   private achievementToast(a: AchievementDef) {
+    if (this.finished) return;
     const col = RARITY_COLOR[a.rarity];
     const el = h(
       'div.toast.ach-toast',

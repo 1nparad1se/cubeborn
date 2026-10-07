@@ -463,9 +463,11 @@ export class EntityRenderer {
         }
       }
       // element trail (follow-through of the release): embers, frost, sparks, bubbles, wisps
-      if (trailLv >= 1 && p.owner && p.y > 0.2 && Math.random() < 0.3 * trailLv) {
-        const L = ELEMENT_FX[this.run.vfx.elementOf(p.owner.def.id)].residue[0];
-        this.run.fx.emit(p.x, p.y, p.z, L, 0, 0, 0.35);
+      if (trailLv >= 1 && p.owner && p.y > 0.2 && Math.random() < 0.15 * trailLv) {
+        const F = ELEMENT_FX[this.run.vfx.elementOf(p.owner.def.id)];
+        // smoke would smear the screen behind fast shots: trails use the light layers only
+        const L = F.residue.find((l) => l.kind !== 'smoke') ?? F.release;
+        this.run.fx.emit(p.x, p.y, p.z, L, 0, 0, 0.3);
       }
     }
   }
