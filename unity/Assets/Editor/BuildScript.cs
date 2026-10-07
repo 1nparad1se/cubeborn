@@ -149,6 +149,8 @@ public static class BuildScript
         PlayerSettings.defaultScreenWidth = 1280;
         PlayerSettings.defaultScreenHeight = 720;
         PlayerSettings.resizableWindow = true;
+        // xvfb has no window manager, so the window never gets focus; keep running anyway
+        PlayerSettings.runInBackground = true;
         PlayerSettings.SetScriptingBackend(NamedBuildTarget.Standalone, ScriptingImplementation.Mono2x);
         var path = OutputPath("build/StandaloneLinux64/Cubeborn.x86_64");
         if (!path.EndsWith(".x86_64")) path += ".x86_64";
