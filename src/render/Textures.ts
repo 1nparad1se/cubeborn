@@ -24,6 +24,32 @@ export function makeBlockTexture(px = 8): THREE.DataTexture {
 }
 
 /**
+ * 16px grayscale texture for hero models: painted 2x2 pixel clusters and faint cloth/metal
+ * streaks without the dark block edges, so characters look crafted rather than stacked cubes.
+ */
+export function makeHeroTexture(): THREE.DataTexture {
+  const px = 16;
+  const data = new Uint8Array(px * px * 4);
+  for (let y = 0; y < px; y++)
+    for (let x = 0; x < px; x++) {
+      const cl = hash2(x >> 1, y >> 1, 41);
+      let v = 0.9 + cl * 0.1 + hash2(x, y, 42) * 0.03;
+      if (hash2(x >> 2, y, 43) > 0.9) v *= 0.95;
+      const i = (y * px + x) * 4;
+      data[i] = data[i + 1] = data[i + 2] = Math.round(Math.min(1, v) * 255);
+      data[i + 3] = 255;
+    }
+  const tex = new THREE.DataTexture(data, px, px, THREE.RGBAFormat);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestMipmapLinearFilter;
+  tex.generateMipmaps = true;
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+/**
  * 16px grayscale texture for terrain blocks: clustered stone-like shading, a soft bevel
  * (light top-left, dark bottom-right) and faint cracks, in the style of hand-painted voxel art.
  */
