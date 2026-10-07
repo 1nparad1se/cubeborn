@@ -90,15 +90,32 @@ jobs:
           path: game
       - name: Capture screenshots
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libglu1-mesa > /dev/null
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libglu1-mesa mesa-vulkan-drivers gdb > /dev/null
           ls -la game
           EXE=$(find game -maxdepth 2 -type f \( -name "*.x86_64" -o -name "Cubeborn" \) | head -1)
           chmod +x "$EXE"
           mkdir -p shots
-          timeout 420 xvfb-run -a -s "-screen 0 1280x720x24" "$EXE" -force-glcore -screen-fullscreen 0 \
-            -screen-width 1280 -screen-height 720 -logFile "$PWD/shots/player.log" -cbshots "$PWD/shots" || echo "exit $?"
+          play() { # $1 = graphics flag, $2 = log name
+            xvfb-run -a -s "-screen 0 1280x720x24" timeout 300 "$EXE" $1 -screen-fullscreen 0 \
+              -screen-width 1280 -screen-height 720 -logFile "$PWD/shots/$2.log" -cbshots "$PWD/shots" &
+            local W=$!
+            sleep 40
+            local P=$(pgrep -f "Cubeborn.x86_64" | head -1)
+            if [ -n "$P" ] && ! grep -q "frame3" "shots/$2.log"; then
+              echo "stalled; dumping stacks of $P"
+              sudo gdb -p "$P" -batch -ex "thread apply all bt 25" > "shots/$2-stacks.txt" 2>&1 || true
+              kill -QUIT "$P" || true
+              sleep 3
+            fi
+            wait $W || echo "exit $?"
+          }
+          play -force-glcore player
+          grep -E "\[cb|rror|xception" shots/player.log | grep -v ALSA | uniq -c | head -60 || true
+          if [ ! -f shots/01_splash.png ]; then
+            play -force-vulkan player-vk
+            grep -E "\[cb|rror|xception" shots/player-vk.log | grep -v ALSA | uniq -c | head -60 || true
+          fi
           ls -la shots
-          grep -iE "\[cb|error|exception|shader" shots/player.log | head -120 || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:

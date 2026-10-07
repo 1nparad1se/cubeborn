@@ -45,7 +45,7 @@ public static class BuildScript
         PlayerSettings.SetUseDefaultGraphicsAPIs(BuildTarget.Android, false);
         PlayerSettings.SetGraphicsAPIs(BuildTarget.Android, new[] { UnityEngine.Rendering.GraphicsDeviceType.OpenGLES3, UnityEngine.Rendering.GraphicsDeviceType.Vulkan });
         PlayerSettings.SetUseDefaultGraphicsAPIs(BuildTarget.StandaloneLinux64, false);
-        PlayerSettings.SetGraphicsAPIs(BuildTarget.StandaloneLinux64, new[] { UnityEngine.Rendering.GraphicsDeviceType.OpenGLCore });
+        PlayerSettings.SetGraphicsAPIs(BuildTarget.StandaloneLinux64, new[] { UnityEngine.Rendering.GraphicsDeviceType.OpenGLCore, UnityEngine.Rendering.GraphicsDeviceType.Vulkan });
         CreateMaterials();
         PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.Android, "com.cubeborn.unity");
         PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.iOS, "com.cubeborn.unity");
