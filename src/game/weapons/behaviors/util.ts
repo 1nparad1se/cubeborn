@@ -122,11 +122,12 @@ export function hitLine(run: Run, w: WeaponInstance, x0: number, z0: number, x1:
   return n;
 }
 
-export function explosionFx(run: Run, x: number, z: number, r: number, color: number, shake = 0.12) {
+export function explosionFx(run: Run, x: number, z: number, r: number, color: number, shake = 0.12, weaponId?: string) {
   run.fx.burst(x, 0.5, z, color, Math.min(40, 10 + r * 6), 3 + r * 2, 0.2, 0.55, 'glow');
   run.fx.burst(x, 0.4, z, 0x2a2a2a, 6, 2, 0.3, 0.8, 'smoke');
   run.fx.light(x, z, color, 3, r * 3.5, 0.3);
   const e = run.effects.add('flash', x, z, 0.3, color);
   e.r = r;
   if (shake > 0) run.fx.shake(shake);
+  if (weaponId) run.vfx.area(x, z, r, weaponId);
 }

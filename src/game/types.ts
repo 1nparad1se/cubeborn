@@ -1,3 +1,4 @@
+import type { EmitLayer } from '../config/vfx';
 /** Information carried by every instance of player-caused damage. */
 export interface DamageInfo {
   damage: number;
@@ -55,6 +56,10 @@ export interface FxSink {
   light(x: number, z: number, color: number, intensity: number, radius: number, duration: number): void;
   sound(id: string, volume?: number): void;
   vibrate(ms: number): void;
+  /** Directional particle spray (skill VFX); see config/vfx.ts. */
+  emit(x: number, y: number, z: number, layer: EmitLayer, dirX?: number, dirZ?: number, mul?: number): void;
+  /** Visual effects detail: -1 headless, 0 low, 1 medium, 2 high. */
+  level(): number;
 }
 
 export const NullFx: FxSink = {
@@ -65,4 +70,6 @@ export const NullFx: FxSink = {
   light() {},
   sound() {},
   vibrate() {},
+  emit() {},
+  level: () => -1,
 };

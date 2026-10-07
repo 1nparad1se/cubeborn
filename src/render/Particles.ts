@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { ParticleKind } from '../game/types';
+import type { EmitKind, EmitLayer } from '../config/vfx';
 import { InstancedBatch } from './InstancedBatch';
 import { makeGlowMaterial, makeVoxelMaterial } from './Materials';
 import { buildVoxelGeometry } from './VoxelGeometry';
@@ -19,8 +20,10 @@ interface P {
   max: number;
   rot: number;
   spin: number;
-  kind: number; // 0 glow, 1 debris, 2 smoke, 3 ambient glow, 4 snow
+  kind: number; // 0 glow, 1 debris, 2 smoke, 3 ambient glow, 4 snow, 5 rain, 6 spark, 7 ember, 8 shard, 9 bubble, 10 wisp, 11 gather
 }
+
+const EMIT_KIND: Record<EmitKind, number> = { glow: 0, debris: 1, smoke: 2, spark: 6, ember: 7, shard: 8, bubble: 9, wisp: 10, gather: 11 };
 
 export type AmbientKind = 'spores' | 'fireflies' | 'dust' | 'embers' | 'snow' | 'motes' | 'rain';
 
@@ -74,6 +77,61 @@ export class Particles {
       p.rot = Math.random() * 6;
       p.spin = (Math.random() - 0.5) * 12;
       p.kind = k;
+    }
+  }
+
+  /**
+   * Skill VFX spray: `count` particles of one style sprayed in a cone of half-angle `spread` around
+   * (dirX, dirZ) (all around when the direction is zero). Each particle picks a colour between
+   * `color` and `color2`. 'gather' particles start `speed` units away and converge on the point.
+   */
+  emit(x: number, y: number, z: number, L: EmitLayer, dirX: number, dirZ: number, mul: number) {
+    const count = Math.round(L.count * mul + Math.random() * 0.5);
+    if (count <= 0) return;
+    const k = EMIT_KIND[L.kind];
+    const c2 = L.color2 ?? L.color;
+    const r1 = ((L.color >> 16) & 255) / 255;
+    const g1 = ((L.color >> 8) & 255) / 255;
+    const b1 = (L.color & 255) / 255;
+    const r2 = ((c2 >> 16) & 255) / 255;
+    const g2 = ((c2 >> 8) & 255) / 255;
+    const b2 = (c2 & 255) / 255;
+    const directed = dirX !== 0 || dirZ !== 0;
+    const base = directed ? Math.atan2(dirZ, dirX) : 0;
+    for (let i = 0; i < count; i++) {
+      if (this.n >= this.max) return;
+      const p = this.list[this.n++];
+      const a = directed ? base + (Math.random() * 2 - 1) * L.spread : Math.random() * Math.PI * 2;
+      const t = Math.random();
+      p.r = r1 + (r2 - r1) * t;
+      p.g = g1 + (g2 - g1) * t;
+      p.b = b1 + (b2 - b1) * t;
+      p.size = L.size * (0.65 + Math.random() * 0.7);
+      p.life = p.max = L.life * (0.7 + Math.random() * 0.6);
+      p.rot = Math.random() * 6;
+      p.kind = k;
+      if (k === 11) {
+        // converge from a ring around the point
+        const d = L.speed * (0.7 + Math.random() * 0.6);
+        const oy = (Math.random() - 0.3) * d * 0.8;
+        p.x = x + Math.cos(a) * d;
+        p.z = z + Math.sin(a) * d;
+        p.y = y + oy;
+        p.vx = -Math.cos(a) * d / p.life;
+        p.vz = -Math.sin(a) * d / p.life;
+        p.vy = -oy / p.life;
+        p.spin = 0;
+        continue;
+      }
+      const sp = L.speed * (0.4 + Math.random() * 0.6);
+      p.x = x;
+      p.y = y;
+      p.z = z;
+      p.vx = Math.cos(a) * sp;
+      p.vz = Math.sin(a) * sp;
+      p.vy = (L.up ?? 0) * (0.5 + Math.random() * 0.7) + (k === 1 ? 2 + Math.random() * L.speed : k === 2 ? 0.4 + Math.random() * 0.6 : (Math.random() - 0.4) * sp * 0.4);
+      // wisps curl: spin is their turn rate
+      p.spin = k === 10 ? (Math.random() < 0.5 ? -1 : 1) * (4 + Math.random() * 4) : (Math.random() - 0.5) * 12;
     }
   }
 
@@ -215,6 +273,74 @@ export class Particles {
             const sp = 0.12 + (1 - p.life / 0.18) * 0.18;
             this.glow.pushFast(p.x, p.y, p.z, 0.785, sp, 0.02, 0.22, 0.26, 0.3);
           } else this.glow.pushFast(p.x, p.y, p.z, 0.785, p.size, 0.55, 0.2, 0.24, 0.3);
+          break;
+        }
+        case 6: {
+          // spark streak stretched along its velocity
+          p.vx *= 1 - dt * 5;
+          p.vz *= 1 - dt * 5;
+          p.vy -= dt * 7;
+          const v = Math.hypot(p.vx, p.vz);
+          const len = p.size * 1.5 + v * 0.035;
+          const b = 1.6 * k;
+          this.glow.pushAxis(p.x, p.y, p.z, Math.atan2(-p.vz, p.vx), len, p.size * 0.6, p.size * 0.6, p.r * b, p.g * b, p.b * b);
+          break;
+        }
+        case 7: {
+          // ember: drifts up with a sway and flickers out
+          p.vx *= 1 - dt * 2.5;
+          p.vz *= 1 - dt * 2.5;
+          p.vy = Math.max(p.vy - dt * 0.6, 0.3);
+          p.x += Math.sin(p.rot * 1.7 + p.life * 9) * dt * 0.4;
+          const fl = (0.7 + 0.3 * Math.sin(p.life * 40 + p.rot * 5)) * Math.min(1, k * 1.6) * 1.4;
+          const s = p.size * (0.4 + k * 0.6);
+          this.glow.pushFast(p.x, p.y, p.z, p.rot, s, s, p.r * fl, p.g * fl, p.b * fl);
+          break;
+        }
+        case 8: {
+          // ice shard: tall crystal that falls, bounces once and melts
+          p.vy -= dt * 16;
+          if (p.y < p.size * 0.8) {
+            p.y = p.size * 0.8;
+            p.vy *= -0.3;
+            p.vx *= 0.5;
+            p.vz *= 0.5;
+            p.spin *= 0.5;
+          }
+          const b = 1.2 * Math.min(1, k * 2.5);
+          this.glow.pushAxis(p.x, p.y, p.z, p.rot, p.size * 0.55, p.size * 1.7, p.size * 0.55, p.r * b, p.g * b, p.b * b);
+          break;
+        }
+        case 9: {
+          // bubble: rises slowly, swells, then pops
+          p.vx *= 1 - dt * 4;
+          p.vz *= 1 - dt * 4;
+          p.vy = Math.max(0.25, p.vy - dt * 0.5);
+          const s = p.size * (k < 0.12 ? 1.8 - k * 4 : 0.6 + (1 - k) * 0.9);
+          const b = k < 0.12 ? k * 8 : 0.95;
+          this.glow.pushFast(p.x, p.y, p.z, p.rot, s, s, p.r * b, p.g * b, p.b * b);
+          break;
+        }
+        case 10: {
+          // wisp: curls around while drifting
+          const ca = Math.cos(p.spin * dt);
+          const sa = Math.sin(p.spin * dt);
+          const vx = p.vx * ca - p.vz * sa;
+          p.vz = p.vx * sa + p.vz * ca;
+          p.vx = vx;
+          p.vx *= 1 - dt * 1.2;
+          p.vz *= 1 - dt * 1.2;
+          p.vy *= 1 - dt;
+          const s = p.size * (0.3 + k * 0.9);
+          const b = 1.3 * Math.sin(k * Math.PI);
+          this.glow.pushFast(p.x, p.y, p.z, p.rot, s, s, p.r * b, p.g * b, p.b * b);
+          break;
+        }
+        case 11: {
+          // gather: brightens as it converges
+          const g = 0.4 + (1 - k) * 1.3;
+          const s = p.size * (0.5 + (1 - k) * 0.7);
+          this.glow.pushFast(p.x, p.y, p.z, p.rot, s, s, p.r * g, p.g * g, p.b * g);
           break;
         }
       }

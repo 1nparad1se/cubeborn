@@ -1,3 +1,4 @@
+import { ELEMENT_FX, VFX } from '../config/vfx';
 import { DAY_NIGHT } from '../config/dayNight';
 import { BALANCE } from '../config/balance';
 import * as THREE from 'three';
@@ -294,6 +295,17 @@ export class EntityRenderer {
       let sy = s;
       let y = e.y;
       let flash = Math.min(1, e.flash * 6);
+      let ex = e.x;
+      let ez = e.z;
+      if (e.hitT > 0 && e.dying === 0) {
+        // hit reaction: squash and a small recoil along the blow
+        const k = e.hitT / 0.16;
+        s *= 1 + VFX.hitSquash * 0.6 * k;
+        sy *= 1 - VFX.hitSquash * k;
+        const rk = Math.sin(k * Math.PI) * VFX.hitRecoil * Math.min(1, 1.2 - e.kbResist);
+        ex += e.hitDx * rk;
+        ez += e.hitDz * rk;
+      }
       if (e.dying > 0) {
         const k = e.dying / 0.28;
         sy = s * k;
@@ -349,7 +361,7 @@ export class EntityRenderer {
       }
       if (mb) {
         const fi = frames > 1 && e.freezeT <= 0 ? Math.floor(e.anim * 1.2) & 1 : 0;
-        mb.frames[fi].pushFast(e.x, y, e.z, e.yaw, s, sy, r, g, bl, flash);
+        mb.frames[fi].pushFast(ex, y, ez, e.yaw, s, sy, r, g, bl, flash);
       } else {
         this.glowBox.push(e.x, 0.6, e.z, 0, 0.8 * s, 1.2 * s, 0.8 * s, 0xff00ff);
       }
@@ -416,6 +428,7 @@ export class EntityRenderer {
     const px = run.player.x;
     const pz = run.player.z;
     let lights = 0;
+    const trailLv = run.fx.level();
     for (const p of run.projectiles.list) {
       if (!p.active || !visible(p.x, p.z)) continue;
       const model = PROJECTILE_MODELS[p.vis];
@@ -448,6 +461,11 @@ export class EntityRenderer {
           lights++;
           this.lights.request(p.x, 1, p.z, p.color, 0.8, 5, px, pz);
         }
+      }
+      // element trail (follow-through of the release): embers, frost, sparks, bubbles, wisps
+      if (trailLv >= 1 && p.owner && p.y > 0.2 && Math.random() < 0.3 * trailLv) {
+        const L = ELEMENT_FX[this.run.vfx.elementOf(p.owner.def.id)].residue[0];
+        this.run.fx.emit(p.x, p.y, p.z, L, 0, 0, 0.35);
       }
     }
   }

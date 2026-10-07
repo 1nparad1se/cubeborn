@@ -267,7 +267,7 @@ registerBehavior('pool', {
 function bombBlast(w: WeaponInstance, run: Run, x: number, z: number, scale: number) {
   const r = w.p('radius', 2.4) * w.area(run) * scale;
   hitCircle(run, w, x, z, r, scale < 1 ? 0.5 : 1);
-  explosionFx(run, x, z, r, 0xff9b3d, scale < 1 ? 0.05 : 0.18);
+  explosionFx(run, x, z, r, 0xff9b3d, scale < 1 ? 0.05 : 0.18, w.def.id);
   run.fx.sound('explosion', scale < 1 ? 0.3 : 0.6);
 }
 registerBehavior('lob', {
@@ -348,7 +348,7 @@ registerBehavior('mine', {
       if (p.a <= 0) {
         const r = w.p('radius', 2.2) * w.area(run);
         hitCircle(run, w, p.x, p.z, r);
-        explosionFx(run, p.x, p.z, r, w.def.color, 0.1);
+        explosionFx(run, p.x, p.z, r, w.def.color, 0.1, w.def.id);
         run.fx.sound('explosion', 0.45);
         if (w.evo) {
           // chain reaction
@@ -404,7 +404,7 @@ registerBehavior('meteor', {
     if (t >= 1) {
       const r = w.p('radius', 2.8) * w.area(run);
       hitCircle(run, w, p.a, p.b, r);
-      explosionFx(run, p.a, p.b, r, w.def.color, 0.3);
+      explosionFx(run, p.a, p.b, r, w.def.color, 0.3, w.def.id);
       run.fx.burst(p.a, 0.3, p.b, 0x5a4a3a, 14, 5, 0.25, 0.8, 'debris');
       run.fx.sound('explosion', 0.7);
       return false;

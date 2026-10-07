@@ -293,6 +293,12 @@ export class Renderer {
       },
       sound: hooks.sound,
       vibrate: hooks.vibrate,
+      emit(x, y, z, layer, dirX = 0, dirZ = 0, mul = 1) {
+        self.particles?.emit(x, y, z, layer, dirX, dirZ, mul * self.particleMul);
+      },
+      level() {
+        return self.s.effects === 'low' ? 0 : self.s.effects === 'medium' ? 1 : 2;
+      },
     };
   }
 

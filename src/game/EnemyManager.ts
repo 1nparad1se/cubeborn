@@ -238,6 +238,7 @@ export class EnemyManager {
       this.updateStatus(e, dt);
       if (!e.active || e.dying > 0) continue;
       if (e.flash > 0) e.flash -= dt;
+      if (e.hitT > 0) e.hitT -= dt;
       if (e.touchCd > 0) e.touchCd -= dt;
       if (e.awakeT > 0) e.awakeT -= dt;
 

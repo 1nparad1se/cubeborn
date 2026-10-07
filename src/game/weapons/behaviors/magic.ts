@@ -14,7 +14,7 @@ function strikeAt(w: WeaponInstance, run: Run, x: number, z: number) {
   ef.z2 = z - 2;
   ef.y = 12;
   ef.w = 0.25;
-  explosionFx(run, x, z, r, w.def.color, 0.05);
+  explosionFx(run, x, z, r, w.def.color, 0.05, w.def.id);
   run.fx.sound('zap', 0.5);
 }
 

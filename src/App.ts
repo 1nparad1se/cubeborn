@@ -51,6 +51,12 @@ class ProxyFx implements FxSink {
   vibrate(ms: number) {
     this.target.vibrate(ms);
   }
+  emit(...a: Parameters<FxSink['emit']>) {
+    this.target.emit(...a);
+  }
+  level() {
+    return this.target.level();
+  }
 }
 
 type Mode = 'splash' | 'menu' | 'run' | 'results';

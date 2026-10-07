@@ -79,7 +79,7 @@ function fireballBlast(w: WeaponInstance, run: Run, p: Projectile) {
   p.a = 1;
   const r = w.p('radius', 1.8) * w.area(run);
   hitCircle(run, w, p.x, p.z, r);
-  explosionFx(run, p.x, p.z, r, 0xff8a2a, 0.08);
+  explosionFx(run, p.x, p.z, r, 0xff8a2a, 0.08, w.def.id);
   run.fx.sound('fire', 0.5);
   if (w.evo) {
     const pool = run.projectiles.spawn(w, p.x, p.z, 0, 0, 3 * run.player.stats.duration, 'firepool', 0xff7a1a);
@@ -192,7 +192,7 @@ registerBehavior('radial', {
     if (!w.evo) return;
     const r = w.p('radius', 1.8) * w.area(run);
     hitCircle(run, w, e.x, e.z, r, 0.5);
-    explosionFx(run, e.x, e.z, r, 0xffa04a, 0);
+    explosionFx(run, e.x, e.z, r, 0xffa04a, 0, w.def.id);
   },
 });
 

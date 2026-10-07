@@ -25,6 +25,7 @@ import { Spawner } from './Spawner';
 import { resolveStats, sumMods } from './Stats';
 import type { Terrain } from './Terrain';
 import { makeDamage, type FxSink } from './types';
+import { Vfx } from './Vfx';
 import { WeaponSystem, type WeaponInstance } from './weapons/Weapon';
 import { WaveDirector, type RunMode, type Wave, type WaveScale } from './Waves';
 import { MapFeatures } from './MapFeatures';
@@ -100,6 +101,7 @@ export class Run {
   readonly allies: Allies;
   readonly effects = new Effects();
   readonly combat: Combat;
+  readonly vfx: Vfx;
   readonly weapons: WeaponSystem;
   readonly passives = new Passives();
   readonly leveling: Leveling;
@@ -153,6 +155,7 @@ export class Run {
     this.mode = o.mode ?? 'campaign';
     this.waves = new WaveDirector(this, this.mode);
     this.dayNight = new DayNight(this, o.settings.dayLength ?? 0);
+    this.vfx = new Vfx(this);
     this.waveScale = this.waves.scale();
     this.terrain = generateTerrain(o.map, this.seed);
     this.nav = new NavField(this.terrain);
@@ -242,6 +245,7 @@ export class Run {
         for (const t of due) t.fn();
       }
     }
+    this.vfx.update(dt);
     if (!p.dead) {
       this.spawner.update(dt);
       this.features.update(dt);

@@ -1,4 +1,5 @@
 import { WALLS } from '../../config/walls';
+import { VFX } from '../../config/vfx';
 import type { WeaponDef, WeaponStats } from '../../data/types';
 import { WEAPON_BY_ID, WEAPON_MAX_LEVEL } from '../../data/weapons';
 import type { Enemy } from '../Enemy';
@@ -177,14 +178,26 @@ export class WeaponSystem {
     const run = this.run;
     for (const w of this.list) {
       w.behavior.update?.(w, run, dt);
+      const before = w.cdT;
       w.cdT -= dt;
+      // anticipation: energy gathers just before a slow weapon fires
+      if (before > VFX.windupLead && w.cdT <= VFX.windupLead && w.cdT > 0 && w.cooldown(run) >= VFX.windupMinCooldown) run.vfx.windup(w);
       if (w.cdT <= 0) {
         w.cdT += w.cooldown(run);
         if (w.cdT < 0) w.cdT = w.cooldown(run);
         w.behavior.fire(w, run);
         if (w.def.id === this.heroWeapon || w.def.id === this.heroEvolved) this.heroAttackCue(w);
+        this.releaseFx(w);
       }
     }
+  }
+
+  /** Release beat of the skill VFX, aimed where the weapon just fired (undirected weapons skip it). */
+  private releaseFx(w: WeaponInstance) {
+    const run = this.run;
+    if (UNDIRECTED.has(w.def.behavior) || w.cooldown(run) < VFX.windupMinCooldown * 0.5) return;
+    if (w.aimAt === run.time) run.vfx.release(w, w.aimX, w.aimZ);
+    else run.vfx.release(w, run.player.fx, run.player.fz);
   }
 
   /**

@@ -114,6 +114,37 @@ export class InstancedBatch {
     if (this.flash) (this.flash.array as Float32Array)[i] = flash;
   }
 
+  /** Yaw-only instance with independent scale per axis (streaks and shards). */
+  pushAxis(x: number, y: number, z: number, yaw: number, sx: number, sy: number, sz: number, r: number, g: number, b: number) {
+    this.ensure();
+    const i = this.count++;
+    const a = this.mesh.instanceMatrix.array as Float32Array;
+    const o = i * 16;
+    const cy = Math.cos(yaw);
+    const sn = Math.sin(yaw);
+    a[o] = cy * sx;
+    a[o + 1] = 0;
+    a[o + 2] = -sn * sx;
+    a[o + 3] = 0;
+    a[o + 4] = 0;
+    a[o + 5] = sy;
+    a[o + 6] = 0;
+    a[o + 7] = 0;
+    a[o + 8] = sn * sz;
+    a[o + 9] = 0;
+    a[o + 10] = cy * sz;
+    a[o + 11] = 0;
+    a[o + 12] = x;
+    a[o + 13] = y;
+    a[o + 14] = z;
+    a[o + 15] = 1;
+    const c = this.mesh.instanceColor!.array as Float32Array;
+    c[i * 3] = r;
+    c[i * 3 + 1] = g;
+    c[i * 3 + 2] = b;
+    if (this.flash) (this.flash.array as Float32Array)[i] = 0;
+  }
+
   end() {
     this.mesh.count = this.count;
     if (this.count > 0) {

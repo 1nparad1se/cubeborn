@@ -61,6 +61,7 @@ export class Combat {
       e.burnT = Math.max(e.burnT, info.burnDur * st.duration);
     }
     if (run.settings.damageNumbers) run.fx.number(e.x, e.z, dmg, crit);
+    run.vfx.impact(e, info.weaponId, dmg, crit, dirX || e.x - run.player.x, dirZ || e.z - run.player.z);
     run.hitSoundBudget++;
     if (e.hp <= 0) this.killEnemy(e);
     return dmg;

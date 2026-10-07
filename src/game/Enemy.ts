@@ -70,6 +70,10 @@ export class Enemy {
   dire = 0;
   /** Part of a night elite pack. */
   nightPack = false;
+  /** Hit reaction (VFX): time left and the direction the last hit pushed toward. */
+  hitT = 0;
+  hitDx = 0;
+  hitDz = 0;
 
   constructor(index: number) {
     this.index = index;
@@ -112,6 +116,9 @@ export class Enemy {
     this.awakeT = 0;
     this.dire = 0;
     this.nightPack = false;
+    this.hitT = 0;
+    this.hitDx = 0;
+    this.hitDz = 0;
   }
 
   get alive(): boolean {
