@@ -125,6 +125,11 @@ export class App implements MenuApi {
     this.renderer.setShowcase(modelId);
   }
 
+  private backdropPaused = false;
+  setBackdropPaused(v: boolean) {
+    this.backdropPaused = v;
+  }
+
   setMenuShift(v: number) {
     this.renderer.menuShift = v;
   }
@@ -512,7 +517,7 @@ export class App implements MenuApi {
       run.hitSoundBudget = run.killSoundBudget = run.xpSoundBudget = 0;
       audio.setIntensity(Math.min(1, run.enemies.aliveCount / 250));
       void this.hintActive;
-    } else {
+    } else if (!this.backdropPaused || this.mode !== 'menu') {
       this.renderer.frame(realDt);
     }
   };

@@ -307,7 +307,10 @@ export class HeroAnimator {
       if (a.firedEvents < 0) a.firedEvents = evs.length;
     }
     a.lastLocal = local;
-    while (a.firedEvents < evs.length && evs[a.firedEvents].t <= local) this.onEvent?.(evs[a.firedEvents++].ev);
+    while (a.firedEvents < evs.length && evs[a.firedEvents].t <= local) {
+      const ev = evs[a.firedEvents++].ev;
+      this.onEvent?.(ev);
+    }
     while (a.firedShow < shows.length && shows[a.firedShow].t <= local) {
       const s = shows[a.firedShow++];
       this.rig.show(s.grp, s.on);

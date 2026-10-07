@@ -8,6 +8,10 @@ import { buildVoxelGeometry } from './VoxelGeometry';
 import { makeVoxelMaterial, makeGlowMaterial } from './Materials';
 import { ArticulatedModel } from './ArticulatedModel';
 import type { LightPool } from './LightPool';
+import { heroRig } from '../models/heroRigs';
+import { HeroRig } from './rig/HeroRig';
+import { HeroAnimator } from './rig/Animator';
+import { makeHeroTexture } from './Textures';
 
 const TAU = Math.PI * 2;
 
@@ -35,7 +39,14 @@ export class EntityRenderer {
   private group = new THREE.Group();
   private voxMat: THREE.MeshLambertMaterial;
   private models = new Map<string, ModelBatches>();
-  private hero: ArticulatedModel;
+  private hero: ArticulatedModel | null = null;
+  private rig: HeroRig | null = null;
+  private anim: HeroAnimator | null = null;
+  private heroTex: THREE.Texture | null = null;
+  private cues = { attack: 0, hit: 0, ability: 0, level: 1, revive: 0 };
+  private lastAttack = -9;
+  private heroYaw = 0;
+  private victoryPlayed = false;
   private bossModels = new Map<string, ArticulatedModel>();
   private shadows: InstancedBatch;
   private glowBox: InstancedBatch;
@@ -60,9 +71,20 @@ export class EntityRenderer {
     scene.add(this.group);
     this.voxMat = makeVoxelMaterial({ map: blockTex, instanced: true });
     this.enemyShadows = quality === 'high';
-    const heroModel = getModel(run.hero.model) ?? getModel(run.hero.id)!;
-    this.hero = new ArticulatedModel(heroModel, blockTex, quality !== 'low');
-    this.group.add(this.hero.root);
+    const rigDef = heroRig(run.hero.model) ?? heroRig(run.hero.id);
+    if (rigDef) {
+      this.heroTex = makeHeroTexture();
+      this.rig = new HeroRig(rigDef, this.heroTex, { shadows: quality !== 'low', rim: 0.45 });
+      this.anim = new HeroAnimator(this.rig);
+      this.anim.onEvent = (ev) => this.onHeroEvent(ev);
+      this.group.add(this.rig.root);
+      const c = run.player.cues;
+      this.cues = { attack: c.attack, hit: c.hit, ability: c.ability, level: run.player.level, revive: 0 };
+    } else {
+      const heroModel = getModel(run.hero.model) ?? getModel(run.hero.id)!;
+      this.hero = new ArticulatedModel(heroModel, blockTex, quality !== 'low');
+      this.group.add(this.hero.root);
+    }
 
     const shadowMat = new THREE.MeshBasicMaterial({ color: 0x000000, map: blobTex, transparent: true, opacity: 0.45, depthWrite: false });
     this.shadows = new InstancedBatch(flatPlane(), shadowMat, this.group, 512);
@@ -132,17 +154,21 @@ export class EntityRenderer {
   // ---------------------------------------------------------------- hero
   private drawHero(dt: number, time: number) {
     const p = this.run.player;
-    const h = this.hero;
-    const sp = Math.hypot(p.vx, p.vz);
-    this.heroWalk += dt * (4 + sp * 2.2);
-    h.root.position.set(p.x, 0, p.z);
-    const yaw = Math.atan2(p.fx, p.fz);
-    h.root.rotation.y += angleDelta(h.root.rotation.y, yaw) * Math.min(1, dt * 14);
-    const blink = p.invulnT > 0 && Math.floor(time * 20) % 2 === 0;
-    h.pose({ walk: this.heroWalk, moving: Math.min(1, sp / 2), attack: Math.max(0, p.attackPulse) / 0.12, cast: 0, time, flash: p.hurtT > 0 ? p.hurtT * 3 : blink ? 0.35 : 0 });
-    if (p.dead) {
-      h.root.rotation.z = Math.min(Math.PI / 2, h.root.rotation.z + dt * 5);
-    } else h.root.rotation.z = 0;
+    if (this.rig && this.anim) this.drawHeroRig(dt, time);
+    else if (this.hero) {
+      const h = this.hero;
+      const sp = Math.hypot(p.vx, p.vz);
+      this.heroWalk += dt * (4 + sp * 2.2);
+      h.root.position.set(p.x, 0, p.z);
+      const yaw = Math.atan2(p.fx, p.fz);
+      h.root.rotation.y += angleDelta(h.root.rotation.y, yaw) * Math.min(1, dt * 14);
+      const blink = p.invulnT > 0 && Math.floor(time * 20) % 2 === 0;
+      h.pose({ walk: this.heroWalk, moving: Math.min(1, sp / 2), attack: Math.max(0, p.attackPulse) / 0.12, cast: 0, time, flash: p.hurtT > 0 ? p.hurtT * 3 : blink ? 0.35 : 0 });
+      if (p.dead) h.root.rotation.z = Math.min(Math.PI / 2, h.root.rotation.z + dt * 5);
+      else h.root.rotation.z = 0;
+    }
+    // hero-coloured ring keeps the hero easy to find in a crowd
+    if (!p.dead) this.glowRingThin.push(p.x, 0.04, p.z, 0, 0.78, 1, 0.78, this.run.hero.color, 0, 0, 0, 0.55);
     this.shadows.push(p.x, 0.03, p.z, 0, 1.3, 1, 1.3);
     // buffs
     if (p.buffs.aegis > 0) this.glowRing.push(p.x, 0.9, p.z, time * 2, 1.2, 1, 1.2, 0xffe080, 0, 0, 0, 0.6);
@@ -152,6 +178,78 @@ export class EntityRenderer {
     if (p.buffs.frenzy > 0) this.glowDisc.push(p.x, 0.05, p.z, 0, 2.2, 1, 2.2, 0xff9a3a, 0, 0, 0, 0.45);
     // hero always carries a soft light so darkness stays readable
     this.lights.request(p.x, 2.2, p.z, 0xffe6c0, this.run.weather.darkness > 0 ? 1.4 : 0.55, 9, p.x, p.z);
+  }
+
+  /** Drives the articulated hero: locomotion from velocity, actions from gameplay cues. */
+  private drawHeroRig(dt: number, time: number) {
+    const run = this.run;
+    const p = run.player;
+    const rig = this.rig!;
+    const a = this.anim!;
+    // animation runs on real time slowed a touch when the game is slowed, never frozen by hit-stop
+    const adt = run.state === 'playing' || run.state === 'dead' || run.state === 'victory' ? dt : 0;
+    rig.root.position.set(p.x, 0, p.z);
+    const yaw = Math.atan2(p.fx, p.fz);
+    const dy = angleDelta(this.heroYaw, yaw) * Math.min(1, adt * 14);
+    this.heroYaw += dy;
+    rig.root.rotation.y = this.heroYaw;
+    const sp = p.dead ? 0 : Math.hypot(p.vx, p.vz);
+    const cs = Math.cos(this.heroYaw);
+    const sn = Math.sin(this.heroYaw);
+    a.speed = sp;
+    a.fwd = p.vx * sn + p.vz * cs;
+    a.side = p.vx * cs - p.vz * sn;
+    a.turn = adt > 0 ? Math.max(-3, Math.min(3, dy / adt / 4)) : 0;
+    // gameplay cues
+    const c = p.cues;
+    if (p.dead) {
+      if (!a.dead.value) a.play('death');
+    } else {
+      if (a.dead.value) {
+        a.reset();
+        this.cues.revive++;
+      }
+      if (run.state === 'victory' && !this.victoryPlayed) {
+        this.victoryPlayed = true;
+        a.play('victory', { force: true });
+      }
+      if (c.hit !== this.cues.hit) {
+        // hit direction in model space (pointing from the attacker to the hero)
+        const hx = c.hitX * cs - c.hitZ * sn;
+        const hz = c.hitX * sn + c.hitZ * cs;
+        a.hit(hx, hz);
+      }
+      if (p.level > this.cues.level && run.state === 'playing') {
+        this.cues.level = p.level;
+        a.play('levelup');
+      } else if (c.ability !== this.cues.ability) a.play('ability');
+      else if (c.attack !== this.cues.attack && time - this.lastAttack > 0.55) {
+        this.lastAttack = time;
+        a.play('attack');
+      }
+    }
+    this.cues.attack = c.attack;
+    this.cues.hit = c.hit;
+    this.cues.ability = c.ability;
+    a.update(adt);
+    const blink = p.invulnT > 0 && !p.dead && Math.floor(time * 20) % 2 === 0;
+    rig.flash.value = p.hurtT > 0 ? p.hurtT * 3 : blink ? 0.3 : 0;
+  }
+
+  private tipPos = new THREE.Vector3();
+  private onHeroEvent(ev: string) {
+    const run = this.run;
+    const p = run.player;
+    const col = run.hero.color;
+    this.rig!.tip.getWorldPosition(this.tipPos);
+    const t = this.tipPos;
+    if (ev === 'impulse') run.fx.burst(t.x, t.y, t.z, col, 6, 2.5, 0.1, 0.25, 'glow');
+    else if (ev === 'charge') run.fx.burst(t.x, t.y, t.z, col, 3, 0.8, 0.08, 0.3, 'glow');
+    else if (ev === 'levelup') {
+      run.fx.burst(p.x, 0.3, p.z, 0xffe080, 26, 5, 0.14, 0.7, 'glow');
+      run.fx.light(p.x, p.z, 0xffe080, 3, 6, 0.5);
+    } else if (ev === 'ability') run.fx.burst(p.x, 1.0, p.z, col, 18, 4, 0.13, 0.5, 'glow');
+    else if (ev === 'death') run.fx.burst(p.x, 0.4, p.z, col, 30, 4, 0.16, 0.9, 'debris');
   }
 
   // ---------------------------------------------------------------- enemies
@@ -527,7 +625,9 @@ export class EntityRenderer {
   dispose() {
     for (const b of this.models.values()) for (const f of b.frames) f.dispose();
     for (const m of this.bossModels.values()) m.dispose();
-    this.hero.dispose();
+    this.hero?.dispose();
+    this.rig?.dispose();
+    this.heroTex?.dispose();
     this.group.parent?.remove(this.group);
   }
 }

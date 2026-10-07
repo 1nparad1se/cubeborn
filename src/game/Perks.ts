@@ -25,6 +25,7 @@ export class Perks {
       if (this.shieldT >= 10) {
         this.shieldT = 0;
         p.shield = true;
+        p.cues.ability++;
         run.fx.burst(p.x, 1, p.z, 0x8ad0ff, 10, 2, 0.12, 0.4, 'glow');
       }
     }
@@ -48,6 +49,7 @@ export class Perks {
           from = { x: e.x, z: e.z };
         }
         run.fx.sound('zap', 0.4);
+        if (seen.size > 0) p.cues.ability++;
       }
     }
   }
@@ -67,6 +69,7 @@ export class Perks {
       this.dmg.damage = 8 + run.player.level * 0.8;
       run.allies.spawn(e.x, e.z, 10, 6, this.dmg, 0.6, 'ally_risen', -1, 0.9);
       this.raised++;
+      run.player.cues.ability++;
     }
     if (this.id === 'volatile' && e.poisonT > 0) {
       this.dmg.damage = 6 + run.player.level * 1.5;
@@ -81,7 +84,10 @@ export class Perks {
   }
 
   onDodge() {
-    if (this.id === 'wind_way') this.run.player.burstT = 1.5;
+    if (this.id === 'wind_way') {
+      this.run.player.burstT = 1.5;
+      this.run.player.cues.ability++;
+    }
   }
 
   onShieldBreak() {

@@ -36,6 +36,8 @@ export class Player {
   moving = false;
   anim = 0;
   attackPulse = 0;
+  /** Animation cues for the renderer: each counter ticks when the event happens. */
+  cues = { attack: 0, hit: 0, hitX: 0, hitZ: 0, ability: 0 };
   buffs: Buffs = { fury: 0, haste: 0, aegis: 0, frenzy: 0 };
   /** Bastion perk shield. */
   shield = false;
@@ -164,6 +166,9 @@ export class Player {
     const dmg = Math.max(BALANCE.armorMin, raw - this.stats.armor);
     this.hp -= dmg;
     this.hurtT = 0.25;
+    this.cues.hit++;
+    this.cues.hitX = source ? this.x - source.x : 0;
+    this.cues.hitZ = source ? this.z - source.z : 0;
     if (!ignoreInvuln) this.invulnT = BALANCE.hurtInvuln;
     run.stats.damageTaken += dmg;
     run.fx.number(this.x, this.z, dmg, false, 0xff4040);
@@ -185,6 +190,7 @@ export class Player {
       run.fx.light(this.x, this.z, 0xffa040, 5, 10, 1);
       run.fx.sound('revive');
       run.fx.text(this.x, this.z, run.tr('revived'), 0xffc060);
+      this.cues.ability++;
       // clear nearby threats
       run.hazards.clearNear(this.x, this.z, 8);
       run.enemies.forEachInRadius(this.x, this.z, 6, (e) => {

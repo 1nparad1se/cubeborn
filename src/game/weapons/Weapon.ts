@@ -115,7 +115,14 @@ export class WeaponSystem {
   readonly list: WeaponInstance[] = [];
   private nextSource = 1;
 
-  constructor(private run: Run) {}
+  /** The hero's starting weapon and its evolution drive the hero's attack animation. */
+  private heroWeapon: string;
+  private heroEvolved: string;
+
+  constructor(private run: Run) {
+    this.heroWeapon = run.hero.startWeapon;
+    this.heroEvolved = WEAPON_BY_ID[run.hero.startWeapon]?.evolution?.into ?? '';
+  }
 
   has(id: string): boolean {
     return this.list.some((w) => w.def.id === id);
@@ -162,6 +169,7 @@ export class WeaponSystem {
         w.cdT += w.cooldown(run);
         if (w.cdT < 0) w.cdT = w.cooldown(run);
         w.behavior.fire(w, run);
+        if (w.def.id === this.heroWeapon || w.def.id === this.heroEvolved) run.player.cues.attack++;
       }
     }
   }

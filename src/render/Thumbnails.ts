@@ -2,7 +2,10 @@ import * as THREE from 'three';
 import { getModel, PROJECTILE_MODELS, PICKUP_MODELS } from '../models';
 import { buildVoxelGeometry } from './VoxelGeometry';
 import { makeVoxelMaterial } from './Materials';
-import { makeBlockTexture } from './Textures';
+import { makeBlockTexture, makeHeroTexture } from './Textures';
+import { heroRig } from '../models/heroRigs';
+import { HeroRig } from './rig/HeroRig';
+import { HeroAnimator } from './rig/Animator';
 
 let gl: THREE.WebGLRenderer | null = null;
 let scene: THREE.Scene;
@@ -42,6 +45,13 @@ export function modelThumb(id: string, opts: { silhouette?: boolean } = {}): str
   const key = id + (opts.silhouette ? ':s' : '');
   const hit = cache.get(key);
   if (hit) return hit;
+  const rd = heroRig(id);
+  if (rd) {
+    if (!init() || !gl) return '';
+    const url = rigThumb(id, !!opts.silhouette);
+    cache.set(key, url);
+    return url;
+  }
   const model = getModel(id) ?? PROJECTILE_MODELS[id] ?? PICKUP_MODELS[id];
   if (!model || !init() || !gl) return '';
   const geo = buildVoxelGeometry(model, { frame: -1 });
@@ -68,6 +78,35 @@ export function modelThumb(id: string, opts: { silhouette?: boolean } = {}): str
   geo.dispose();
   if (opts.silhouette) (mat as THREE.Material).dispose();
   cache.set(key, url);
+  return url;
+}
+
+let heroTex: THREE.Texture | null = null;
+
+/** Articulated heroes are posed in their idle stance and framed full height. */
+function rigThumb(id: string, silhouette: boolean): string {
+  heroTex ??= makeHeroTexture();
+  const rig = new HeroRig(heroRig(id)!, heroTex, { silhouette, rim: 0.3 });
+  const anim = new HeroAnimator(rig);
+  anim.update(0.016);
+  const pivot = new THREE.Group();
+  pivot.add(rig.root);
+  pivot.rotation.y = -0.45;
+  scene.add(pivot);
+  pivot.updateMatrixWorld(true);
+  const bb = new THREE.Box3().setFromObject(rig.root);
+  const center = bb.getCenter(new THREE.Vector3());
+  const size = bb.getSize(new THREE.Vector3());
+  rig.root.position.sub(center);
+  const r = Math.max(size.x, size.y, size.z) * 0.56 + 0.04;
+  const dist = r / Math.tan((camera.fov * Math.PI) / 360);
+  camera.position.set(0, dist * 0.22, dist);
+  camera.lookAt(0, 0, 0);
+  gl!.setClearColor(0x000000, 0);
+  gl!.render(scene, camera);
+  const url = gl!.domElement.toDataURL('image/png');
+  scene.remove(pivot);
+  rig.dispose();
   return url;
 }
 

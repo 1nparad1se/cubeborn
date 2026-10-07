@@ -18,6 +18,7 @@ import { PERM_UPGRADES } from '../data/upgrades';
 import { ACHIEVEMENTS } from '../data/achievements';
 import type { AchievementDef, UnlockRef, WeaponDef } from '../data/types';
 import { settingsPanel } from './Settings';
+import { viewerScreen } from './ViewerScreen';
 
 export interface MenuApi {
   profile: Profile;
@@ -32,14 +33,16 @@ export interface MenuApi {
   setMenuShift(v: number): void;
   applySettings(): void;
   resetProgress(): void;
+  /** Stops drawing the 3D menu backdrop while a screen with its own 3D view is open. */
+  setBackdropPaused(v: boolean): void;
   version: string;
 }
 
-type ScreenId = 'main' | 'heroes' | 'maps' | 'weapons' | 'collection' | 'upgrades' | 'achievements' | 'settings';
+type ScreenId = 'main' | 'heroes' | 'viewer' | 'maps' | 'weapons' | 'collection' | 'upgrades' | 'achievements' | 'settings';
 
 const RARITY_COLOR: Record<string, string> = { common: '#c8ccd8', uncommon: '#6aff8a', rare: '#5ab4ff', epic: '#c77dff', legendary: '#ffb02e' };
 /** Tabs along the top bar of the menu screens (Q / E cycle through them). */
-const TABS: ScreenId[] = ['heroes', 'weapons', 'collection', 'upgrades', 'achievements', 'settings'];
+const TABS: ScreenId[] = ['viewer', 'weapons', 'maps', 'collection', 'upgrades', 'achievements', 'settings'];
 /** Screens where the 3D showcase stays visible on the right instead of an item preview. */
 const SHOWCASE: ScreenId[] = ['main', 'heroes', 'maps'];
 
@@ -55,6 +58,10 @@ export class Menus {
   private selHero = 'bram';
   private selMap = 'blightwood';
   private selDiff = 'normal';
+  /** Set by the Endless button: the map screen opens with Endless mode picked. */
+  private presetMode: RunMode | null = null;
+  /** Tear-down for the open screen (the character viewer owns a WebGL context). */
+  private cleanup: (() => void) | null = null;
 
   constructor(parent: HTMLElement, private api: MenuApi) {
     this.root = h('div.menus');
@@ -75,6 +82,7 @@ export class Menus {
     if (document.querySelector('.modal-back')) return;
     const id = this.current;
     if (id === 'main') return;
+    if (id === 'viewer' && e.code !== 'KeyQ' && e.code !== 'KeyE') return;
     if (e.code === 'KeyQ' || e.code === 'KeyE') {
       e.preventDefault();
       this.cycleTab(e.code === 'KeyQ' ? -1 : 1);
@@ -121,19 +129,26 @@ export class Menus {
     this.api.sfx('uiBack');
     this.stack.pop();
     if (!this.stack.length) this.stack.push('main');
-    if (this.stack[this.stack.length - 1] === 'main') this.selectMode = false;
+    if (this.stack[this.stack.length - 1] === 'main') {
+      this.selectMode = false;
+      this.presetMode = null;
+    }
     this.render();
   }
 
   home() {
     this.stack = ['main'];
     this.selectMode = false;
+    this.presetMode = null;
     this.render();
   }
 
   render() {
     const id = this.stack[this.stack.length - 1] ?? 'main';
+    this.cleanup?.();
+    this.cleanup = null;
     clear(this.root);
+    this.api.setBackdropPaused(id === 'viewer');
     const el = this.build(id);
     el.classList.add('screen', 'screen-' + id);
     this.root.appendChild(el);
@@ -147,6 +162,13 @@ export class Menus {
         return this.mainScreen();
       case 'heroes':
         return this.heroScreen();
+      case 'viewer': {
+        const v = viewerScreen(this.api.profile, this.selHero, (x) => this.api.sfx(x), (hid) => {
+          if (this.api.profile.isHeroUnlocked(hid)) this.selHero = hid;
+        });
+        this.cleanup = () => v.dispose();
+        return this.frame(v.el);
+      }
       case 'maps':
         return this.mapScreen();
       case 'weapons':
@@ -239,14 +261,23 @@ export class Menus {
         }, '.primary.big'),
         h(
           'div.main-grid',
-          this.btn(t('menu_heroes'), () => {
+          this.btn(t('menu_characters'), () => {
             this.selectMode = false;
-            this.open('heroes');
+            this.open('viewer');
           }),
           this.btn(t('menu_weapons'), () => this.open('weapons')),
+          this.btn(t('menu_maps'), () => {
+            this.selectMode = false;
+            this.open('maps');
+          }),
           this.btn(t('menu_collection'), () => this.open('collection')),
           this.btn(t('menu_upgrades'), () => this.open('upgrades')),
           this.btn(`${t('menu_achievements')} ${p.data.achievements.length}/${newAch}`, () => this.open('achievements')),
+          this.btn(t('menu_endless'), () => {
+            this.selectMode = true;
+            this.presetMode = 'endless';
+            this.open('heroes');
+          }),
           this.btn(t('menu_settings'), () => this.open('settings')),
         ),
       ),
@@ -281,6 +312,10 @@ export class Menus {
         ...statModLines(hero.stats).map((s) => h('div.mod', s)),
         unlocked ? null : h('div.locked-note', '🔒 ' + (ach ? t('unlock_by', { name: L(ach.name), desc: L(ach.desc) }) : t('locked'))),
       );
+      put(detail, this.btn(t('cv_open'), () => {
+        this.selHero = id;
+        this.open('viewer');
+      }));
       if (this.selectMode && unlocked) put(detail, this.btn(t('btn_next'), () => this.open('maps'), '.primary'));
     };
     for (const hero of HEROES) {
@@ -312,7 +347,7 @@ export class Menus {
   private mapScreen(): HTMLElement {
     const p = this.api.profile;
     if (!p.isMapUnlocked(this.selMap)) this.selMap = MAPS[0].id;
-    this.selMode = p.data.last.mode ?? 'campaign';
+    this.selMode = this.presetMode ?? p.data.last.mode ?? 'campaign';
     const list = h('div.map-list');
     const detail = h('div.detail.map-detail');
     const show = (id: string) => {

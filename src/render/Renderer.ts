@@ -11,6 +11,10 @@ import { Overlay } from './Overlay';
 import { LightPool } from './LightPool';
 import { makeBlobTexture, makeBlockTexture } from './Textures';
 import { ArticulatedModel } from './ArticulatedModel';
+import { heroRig } from '../models/heroRigs';
+import { HeroRig } from './rig/HeroRig';
+import { HeroAnimator } from './rig/Animator';
+import { makeHeroTexture } from './Textures';
 import { getModel } from '../models';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
@@ -76,6 +80,10 @@ export class Renderer {
   private torchTerrain: Terrain | null = null;
   // menu diorama
   private showModel: ArticulatedModel | null = null;
+  private showRig: HeroRig | null = null;
+  private showAnim: HeroAnimator | null = null;
+  private showActT = 4;
+  private heroTex: THREE.Texture | null = null;
   private showId = '';
   private menuMode = false;
   private menuAngle = 0;
@@ -313,8 +321,19 @@ export class Renderer {
   }
 
   setShowcase(modelId: string) {
-    if (this.showId === modelId && this.showModel) return;
+    if (this.showId === modelId && (this.showModel || this.showRig)) return;
     this.clearShowcase();
+    const rd = heroRig(modelId);
+    if (rd) {
+      this.heroTex ??= makeHeroTexture();
+      this.showRig = new HeroRig(rd, this.heroTex, { shadows: true, rim: 0.4 });
+      this.showAnim = new HeroAnimator(this.showRig);
+      this.showAnim.play('victory', { force: true });
+      this.showActT = 3.5;
+      this.showId = modelId;
+      this.scene.add(this.showRig.root);
+      return;
+    }
     const m = getModel(modelId);
     if (!m) return;
     this.showModel = new ArticulatedModel(m, this.blockTex, true);
@@ -323,6 +342,13 @@ export class Renderer {
   }
 
   private clearShowcase() {
+    if (this.showRig) {
+      this.scene.remove(this.showRig.root);
+      this.showRig.dispose();
+      this.showRig = null;
+      this.showAnim = null;
+      this.showId = '';
+    }
     if (this.showModel) {
       this.scene.remove(this.showModel.root);
       this.showModel.dispose();
@@ -374,6 +400,18 @@ export class Renderer {
       m.root.position.set(c, 0, c);
       m.root.rotation.y = this.menuAngle + Math.sin(this.time * 0.6) * 0.4;
       m.pose({ walk: 0, moving: 0, attack: 0, cast: Math.max(0, Math.sin(this.time * 0.7)) * 0.3, time: this.time, flash: 0 });
+    }
+    if (this.showRig && this.showAnim) {
+      const r = this.showRig;
+      r.root.position.set(c, 0, c);
+      r.root.rotation.y = this.menuAngle + Math.sin(this.time * 0.6) * 0.4;
+      // the menu hero idles and now and then shows off an attack
+      this.showActT -= dt;
+      if (this.showActT <= 0) {
+        this.showActT = 6 + Math.random() * 4;
+        this.showAnim.play(Math.random() < 0.7 ? 'attack' : 'ability');
+      }
+      this.showAnim.update(Math.min(dt, 0.05));
     }
     this.lights.request(c + 1.5, 2.5, c + 1.5, 0xffc070, 1.2, 9, c, c);
   }
