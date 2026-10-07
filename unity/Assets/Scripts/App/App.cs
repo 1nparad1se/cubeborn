@@ -795,6 +795,7 @@ namespace Cubeborn
             Debug.Log($"[cbshots] paused={paused} state={run.state} modal={modals.IsOpen}");
             yield return new WaitForSecondsRealtime(1f);
             Shot("07_pause");
+            yield return new WaitForSecondsRealtime(0.3f); // the capture happens at end of frame
             TogglePause();
             run.debugGod = false;
             FinishRun(false);
