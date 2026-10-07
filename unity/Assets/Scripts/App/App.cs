@@ -139,7 +139,8 @@ namespace Cubeborn
             modalLayer = Kit.Stretch(Kit.Rect(safeRoot, "modalLayer"));
 
             Phase("synth");
-            Synth.Create();
+            if (Arg0("-cbnoaudio")) AudioListener.volume = 0;
+            else Synth.Create();
             ApplySettings();
             Phase("backdrop");
             ShowMenuBackdrop();
@@ -178,6 +179,8 @@ namespace Cubeborn
             th.IsBackground = true;
             th.Start();
         }
+
+        static bool Arg0(string name) => Array.IndexOf(Environment.GetCommandLineArgs(), name) >= 0;
 
         static string Arg(string name)
         {
