@@ -47,6 +47,8 @@ jobs:
           key: Library-${{ matrix.platform }}-${{ hashFiles('unity/Packages/manifest.json', 'unity/ProjectSettings/ProjectVersion.txt') }}
           restore-keys: Library-${{ matrix.platform }}-
       - uses: game-ci/unity-builder@v4
+        # commits tagged [shots-only] rebuild just the desktop player for the screenshot check
+        if: matrix.platform == 'StandaloneLinux64' || !contains(github.event.head_commit.message, '[shots-only]')
         with:
           projectPath: unity
           targetPlatform: ${{ matrix.platform }}
@@ -93,10 +95,10 @@ jobs:
           EXE=$(find game -maxdepth 2 -type f \( -name "*.x86_64" -o -name "Cubeborn" \) | head -1)
           chmod +x "$EXE"
           mkdir -p shots
-          timeout 300 xvfb-run -a -s "-screen 0 1280x720x24" "$EXE" -force-glcore -screen-fullscreen 0 \
+          timeout 420 xvfb-run -a -s "-screen 0 1280x720x24" "$EXE" -force-glcore -screen-fullscreen 0 \
             -screen-width 1280 -screen-height 720 -logFile "$PWD/shots/player.log" -cbshots "$PWD/shots" || echo "exit $?"
           ls -la shots
-          grep -iE "error|exception|shader" shots/player.log | head -60 || true
+          grep -iE "\[cb|error|exception|shader" shots/player.log | head -120 || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:

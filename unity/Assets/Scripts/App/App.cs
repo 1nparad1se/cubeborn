@@ -18,6 +18,7 @@ namespace Cubeborn
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         static void Start()
         {
+            Debug.Log("[cb] boot");
             if (UnityEngine.Object.FindAnyObjectByType<App>() != null) return;
             var go = new GameObject("Cubeborn");
             UnityEngine.Object.DontDestroyOnLoad(go);
@@ -79,6 +80,7 @@ namespace Cubeborn
             if (shotsDir != null)
             {
                 Directory.CreateDirectory(shotsDir);
+                StartWatchdog();
                 Application.logMessageReceived += (msg, stack, type) =>
                 {
                     if (type == LogType.Error || type == LogType.Exception || type == LogType.Assert)
@@ -86,6 +88,7 @@ namespace Cubeborn
                 };
             }
 
+            Phase("content");
             Content.Loader = name => Resources.Load<TextAsset>("Data/" + name).text;
             Content.Load();
             I18n.Load(Resources.Load<TextAsset>("Data/i18n").text);
@@ -104,20 +107,25 @@ namespace Cubeborn
             };
             SaveIO.SystemLang = Application.systemLanguage == SystemLanguage.Russian || Application.systemLanguage == SystemLanguage.Ukrainian || Application.systemLanguage == SystemLanguage.Belarusian ? "ru" : "en";
             SaveIO.Mobile = Application.isMobilePlatform;
+            Phase("profile");
             prof = new Profile();
             var s = prof.data.settings;
             I18n.SetLang(s.lang);
 
+            Phase("kit");
             Kit.Init();
             BuildCanvas();
+            Phase("view");
             view = new GameView(s.quality);
             view.overlay = new Overlay(overlayRoot);
             input = new GameInput(inputRoot);
             input.onPause = TogglePause;
             input.onBack = HandleBack;
+            Phase("hud");
             hud = new Hud(safeRoot);
             hud.onPause = TogglePause;
             hud.SetVisible(false);
+            Phase("menus");
             menus = new Menus(safeRoot, this);
             menus.SetVisible(false);
             modals = new RunModals(safeRoot, this);
@@ -130,14 +138,41 @@ namespace Cubeborn
             tl.childForceExpandWidth = tl.childForceExpandHeight = false;
             modalLayer = Kit.Stretch(Kit.Rect(safeRoot, "modalLayer"));
 
+            Phase("synth");
             Synth.Create();
             ApplySettings();
+            Phase("backdrop");
             ShowMenuBackdrop();
             Splash();
             lastW = Screen.width;
             lastH = Screen.height;
             ApplySafeArea();
+            Phase("ready");
             if (shotsDir != null) StartCoroutine(Shots());
+        }
+
+        // CI diagnostics: a watchdog thread reports where the main thread is if it stalls.
+        static volatile string phase = "boot";
+        static volatile int frameNo;
+
+        void Phase(string p)
+        {
+            phase = p;
+            if (shotsDir != null) Debug.Log($"[cb] {p} t={Time.realtimeSinceStartup:0.00}");
+        }
+
+        void StartWatchdog()
+        {
+            var th = new System.Threading.Thread(() =>
+            {
+                while (true)
+                {
+                    System.Threading.Thread.Sleep(5000);
+                    Debug.Log($"[cb] watchdog phase={phase} frame={frameNo}");
+                }
+            });
+            th.IsBackground = true;
+            th.Start();
         }
 
         static string Arg(string name)
@@ -592,6 +627,8 @@ namespace Cubeborn
 
         void Update()
         {
+            frameNo++;
+            if (shotsDir != null && frameNo <= 3) Phase("frame" + frameNo);
             Timers.Tick();
             if (Screen.width != lastW || Screen.height != lastH || Screen.safeArea != lastSafe)
             {
