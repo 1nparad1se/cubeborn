@@ -176,9 +176,11 @@ export class DayNight {
     const idx = this.period === 'night' || this.period === 'dawn' ? this.nights : this.nights + 1;
     const R = DAY_NIGHT.nightRamp;
     const ramp = R[Math.min(R.length - 1, Math.max(0, idx - 1))];
-    const nd = 1 + (m.night.damage - 1) * ramp;
-    const nh = 1 + (m.night.hp - 1) * ramp;
-    const ns = 1 + (m.night.speed - 1) * ramp;
+    // the ramp tempers night empowerment only; daylight creatures are weak from the first dusk
+    const up = (v: number) => (v > 1 ? 1 + (v - 1) * ramp : v);
+    const nd = up(m.night.damage);
+    const nh = up(m.night.hp);
+    const ns = up(m.night.speed);
     const blood = this.bloodMoon && (kind === 'nocturnal' || kind === 'sleeper' || kind === 'shifter') ? 1 + (DAY_NIGHT.events.bloodMoonMul - 1) * n : 1;
     const mn = DAY_NIGHT.minMul;
     out.damage = Math.max(mn.damage, (m.day.damage + (nd - m.day.damage) * n) * blood);
