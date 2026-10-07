@@ -1,3 +1,5 @@
+import { dev } from './dev/DevMode';
+import { DevUi } from './dev/DevUi';
 import { Run } from './game/Run';
 import { NullFx, type FxSink } from './game/types';
 import { Renderer } from './render/Renderer';
@@ -96,6 +98,7 @@ export class App implements MenuApi {
     this.modals = new RunModals(root, this);
     this.toasts = h('div.toasts');
     root.appendChild(this.toasts);
+    this.initDev();
     this.applySettings();
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
@@ -128,6 +131,40 @@ export class App implements MenuApi {
   private backdropPaused = false;
   setBackdropPaused(v: boolean) {
     this.backdropPaused = v;
+  }
+
+  // ------------------------------------------------------------------ developer mode
+  private devUi: DevUi | null = null;
+
+  /** Developer tools exist only when the build allows them; they start switched off. */
+  private initDev() {
+    dev.attach(this.profile);
+    if (!dev.available) return;
+    const kb = () => this.profile.data.settings.keybinds;
+    this.devUi = new DevUi(this.root, () => ({ panel: kb().devPanel[0] ?? '', debug: kb().devDebug[0] ?? '', god: kb().devGod[0] ?? '' }));
+    dev.onProfileChange = () => {
+      if (this.mode === 'menu') this.menus.render();
+    };
+    this.input.onDev = (a) => {
+      if (!dev.enabled || !this.devUi) return false;
+      if (a === 'devPanel') this.devUi.setPanel(!dev.panelOpen);
+      else if (a === 'devDebug') this.devUi.setDebug(!dev.debugOpen);
+      else dev.toggle('god');
+      return true;
+    };
+  }
+
+  setDevMode(on: boolean) {
+    dev.setEnabled(on);
+    if (this.run) dev.applyRun(this.run);
+  }
+
+  openDevPanel() {
+    this.devUi?.setPanel(true);
+  }
+
+  toggleDevDebug() {
+    this.devUi?.setDebug(!dev.debugOpen);
   }
 
   setMenuShift(v: number) {
@@ -271,6 +308,8 @@ export class App implements MenuApi {
     fx.target = this.renderer.startRun(run, { sound: (id, v) => audio.play(id, v), vibrate: () => {} });
     this.renderer.setZoom(p.data.settings.cameraZoom);
     this.run = run;
+    dev.applyRun(run);
+    this.devUi?.setInRun(true);
     this.finished = false;
     this.paused = false;
     this.hud.bestWave = mode === 'endless' ? (p.data.endless[mapId]?.wave ?? 0) : 0;
@@ -456,6 +495,8 @@ export class App implements MenuApi {
   private exitToMenu() {
     this.renderer.endRun();
     this.run = null;
+    dev.endRun();
+    this.devUi?.setInRun(false);
     this.showMenuBackdrop();
     this.toMenu();
   }
@@ -496,18 +537,22 @@ export class App implements MenuApi {
     } else if (!this.profile.data.settings.vsync && now - this.last < 1) return;
     const realDt = Math.min(0.1, Math.max(0, (now - this.last) / 1000));
     this.last = now;
+    dev.tick(realDt);
+    this.devUi?.frame(realDt);
     const dt = Math.min(realDt, 1 / 20);
     const run = this.run;
     if (run && this.mode !== 'menu') {
       const [sx, sz] = this.input.update();
       const [ix, iz] = this.renderer.rig.screenToWorld(sx, sz);
-      const active = !this.paused && !this.modals.isOpen && run.state === 'playing';
-      if (active || run.ending) {
-        // fixed-ish sub-steps keep collisions stable on slow frames
-        const steps = dt > 1 / 40 ? 2 : 1;
-        for (let i = 0; i < steps; i++) run.update(dt / steps, ix, iz);
+      const devHold = dev.enabled && dev.paused;
+      const active = !this.paused && !this.modals.isOpen && run.state === 'playing' && !devHold;
+      const sdt = dev.enabled ? dt * dev.timeScale : dt;
+      if (active || (run.ending && !devHold)) {
+        // fixed-ish sub-steps keep collisions stable on slow frames (and at developer time scales)
+        const steps = Math.max(1, Math.ceil(sdt / (1 / 40)));
+        for (let i = 0; i < steps; i++) run.update(sdt / steps, ix, iz);
       }
-      const visDt = active || run.ending ? dt * (run.ending ? run.timeScale : 1) : 0;
+      const visDt = active || (run.ending && !devHold) ? sdt * (run.ending ? run.timeScale : 1) : 0;
       this.renderer.frame(visDt);
       this.hud.update(run, visDt, realDt);
       // aggregated per-frame sounds

@@ -176,6 +176,7 @@ export class Player {
     run.fx.vibrate(25);
     run.fx.shake(0.15);
     if (source && this.stats.thorns > 0) run.combat.applyRaw(source, raw * this.stats.thorns * this.stats.might, 0xb0e070, 'thorns');
+    if (run.debug.infHp) this.hp = this.stats.maxHp;
     if (this.hp <= 0) this.onLethal();
     return dmg;
   }
@@ -214,6 +215,7 @@ export class Player {
   }
 
   addXp(v: number) {
+    v *= this.run.debug.xpMul;
     this.xp += v * this.stats.growth;
     this.run.stats.xpGained += v * this.stats.growth;
     while (this.xp >= this.xpNext) {

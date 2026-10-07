@@ -174,6 +174,29 @@ export class WeaponSystem {
     }
   }
 
+  // ---- developer tools
+  /** Sets a weapon's level, rebuilding it from level 1 when going down. */
+  devSetLevel(id: string, level: number) {
+    const w = this.get(id);
+    if (!w) return;
+    level = Math.max(1, Math.min(w.maxLevel, level));
+    if (level < w.level) {
+      w.behavior.onRemove?.(w, this.run);
+      const nw = new WeaponInstance(w.def, w.source);
+      nw.kills = w.kills;
+      this.list[this.list.indexOf(w)] = nw;
+      nw.behavior.onAdd?.(nw, this.run);
+      while (nw.level < level) nw.levelUp();
+    } else while (w.level < level) w.levelUp();
+  }
+
+  devRemove(id: string) {
+    const w = this.get(id);
+    if (!w) return;
+    w.behavior.onRemove?.(w, this.run);
+    this.list.splice(this.list.indexOf(w), 1);
+  }
+
   onKill(e: Enemy) {
     for (const w of this.list) w.behavior.onKill?.(w, this.run, e);
   }

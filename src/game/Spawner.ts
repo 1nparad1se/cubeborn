@@ -125,6 +125,33 @@ export class Spawner {
     }
   }
 
+  // ---------------------------------------------------------------- developer tools
+  /** Runs the start-of-wave script for the current wave (after a wave jump). */
+  devWaveStart() {
+    this.onWaveStart(this.run.waves.wave);
+  }
+
+  /** Skips scripted map events that lie before a new game time. */
+  devSkipEventsTo(t: number) {
+    this.eventOffset = this.run.waves.mode === 'endless' ? Math.floor(t / BALANCE.runDuration) * BALANCE.runDuration : 0;
+    this.eventIdx = this.events.findIndex((e) => e.t + this.eventOffset > t);
+    if (this.eventIdx < 0) this.eventIdx = this.events.length;
+  }
+
+  devSpawnBoss(id: string) {
+    this.spawnBoss(id, false, this.run.waves.wave.n, false);
+  }
+
+  /** A pack of elites drawn from the tougher half of the current pool. */
+  devEliteWave(n = 6) {
+    const sorted = [...this.pool].filter((p) => p[1] > 0).sort((a, b) => ENEMY_BY_ID[a[0]].hp - ENEMY_BY_ID[b[0]].hp);
+    const tough = sorted.slice(Math.floor(sorted.length / 2));
+    for (let i = 0; i < n; i++) {
+      const pick = tough[i % Math.max(1, tough.length)]?.[0] ?? sorted[0]?.[0];
+      if (pick) this.spawnOne(pick, this.randomElite());
+    }
+  }
+
   private ring(id: string, n: number, r: number) {
     const run = this.run;
     const p = run.player;

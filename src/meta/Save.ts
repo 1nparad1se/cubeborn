@@ -9,7 +9,7 @@ export type DisplayMode = 'windowed' | 'fullscreen' | 'borderless';
 export type HealthBars = 'off' | 'elites' | 'all';
 
 /** Rebindable actions; each holds up to two KeyboardEvent.code values. */
-export type BindAction = 'up' | 'down' | 'left' | 'right' | 'pause' | 'zoomIn' | 'zoomOut' | 'map';
+export type BindAction = 'up' | 'down' | 'left' | 'right' | 'pause' | 'zoomIn' | 'zoomOut' | 'map' | 'devPanel' | 'devDebug' | 'devGod';
 export type Keybinds = Record<BindAction, string[]>;
 
 export function defaultKeybinds(): Keybinds {
@@ -22,6 +22,9 @@ export function defaultKeybinds(): Keybinds {
     zoomIn: ['Equal', 'NumpadAdd'],
     zoomOut: ['Minus', 'NumpadSubtract'],
     map: ['KeyM', 'Tab'],
+    devPanel: ['F1'],
+    devDebug: ['F2'],
+    devGod: ['F3'],
   };
 }
 

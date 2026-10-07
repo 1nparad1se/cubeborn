@@ -24,6 +24,16 @@ export const RU3: Record<string, string> = {
   anim_death: 'Смерть',
   anim_levelup: 'Уровень',
   anim_victory: 'Победа',
+  settab_developer: 'Разработчик',
+  dev_mode: 'Developer Mode',
+  dev_mode_hint: 'Режим тестирования: читы, спавн, управление волнами и временем',
+  dev_test_note: 'Включено тестовое состояние: разблокировки, монеты и прогресс забегов не попадают в обычное сохранение. Выключение режима, RESET TEST STATE или перезапуск игры возвращают обычные данные. Настройки сохраняются как обычно.',
+  dev_open_panel: 'Developer Tools',
+  dev_debug_info: 'Debug Info',
+  dev_hotkeys: 'Горячие клавиши разработчика',
+  bind_devPanel: 'Панель Developer Tools',
+  bind_devDebug: 'Debug Info',
+  bind_devGod: 'God Mode',
 };
 
 export const EN3: Record<string, string> = {
@@ -51,4 +61,14 @@ export const EN3: Record<string, string> = {
   anim_death: 'Death',
   anim_levelup: 'Level Up',
   anim_victory: 'Victory',
+  settab_developer: 'Developer',
+  dev_mode: 'Developer Mode',
+  dev_mode_hint: 'Testing tools: cheats, spawning, wave and time control',
+  dev_test_note: 'A test state is active: unlocks, coins and run progress never reach your normal save. Turning the mode off, RESET TEST STATE or restarting the game brings the normal data back. Settings still save as usual.',
+  dev_open_panel: 'Developer Tools',
+  dev_debug_info: 'Debug Info',
+  dev_hotkeys: 'Developer hotkeys',
+  bind_devPanel: 'Developer Tools panel',
+  bind_devDebug: 'Debug Info',
+  bind_devGod: 'God Mode',
 };

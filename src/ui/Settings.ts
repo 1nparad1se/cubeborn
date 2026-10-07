@@ -3,6 +3,7 @@ import { t, LANGS, setLang, type Lang } from '../i18n';
 import { keyName } from '../input/Input';
 import { QUALITY_PRESETS, defaultKeybinds, type BindAction, type Quality, type Settings } from '../meta/Save';
 import { confirmBox, type MenuApi } from './Menus';
+import { dev } from '../dev/DevMode';
 
 const RESOLUTIONS: [number, number][] = [
   [1280, 720],
@@ -21,7 +22,7 @@ export function availableResolutions(): string[] {
   return out.length ? out : ['1280x720'];
 }
 
-type Tab = 'video' | 'graphics' | 'gameplay' | 'audio' | 'controls' | 'other';
+type Tab = 'video' | 'graphics' | 'gameplay' | 'audio' | 'controls' | 'other' | 'developer';
 let lastTab: Tab = 'video';
 
 const SUB_KEYS = ['shadows', 'effects', 'particles', 'viewDistance', 'antiAliasing', 'textures', 'postProcessing'] as const;
@@ -91,6 +92,37 @@ export function settingsPanel(api: MenuApi, rerender: () => void, inRun = false)
     { id: 'medium' as const, name: t('q_medium') },
     { id: 'high' as const, name: t('q_high') },
   ];
+
+  /** Two key slots for an action; a key belongs to one action only. */
+  const bindRow = (a: BindAction) => {
+    const all = Object.keys(defaultKeybinds()) as BindAction[];
+    const keys = h('div.binds');
+    for (let slot = 0; slot < 2; slot++) {
+      const code = s.keybinds[a][slot] ?? '';
+      const b = h('button.bind' + (code ? '' : '.empty'), {
+        onclick: () => {
+          api.sfx('ui');
+          b.textContent = t('press_key');
+          b.classList.add('wait');
+          api.captureKey((c) => {
+            if (c !== 'Escape' || a === 'pause') {
+              if (c === 'Backspace' || c === 'Delete') s.keybinds[a].splice(slot, 1);
+              else {
+                for (const other of all) s.keybinds[other] = s.keybinds[other].filter((k) => k !== c);
+                const list = s.keybinds[a];
+                if (slot < list.length) list[slot] = c;
+                else list.push(c);
+              }
+              save();
+            }
+            renderTab();
+          });
+        },
+      }, code ? keyName(code) : '—');
+      keys.append(b);
+    }
+    return row(t('bind_' + a), keys);
+  };
 
   const renderTab = () => {
     clear(body);
@@ -173,36 +205,7 @@ export function settingsPanel(api: MenuApi, rerender: () => void, inRun = false)
         );
         break;
       case 'controls': {
-        const actions: BindAction[] = ['up', 'down', 'left', 'right', 'pause', 'zoomIn', 'zoomOut', 'map'];
-        for (const a of actions) {
-          const keys = h('div.binds');
-          for (let slot = 0; slot < 2; slot++) {
-            const code = s.keybinds[a][slot] ?? '';
-            const b = h('button.bind' + (code ? '' : '.empty'), {
-              onclick: () => {
-                api.sfx('ui');
-                b.textContent = t('press_key');
-                b.classList.add('wait');
-                api.captureKey((c) => {
-                  if (c !== 'Escape' || a === 'pause') {
-                    if (c === 'Backspace' || c === 'Delete') s.keybinds[a].splice(slot, 1);
-                    else {
-                      // a key belongs to one action only
-                      for (const other of actions) s.keybinds[other] = s.keybinds[other].filter((k) => k !== c);
-                      const list = s.keybinds[a];
-                      if (slot < list.length) list[slot] = c;
-                      else list.push(c);
-                    }
-                    save();
-                  }
-                  renderTab();
-                });
-              },
-            }, code ? keyName(code) : '—');
-            keys.append(b);
-          }
-          body.append(row(t('bind_' + a), keys));
-        }
+        for (const a of ['up', 'down', 'left', 'right', 'pause', 'zoomIn', 'zoomOut', 'map'] as BindAction[]) body.append(bindRow(a));
         body.append(
           h('div.set-hint', t('bind_hint')),
           h('div.center', h('button.btn.small', {
@@ -216,6 +219,38 @@ export function settingsPanel(api: MenuApi, rerender: () => void, inRun = false)
         );
         break;
       }
+      case 'developer': {
+        const on = dev.enabled;
+        body.append(
+          toggle(t('dev_mode'), () => dev.enabled, (v) => {
+            api.setDevMode(v);
+            renderTab();
+          }, t('dev_mode_hint')),
+        );
+        if (on) {
+          const k = s.keybinds;
+          body.append(
+            h('div.dev-enabled', '✓ Developer Mode Enabled'),
+            h('div.set-hint', t('dev_test_note')),
+            h(
+              'div.dev-set-btns',
+              h('button.btn.small', { onclick: () => api.openDevPanel() }, `${t('dev_open_panel')} (${keyName(k.devPanel[0] ?? '')})`),
+              h('button.btn.small', { onclick: () => api.toggleDevDebug() }, `${t('dev_debug_info')} (${keyName(k.devDebug[0] ?? '')})`),
+              h('button.btn.small.danger', {
+                onclick: () => {
+                  dev.resetTestState();
+                  renderTab();
+                },
+              }, 'RESET TEST STATE'),
+            ),
+            h('div.set-sub', t('dev_hotkeys')),
+            bindRow('devPanel'),
+            bindRow('devDebug'),
+            bindRow('devGod'),
+          );
+        }
+        break;
+      }
       case 'other':
         body.append(
           inRun ? h('div.set-hint', t('set_reset_in_run')) : row(t('set_reset'), h('button.btn.danger.small', { onclick: (e: MouseEvent) => confirmReset(e, api) }, t('btn_reset'))),
@@ -227,7 +262,9 @@ export function settingsPanel(api: MenuApi, rerender: () => void, inRun = false)
 
   const drawTabs = () => {
     clear(tabs);
-    for (const id of ['video', 'graphics', 'gameplay', 'audio', 'controls', 'other'] as Tab[])
+    const ids: Tab[] = ['video', 'graphics', 'gameplay', 'audio', 'controls', 'other'];
+    if (dev.available) ids.push('developer');
+    for (const id of ids)
       tabs.append(
         h('button.tab' + (lastTab === id ? '.sel' : ''), {
           onclick: () => {

@@ -202,6 +202,13 @@ export class WaveDirector {
     return s;
   }
 
+  /** Developer tools: restarts the clock on wave n (it begins now unless a start is given). */
+  jumpTo(n: number, start = this.run.time) {
+    n = Math.max(1, Math.min(n, this.total === Infinity ? 999 : this.total));
+    this.wave = this.make(n, start);
+    if (this.mode === 'endless') this.rollModifiers(n);
+  }
+
   /** Advances to the next wave when the timer runs out. Returns true when a new wave began. */
   update(): boolean {
     const w = this.wave;

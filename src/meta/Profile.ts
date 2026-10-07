@@ -17,8 +17,15 @@ export class Profile {
     this.data = loadSave();
   }
 
+  /**
+   * Developer test state: while set, `data` is a disposable copy and only the settings
+   * reach storage; everything else on disk stays as it was before developer mode.
+   */
+  testBase: SaveData | null = null;
+
   save(): void {
-    writeSave(this.data);
+    if (this.testBase) writeSave({ ...this.testBase, settings: this.data.settings });
+    else writeSave(this.data);
   }
 
   /** Coalesces frequent writes (e.g. settings sliders). */
@@ -29,6 +36,11 @@ export class Profile {
 
   reset(): void {
     const settings = this.data.settings;
+    if (this.testBase) {
+      this.data = defaultSave();
+      this.data.settings = settings;
+      return;
+    }
     clearSave();
     this.data = defaultSave();
     this.data.settings = settings;

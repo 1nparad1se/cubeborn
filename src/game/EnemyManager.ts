@@ -18,6 +18,8 @@ export class EnemyManager {
   aliveCount = 0;
   /** Seconds of global freeze from the Chrono pickup. */
   frozenAll = 0;
+  /** Total enemies spawned this run (debug info derives the spawn rate from it). */
+  spawned = 0;
   private uidCounter = 1;
 
   constructor(private run: Run, capacity = 1600) {
@@ -63,8 +65,9 @@ export class EnemyManager {
     const curse = r.player.stats.curse;
     const hpMul = opts.noScale ? 1 : tier * r.diff.hp * sc.hp * (1 + (curse - 1) * 0.5);
     const dmgMul = opts.noScale ? 1 : (0.85 + tier * 0.15) * r.diff.damage * sc.damage;
-    e.maxHp = e.hp = Math.max(1, def.hp * hpMul * (opts.hpMul ?? 1));
-    e.damage = def.damage * dmgMul;
+    e.maxHp = e.hp = Math.max(1, def.hp * hpMul * (opts.hpMul ?? 1) * r.debug.enemyHp);
+    e.damage = def.damage * dmgMul * r.debug.enemyDmg;
+    this.spawned++;
     // wave speed-ups mostly affect slow enemies so that fast ones stay outrunnable
     const spBoost = opts.noScale ? 0 : (sc.speed - 1) * Math.min(1, Math.max(0.25, (5.5 - def.speed) / 3));
     e.speed = Math.min(def.speed * r.diff.speed * (1 + spBoost) * (1 + (curse - 1) * 0.25) * (0.92 + Math.random() * 0.16), r.waves.mode === 'endless' ? 7 : 6.2);
@@ -208,6 +211,7 @@ export class EnemyManager {
     }
     this.grid.rebuild(n, this.xs, this.zs, (i) => list[i].alive);
     if (this.frozenAll > 0) this.frozenAll -= dt;
+    if (this.run.debug.freeze) this.frozenAll = Math.max(this.frozenAll, 0.05);
 
     const p = run.player;
     for (let i = 0; i < n; i++) {

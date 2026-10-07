@@ -35,6 +35,10 @@ export interface MenuApi {
   resetProgress(): void;
   /** Stops drawing the 3D menu backdrop while a screen with its own 3D view is open. */
   setBackdropPaused(v: boolean): void;
+  /** Developer mode switch and its tools (Settings → Developer). */
+  setDevMode(on: boolean): void;
+  openDevPanel(): void;
+  toggleDevDebug(): void;
   version: string;
 }
 

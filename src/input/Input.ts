@@ -15,6 +15,8 @@ export class Input {
   /** +1 zoom out, -1 zoom in. */
   onZoom: ((dir: number) => void) | null = null;
   onMap: (() => void) | null = null;
+  /** Developer hotkeys; returns true when developer mode handled the key. */
+  onDev: ((action: 'devPanel' | 'devDebug' | 'devGod') => boolean) | null = null;
   /** Fired when the player first moves (used by the controls hint). */
   onFirstMove: (() => void) | null = null;
   /** While set, the next key press is captured for rebinding instead of played. */
@@ -32,6 +34,15 @@ export class Input {
         return;
       }
       if (e.code === 'Tab' && this.enabled) e.preventDefault();
+      // typing into a text field (developer panel) never drives the game
+      const tg = e.target as HTMLElement | null;
+      if (tg && (tg.tagName === 'INPUT' || tg.tagName === 'SELECT' || tg.tagName === 'TEXTAREA')) return;
+      for (const a of ['devPanel', 'devDebug', 'devGod'] as const) {
+        if (this.is(a, e.code) && !e.repeat && this.onDev?.(a)) {
+          e.preventDefault();
+          return;
+        }
+      }
       if (e.repeat) return;
       // Escape always pauses, whatever the bindings say
       if (e.code === 'Escape' || this.is('pause', e.code)) {
