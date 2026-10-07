@@ -5,7 +5,9 @@ export interface Loc {
   en: string;
 }
 
-export type Rarity = 'common' | 'rare' | 'epic' | 'legendary';
+export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
+
+export const RARITIES: Rarity[] = ['common', 'uncommon', 'rare', 'epic', 'legendary'];
 
 /** Player stat keys. Multiplicative stats are stored as bonus fractions (0.1 = +10%). */
 export type StatKey =

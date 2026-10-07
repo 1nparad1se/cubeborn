@@ -1,48 +1,172 @@
 import { BALANCE } from '../config/balance';
 import { TAU } from '../core/math';
-import { ELITE_IDS, ENEMY_BY_ID, type EliteId } from '../data/enemies';
+import { ELITE_IDS, ENEMIES, ENEMY_BY_ID, type EliteId } from '../data/enemies';
+import { BOSS_BY_ID } from '../data/bosses';
+import { MAPS } from '../data/maps';
 import type { MapEvent, SpawnSegment } from '../data/types';
 import { BossController } from './bosses/Boss';
+import { CAMPAIGN_WAVES, waveDensity, waveScale, type Wave } from './Waves';
 import type { Enemy } from './Enemy';
 import type { Run } from './Run';
 
-/** Time-based enemy waves, scripted map events, bosses and breakable props. */
+const RAIN_STYLE: Record<string, string> = { forest: 'spore', city: 'meteor', catacombs: 'meteor', volcano: 'meteor', tundra: 'ice', ruins: 'arcane' };
+
+/** Wave-driven enemy spawning, scripted map events, bosses and breakable props. */
 export class Spawner {
   private acc = 0;
   private eventIdx = 0;
+  private eventOffset = 0;
   private events: MapEvent[];
-  private midSpawned = false;
-  private bossSpawned = false;
   private propTimer = 0;
-  private rain: { t: number; style: string; radius: number; every: number; acc: number } | null = null;
+  private finalSpawned = false;
+  private rain: { t: number; style: string; radius: number; every: number; acc: number; dmg?: number } | null = null;
+  /** Weighted enemy pool for the current wave. */
+  private pool: [string, number][] = [];
+  /** Endless: enemies borrowed from other maps for the current cycle. */
+  private guests: string[] = [];
 
   constructor(private run: Run) {
     this.events = [...run.map.events].sort((a, b) => a.t - b.t);
   }
 
-  get segment(): SpawnSegment {
+  /** Map pool for a point in the campaign (pools are authored on a 15-minute timeline). */
+  private segmentAt(t: number): SpawnSegment {
     const segs = this.run.map.segments;
     let s = segs[0];
-    for (const g of segs) if (g.t <= this.run.time) s = g;
+    for (const g of segs) if (g.t <= t) s = g;
     return s;
   }
 
   get bossSpawnedFlag() {
-    return this.bossSpawned;
+    return this.finalSpawned;
   }
 
   /** Waves are reduced while a boss fight is underway. */
   private bossDamp(): number {
-    return this.run.bosses.length > 0 ? 0.45 : 1;
+    return this.run.bosses.length > 0 ? 0.55 : 1;
+  }
+
+  /** Builds the enemy pool for a wave, biased by its type. */
+  private buildPool(w: Wave) {
+    const run = this.run;
+    const campaignT = Math.min(840, ((w.start + w.duration * 0.5) / BALANCE.runDuration) * 900);
+    let base: [string, number][];
+    if (run.waves.mode === 'endless' && w.n > CAMPAIGN_WAVES * 0.7) {
+      // late Endless: every enemy of the map mixed, plus guests from other maps
+      const all = new Map<string, number>();
+      for (const seg of run.map.segments) for (const [id, wt] of seg.pool) all.set(id, Math.max(all.get(id) ?? 0, wt));
+      base = [...all.entries()].map(([id, wt]) => [id, wt * run.rng.range(0.5, 1.5)] as [string, number]);
+      if (w.n % 5 === 1 || !this.guests.length) {
+        const others = ENEMIES.filter((e) => e.behavior !== 'prop' && e.id !== 'treasure_sprite' && e.id !== 'shield_crystal' && !all.has(e.id) && !e.id.endsWith('let'));
+        this.guests = [];
+        const k = Math.min(3, 1 + Math.floor((w.n - 20) / 20));
+        for (let i = 0; i < k && others.length; i++) this.guests.push(others.splice(Math.floor(run.rng.next() * others.length), 1)[0].id);
+      }
+      for (const g of this.guests) base.push([g, 2.5]);
+    } else base = this.segmentAt(campaignT).pool.map(([id, wt]) => [id, wt] as [string, number]);
+    const defs = base.map(([id]) => ENEMY_BY_ID[id]).filter(Boolean);
+    const avgHp = defs.reduce((a, d) => a + d.hp, 0) / Math.max(1, defs.length);
+    const avgSp = defs.reduce((a, d) => a + d.speed, 0) / Math.max(1, defs.length);
+    this.pool = base.map(([id, wt]) => {
+      const d = ENEMY_BY_ID[id];
+      if (!d) return [id, 0];
+      let k = 1;
+      if (w.type === 'horde') k = Math.min(3, Math.max(0.25, avgHp / d.hp));
+      else if (w.type === 'fast') k = Math.pow(d.speed / avgSp, 2.5);
+      else if (w.type === 'danger') k = d.behavior === 'ranged' || d.behavior === 'charger' || d.behavior === 'exploder' || d.behavior === 'teleporter' ? 2.6 : 0.8;
+      else if (w.type === 'elite') k = Math.min(2, Math.max(0.5, d.hp / avgHp));
+      return [id, wt * k];
+    });
+  }
+
+  /** Called once at the start of each wave: banners, signature spawns and bosses. */
+  private onWaveStart(w: Wave) {
+    const run = this.run;
+    this.buildPool(w);
+    run.waveScale = run.waves.scale();
+    run.events.emit('wave', w);
+    const s = w.n - 1;
+    const sorted = [...this.pool].filter((p) => p[1] > 0).sort((a, b) => ENEMY_BY_ID[a[0]].hp - ENEMY_BY_ID[b[0]].hp);
+    switch (w.type) {
+      case 'horde': {
+        const weakest = sorted[0]?.[0];
+        if (weakest) this.ring(weakest, Math.min(110, Math.round((18 + s * 2.4) * run.diff.spawn)), 17);
+        break;
+      }
+      case 'fast': {
+        const fastest = [...sorted].sort((a, b) => ENEMY_BY_ID[b[0]].speed - ENEMY_BY_ID[a[0]].speed)[0]?.[0];
+        if (fastest) this.stampede(fastest, Math.min(70, Math.round((12 + s * 1.6) * run.diff.spawn)));
+        break;
+      }
+      case 'elite': {
+        const n = Math.min(6, 1 + Math.floor(s / 7) + (run.diff.elite >= 2 ? 1 : 0));
+        const tough = sorted.slice(Math.floor(sorted.length / 2));
+        for (let i = 0; i < n; i++) {
+          const pick = tough[i % Math.max(1, tough.length)]?.[0] ?? sorted[0]?.[0];
+          if (pick) this.spawnOne(pick, this.randomElite());
+        }
+        break;
+      }
+      case 'danger': {
+        const style = RAIN_STYLE[run.map.generator] ?? 'meteor';
+        const dur = 16;
+        this.rain = { t: dur, style, radius: 1.8, every: dur / Math.min(40, 14 + s * 0.8), acc: 0 };
+        break;
+      }
+    }
+    if (w.boss) {
+      const final = !!w.final;
+      if (final) this.finalSpawned = true;
+      this.spawnBoss(w.boss, final, w.n, !!w.enraged);
+      // escorts
+      const escorts = w.type === 'final' ? 3 : w.enraged ? 2 : 1;
+      const tough = sorted[sorted.length - 1]?.[0];
+      if (tough) for (let i = 0; i < escorts; i++) this.spawnOne(tough, this.randomElite());
+    }
+  }
+
+  private ring(id: string, n: number, r: number) {
+    const run = this.run;
+    const p = run.player;
+    const def = ENEMY_BY_ID[id];
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * TAU;
+      const x = p.x + Math.cos(a) * r;
+      const z = p.z + Math.sin(a) * r;
+      const cx = Math.floor(x);
+      const cz = Math.floor(z);
+      if (def.flying ? run.terrain.blocksFlyer(cx, cz) : run.terrain.blocksWalker(cx, cz)) continue;
+      run.enemies.spawn(def, x, z);
+    }
+  }
+
+  private stampede(id: string, n: number) {
+    const run = this.run;
+    const p = run.player;
+    const def = ENEMY_BY_ID[id];
+    const a = run.rng.next() * TAU;
+    const px = -Math.sin(a);
+    const pz = Math.cos(a);
+    for (let i = 0; i < n; i++) {
+      const off = (i - n / 2) * 0.9;
+      const x = p.x + Math.cos(a) * 18 + px * off;
+      const z = p.z + Math.sin(a) * 18 + pz * off;
+      if (!run.terrain.walkableAt(x, z)) continue;
+      const e = run.enemies.spawn(def, x, z);
+      if (e) e.speed *= 1.25;
+    }
   }
 
   update(dt: number) {
     const run = this.run;
-    const seg = this.segment;
+    if (run.waves.update() || !this.pool.length) this.onWaveStart(run.waves.wave);
+    const sc = run.waveScale;
+    const dens = waveDensity(run.waves.wave.n);
     const curse = run.player.stats.curse;
-    const ramp = Math.min(1, run.time / BALANCE.runDuration);
-    const rate = (seg.rate / 60) * (1 + (BALANCE.spawnRateMul - 1) * ramp) * run.diff.spawn * curse * this.bossDamp();
-    const max = Math.min(BALANCE.hardCap, seg.max * (1 + (BALANCE.spawnMaxMul - 1) * ramp) * run.diff.spawn * curse);
+    // the very first seconds ramp in so the player has a moment to orient
+    const intro = Math.min(1, 0.35 + run.time / 25);
+    const rate = (dens.rate / 60) * sc.rate * run.diff.spawn * curse * this.bossDamp() * intro;
+    const max = Math.min(BALANCE.hardCap, dens.max * sc.max * run.diff.spawn * curse * intro);
     this.acc += rate * dt;
     // catch up faster when the field is nearly empty
     if (run.enemies.aliveCount < max * 0.3) this.acc += rate * dt * 2;
@@ -53,18 +177,14 @@ export class Spawner {
         this.acc = Math.min(this.acc, 1);
         break;
       }
-      const pick = run.rng.weighted(seg.pool, (p) => p[1]);
+      const pick = run.rng.weighted(this.pool, (p) => p[1]);
       if (pick) this.spawnOne(pick[0]);
     }
-    // scripted events
-    while (this.eventIdx < this.events.length && this.events[this.eventIdx].t <= run.time) this.runEvent(this.events[this.eventIdx++]);
-    if (!this.midSpawned && run.time >= run.map.bossTime / 2) {
-      this.midSpawned = true;
-      this.spawnBoss(run.map.midBoss, false);
-    }
-    if (!this.bossSpawned && run.time >= run.map.bossTime) {
-      this.bossSpawned = true;
-      this.spawnBoss(run.map.boss, true);
+    // scripted map events (they repeat every campaign length in Endless)
+    while (this.eventIdx < this.events.length && this.events[this.eventIdx].t + this.eventOffset <= run.time) this.runEvent(this.events[this.eventIdx++]);
+    if (this.eventIdx >= this.events.length && run.waves.mode === 'endless') {
+      this.eventIdx = 0;
+      this.eventOffset += BALANCE.runDuration;
     }
     if (this.rain) this.updateRain(dt);
     this.propTimer -= dt;
@@ -75,10 +195,7 @@ export class Spawner {
   }
 
   private eliteChance(): number {
-    const run = this.run;
-    if (run.time < BALANCE.eliteChanceStart) return 0;
-    const min = (run.time - BALANCE.eliteChanceStart) / 60;
-    return Math.min(0.03, 0.002 + min * BALANCE.eliteChancePerMin) * run.diff.elite;
+    return this.run.waveScale.elite * this.run.diff.elite;
   }
 
   randomElite(): EliteId {
@@ -89,7 +206,7 @@ export class Spawner {
     const run = this.run;
     const def = ENEMY_BY_ID[id];
     if (!def) return null;
-    const pos = this.findSpawnPos(!!def.flying);
+    const pos = this.run.features.spawnPos(!!def.flying) ?? this.findSpawnPos(!!def.flying);
     if (!pos) return null;
     if (elite === undefined) elite = run.rng.chance(this.eliteChance()) ? this.randomElite() : null;
     const e = run.enemies.spawn(def, pos.x, pos.z, { elite });
@@ -130,11 +247,25 @@ export class Spawner {
     e.kx = e.kz = 0;
   }
 
-  private spawnBoss(id: string, final: boolean) {
+  /** Boss health and damage follow the wave curve relative to the wave the boss was tuned for. */
+  private spawnBoss(id: string, final: boolean, wave: number, enraged: boolean) {
     const run = this.run;
+    const def = BOSS_BY_ID[id];
+    if (!def) return;
+    const isFinalType = MAPS.some((m) => m.boss === id);
+    const ref = waveScale(isFinalType ? CAMPAIGN_WAVES : 15);
+    const cur = waveScale(wave);
+    let hpMul = Math.max(0.6, cur.hp / ref.hp);
+    let dmgMul = Math.max(0.7, cur.damage / ref.damage);
+    if (enraged) {
+      hpMul *= 1.25;
+      dmgMul *= 1.15;
+    }
     const pos = this.findSpawnPos(true, 13, 15) ?? { x: run.player.x + 12, z: run.player.z };
-    const b = BossController.spawn(run, id, pos.x, pos.z, final);
+    const b = BossController.spawn(run, id, pos.x, pos.z, final, hpMul, false, dmgMul);
     if (b) {
+      b.enraged = enraged;
+      run.stats.bossesSeen++;
       run.events.emit('bossSpawn', b);
       run.fx.sound('bossRoar');
       run.fx.shake(0.5);
@@ -187,7 +318,7 @@ export class Spawner {
       }
       case 'chest': {
         const pos = this.findSpawnPos(false, 6, 10);
-        if (pos) run.pickups.spawnChest(pos.x, pos.z);
+        if (pos) run.pickups.spawnChest(pos.x, pos.z, 0, 'event');
         break;
       }
       case 'treasure': {
@@ -229,9 +360,13 @@ export class Spawner {
       const d = run.rng.range(0, 9);
       const x = p.x + Math.cos(a) * d + p.vx * 0.6;
       const z = p.z + Math.sin(a) * d + p.vz * 0.6;
-      const dmg = 12 * run.map.tier * run.diff.damage;
+      const dmg = 12 * run.map.tier * run.diff.damage * Math.sqrt(run.waveScale.damage);
       if (r.style === 'spore') run.hazards.zone(x, z, r.radius, 1.3, dmg * 0.6, { pool: 3, color: 0xa04aff });
       else if (r.style === 'arcane') run.hazards.zone(x, z, r.radius, 1.2, dmg, { color: 0x9a6aff });
+      else if (r.style === 'ice') {
+        run.hazards.zone(x, z, r.radius, 1.3, dmg, { color: 0x9adfff });
+        run.spawnFallingRock(x, z, 1.3, 0xcfefff);
+      }
       else {
         run.hazards.zone(x, z, r.radius, 1.3, dmg, { color: 0xff7a1a });
         run.spawnFallingRock(x, z, 1.3, 0xff7a1a);

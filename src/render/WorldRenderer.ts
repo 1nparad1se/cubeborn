@@ -23,6 +23,8 @@ export class WorldRenderer {
   readonly group = new THREE.Group();
   readonly uniforms = { uTime: { value: 0 }, uSurge: { value: 0 }, uFocus: { value: new THREE.Vector3(0, 0, 9999) } };
   private disposables: { dispose(): void }[] = [];
+  /** Block and decor meshes with their chunk centers, for distance culling. */
+  private chunks: { mesh: THREE.Object3D; x: number; z: number }[] = [];
 
   constructor(terrain: Terrain, map: MapDef, blockTex: THREE.Texture, quality: string) {
     this.buildGround(terrain, map);
@@ -162,7 +164,7 @@ if (vWPos.y > 1.2 && pd < 5.0 && vWPos.z > uFocus.z - 0.6) {
     const m4 = new THREE.Matrix4();
     const col = new THREE.Color();
     const pal = map.palette.blocks;
-    const fill = (list: typeof t.blocks, material: THREE.Material, shadows: boolean) => {
+    const fill = (list: typeof t.blocks, material: THREE.Material, shadows: boolean, cx = -1, cz = -1) => {
       if (!list.length) return;
       const mesh = new THREE.InstancedMesh(cube, material, list.length);
       list.forEach((b, i) => {
@@ -181,9 +183,10 @@ if (vWPos.y > 1.2 && pd < 5.0 && vWPos.z > uFocus.z - 0.6) {
       mesh.computeBoundingSphere();
       this.group.add(mesh);
       this.disposables.push(mesh);
+      if (cx >= 0) this.chunks.push({ mesh, x: (cx + 0.5) * CHUNK, z: (cz + 0.5) * CHUNK });
     };
     const shadows = quality !== 'low';
-    for (const list of buckets) fill(list, mat, shadows);
+    buckets.forEach((list, i) => fill(list, mat, shadows, i % chunks, Math.floor(i / chunks)));
     fill(glowBlocks, glowMat, false);
   }
 
@@ -234,8 +237,36 @@ transformed.z += cos(uTime * 1.7 + ph) * 0.08 * position.y * aSway;`,
       this.group.add(mesh);
       this.disposables.push(g, mesh);
     };
-    build(normal, mat);
-    build(glow, glowMat);
+    // decor is split into 32-cell chunks so that far chunks can be culled
+    const DC = 32;
+    const per = Math.ceil(t.size / DC);
+    const bucket = (arr: typeof list) => {
+      const out: (typeof list)[] = Array.from({ length: per * per }, () => []);
+      for (const d of arr) out[Math.min(per - 1, Math.floor(d.z / DC)) * per + Math.min(per - 1, Math.floor(d.x / DC))].push(d);
+      return out;
+    };
+    const before = this.group.children.length;
+    bucket(normal).forEach((arr, i) => {
+      build(arr, mat);
+      if (this.group.children.length > before + this.chunksAdded) this.addChunk(i % per, Math.floor(i / per), DC);
+    });
+    bucket(glow).forEach((arr, i) => {
+      build(arr, glowMat);
+      if (this.group.children.length > before + this.chunksAdded) this.addChunk(i % per, Math.floor(i / per), DC);
+    });
+  }
+
+  private chunksAdded = 0;
+  private addChunk(cx: number, cz: number, size: number) {
+    const mesh = this.group.children[this.group.children.length - 1];
+    this.chunks.push({ mesh, x: (cx + 0.5) * size, z: (cz + 0.5) * size });
+    this.chunksAdded++;
+  }
+
+  /** Hides block/decor chunks farther than radius from the camera target. */
+  cull(x: number, z: number, radius: number) {
+    const r2 = (radius + 24) ** 2;
+    for (const c of this.chunks) c.mesh.visible = (c.x - x) ** 2 + (c.z - z) ** 2 < r2;
   }
 
   update(time: number, surge: number) {

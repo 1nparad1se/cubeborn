@@ -878,7 +878,7 @@ i.ic-skull::after {
   line-height: 1.5;
 }
 
-/* ------------------------------------------------------------------ HUD */
+/* ------------------------------------------------------------------ HUD (PC layout) */
 .hud {
   position: absolute;
   inset: 0;
@@ -891,47 +891,52 @@ i.ic-skull::after {
   left: 0;
   right: 0;
   top: 0;
-  height: calc(14px + var(--sat));
+  height: 16px;
   background: #0b0910;
   border-bottom: 2px solid #000;
 }
 .xp-fill {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 14px;
+  inset: 0;
   background: linear-gradient(#7ae0ff, #3a8adf);
   transform-origin: left;
   transform: scaleX(0);
   transition: transform 0.15s;
 }
-.xp-level {
+.xp-text {
   position: absolute;
-  right: calc(8px + var(--sar));
-  bottom: 2px;
-  font-size: 9px;
+  right: 10px;
+  top: 0;
+  font-size: 8px;
+  line-height: 16px;
   text-shadow: 0 1px 0 #000;
 }
-.hud-top {
-  position: absolute;
-  top: calc(20px + var(--sat));
-  left: calc(10px + var(--sal));
-  right: calc(10px + var(--sar));
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 8px;
-}
 .hud-left {
+  position: absolute;
+  top: 26px;
+  left: 14px;
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 7px;
+  width: 300px;
+}
+.hp-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.lvl-badge {
+  flex: none;
+  font-size: 10px;
+  padding: 6px 7px;
+  background: #13263a;
+  color: #9ae2ff;
+  box-shadow: 0 0 0 2px #0b0910;
 }
 .hp-bar {
   position: relative;
-  width: 150px;
-  height: 14px;
+  flex: 1;
+  height: 20px;
   background: #2a0c12;
   box-shadow: 0 0 0 2px #0b0910;
 }
@@ -948,19 +953,19 @@ i.ic-skull::after {
 .hp-text {
   position: absolute;
   inset: 0;
-  font-size: 7px;
-  line-height: 14px;
+  font-size: 9px;
+  line-height: 20px;
   text-align: center;
   text-shadow: 0 1px 0 #000;
 }
 .slots {
   display: flex;
-  gap: 3px;
+  gap: 4px;
 }
 .slot {
   position: relative;
-  width: 30px;
-  height: 30px;
+  width: 40px;
+  height: 40px;
   background: rgba(10, 8, 16, 0.75);
   box-shadow: 0 0 0 2px #0b0910;
   display: flex;
@@ -968,14 +973,14 @@ i.ic-skull::after {
   justify-content: center;
 }
 .slot img.icon {
-  width: 26px;
-  height: 26px;
+  width: 34px;
+  height: 34px;
 }
 .slot b {
   position: absolute;
   right: -2px;
   bottom: -3px;
-  font-size: 7px;
+  font-size: 8px;
   color: #fff;
   text-shadow:
     1px 1px 0 #000,
@@ -998,12 +1003,12 @@ i.ic-skull::after {
 }
 .slots.passives .slot,
 .slot.small {
-  width: 22px;
-  height: 22px;
+  width: 30px;
+  height: 30px;
 }
 .slot.small img.icon {
-  width: 18px;
-  height: 18px;
+  width: 25px;
+  height: 25px;
 }
 .buffs {
   display: flex;
@@ -1011,8 +1016,8 @@ i.ic-skull::after {
   flex-wrap: wrap;
 }
 .buff {
-  font-size: 7px;
-  padding: 3px 5px;
+  font-size: 8px;
+  padding: 4px 6px;
   background: #0b0910cc;
   border-radius: 2px;
 }
@@ -1028,52 +1033,192 @@ i.ic-skull::after {
 .buff.frenzy {
   color: #ff9a3a;
 }
-.buff.shield {
+.buff.shield,
+.buff.chrono {
   color: #8ad0ff;
 }
-.hud-time {
+.buff.surge {
+  color: #b89aff;
+}
+.buff.debuff {
+  color: #c8c0d8;
+  background: #2a0a14cc;
+}
+.hud-center {
   position: absolute;
+  top: 24px;
   left: 50%;
   transform: translateX(-50%);
-  font-size: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 340px;
+}
+.hud-time {
+  font-size: 20px;
   text-shadow:
     0 3px 0 #000,
     2px 0 0 #000,
     -2px 0 0 #000;
 }
-.hud-time.boss-time {
-  color: var(--red);
-  animation: blink 0.6s steps(2) infinite;
+.wave-panel {
+  --wc: #c8ccd8;
+  width: 100%;
+  background: rgba(10, 8, 16, 0.72);
+  box-shadow:
+    0 0 0 2px #0b0910,
+    inset 0 0 0 1px color-mix(in srgb, var(--wc) 45%, transparent);
+  padding: 7px 10px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
 }
-.hud-right {
+.wave-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.wave-title {
+  font-size: 11px;
+  text-shadow: 0 2px 0 #000;
+}
+.wave-type {
+  font-size: 8px;
+  text-shadow: 0 1px 0 #000;
+}
+.wave-track {
+  position: relative;
+  height: 6px;
+  background: #1a1624;
+  overflow: hidden;
+}
+.wave-fill {
+  position: absolute;
+  inset: 0;
+  background: var(--wc);
+  transform-origin: left;
+  transform: scaleX(0);
+}
+.wave-next {
+  font-family: var(--ui);
+  font-size: 12px;
+  color: var(--dim);
+  text-align: center;
+}
+.wave-strip {
+  display: flex;
+  gap: 2px;
+  justify-content: center;
+}
+.wave-strip:empty {
+  display: none;
+}
+.wave-strip i {
+  width: 8px;
+  height: 8px;
+  background: color-mix(in srgb, var(--wc) 55%, #000);
+  opacity: 0.85;
+}
+.wave-strip i.boss {
+  width: 10px;
+  height: 10px;
+  margin-top: -1px;
+  box-shadow: 0 0 0 1px #fff4;
+}
+.wave-strip i.done {
+  opacity: 0.25;
+}
+.wave-strip i.cur {
+  background: var(--wc);
+  box-shadow: 0 0 0 2px #fff;
+}
+.wave-mods {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.wave-mods:empty,
+.wave-record:empty {
+  display: none;
+}
+.mod-chip {
+  font-size: 7px;
+  padding: 3px 5px;
+  color: var(--mc);
+  background: #0b0910;
+  box-shadow: inset 0 0 0 1px var(--mc);
+}
+.wave-record {
+  font-size: 8px;
+  text-align: center;
+  color: var(--dim);
+}
+.wave-record.new {
+  color: var(--gold);
+  animation: blink 0.8s steps(2) infinite;
+}
+.map-box {
+  position: absolute;
+  top: 26px;
+  right: 14px;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 6px;
+  gap: 8px;
+}
+.minimap {
+  width: 200px;
+  height: 200px;
+  background: #0b0910;
+  box-shadow:
+    0 0 0 2px #0b0910,
+    inset 0 0 0 2px var(--edge);
+  padding: 3px;
+  transition:
+    width 0.15s,
+    height 0.15s;
+}
+.minimap.big {
+  width: min(560px, 60vh);
+  height: min(560px, 60vh);
+}
+.minimap-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  image-rendering: pixelated;
+}
+.map-stats {
+  display: flex;
+  align-items: center;
+  gap: 14px;
 }
 .hud-stat {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 10px;
+  font-size: 11px;
   text-shadow: 0 2px 0 #000;
 }
 .pause-btn {
   pointer-events: auto;
-  width: 44px;
-  height: 44px;
+  width: 32px;
+  height: 32px;
   background: rgba(10, 8, 16, 0.7);
   box-shadow: 0 0 0 2px #0b0910;
   border-radius: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  order: -1;
+  gap: 5px;
+  cursor: pointer;
 }
 .pause-btn span {
-  width: 6px;
-  height: 18px;
+  width: 5px;
+  height: 14px;
   background: #fff;
 }
 .banner {
@@ -1082,14 +1227,23 @@ i.ic-skull::after {
   left: 0;
   right: 0;
   text-align: center;
-  font-size: clamp(12px, 3.2vw, 22px);
+  opacity: 0;
+  padding: 0 20px;
+  line-height: 1.5;
+}
+.banner-main {
+  font-size: 24px;
   text-shadow:
     0 3px 0 #000,
     2px 0 0 #000,
     -2px 0 0 #000;
-  opacity: 0;
-  padding: 0 20px;
-  line-height: 1.5;
+}
+.banner-sub {
+  font-family: var(--ui);
+  font-size: 16px;
+  color: #e8e0f4;
+  text-shadow: 0 2px 0 #000;
+  margin-top: 6px;
 }
 .banner.show {
   animation: banner 2.6s forwards;
@@ -1115,17 +1269,17 @@ i.ic-skull::after {
   position: absolute;
   left: 50%;
   transform: translateX(-50%);
-  bottom: calc(14px + var(--sab));
-  width: min(520px, 80vw);
+  bottom: 22px;
+  width: min(640px, 60vw);
   text-align: center;
 }
 .boss-name {
-  font-size: 10px;
-  margin-bottom: 5px;
+  font-size: 11px;
+  margin-bottom: 6px;
   text-shadow: 0 2px 0 #000;
 }
 .boss-track {
-  height: 14px;
+  height: 16px;
   background: #1a0610;
   box-shadow: 0 0 0 2px #0b0910;
   position: relative;
@@ -1163,11 +1317,18 @@ i.ic-skull::after {
   opacity: 0;
   transition: opacity 0.15s;
 }
+.post-vignette {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: radial-gradient(ellipse at center, transparent 62%, rgba(0, 0, 0, 0.42));
+}
 .fps {
   position: absolute;
-  left: calc(10px + var(--sal));
-  bottom: calc(8px + var(--sab));
-  font-size: 8px;
+  left: 14px;
+  bottom: 10px;
+  font-size: 9px;
   color: #9cff6a;
   text-shadow: 0 1px 0 #000;
 }
@@ -1175,64 +1336,22 @@ i.ic-skull::after {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: calc(18% + var(--sab));
+  bottom: 20%;
   text-align: center;
   animation: fadein 0.5s;
 }
 .hint-text {
-  font-size: clamp(10px, 2.6vw, 14px);
+  font-size: 13px;
   text-shadow: 0 2px 0 #000;
   line-height: 1.6;
   padding: 0 16px;
 }
 .hint-sub {
   font-family: var(--ui);
-  font-size: 14px;
+  font-size: 15px;
   color: var(--gold);
   margin-top: 8px;
   text-shadow: 0 2px 0 #000;
-}
-.hint-hand {
-  width: 40px;
-  height: 40px;
-  margin: 0 auto 14px;
-  border-radius: 50%;
-  border: 3px solid rgba(255, 255, 255, 0.8);
-  animation: swipe 1.6s ease-in-out infinite;
-}
-@keyframes swipe {
-  0%,
-  100% {
-    transform: translateX(-40px);
-  }
-  50% {
-    transform: translateX(40px);
-  }
-}
-
-.stick-base {
-  position: absolute;
-  z-index: 3;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.07);
-  border: 3px solid rgba(255, 255, 255, 0.25);
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 0.1s;
-}
-.stick-base.on {
-  opacity: 1;
-}
-.stick-knob {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 44%;
-  height: 44%;
-  margin: -22% 0 0 -22%;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.55);
-  box-shadow: 0 3px 0 rgba(0, 0, 0, 0.35);
 }
 
 /* ------------------------------------------------------------------ modals */
@@ -1646,55 +1765,167 @@ h2.glow {
   font-family: var(--ui);
 }
 
-/* small landscape phones: compact HUD and modals */
-@media (max-height: 460px) {
-  .modal {
-    padding: 10px;
-  }
-  .choices {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  }
-  .choice {
-    flex-direction: column;
-    align-items: flex-start;
-    min-height: 0;
-  }
-  .choice-icon {
-    width: 44px;
-    height: 44px;
-  }
-  .main-menu .logo-title {
-    font-size: 26px;
-  }
-  .main-buttons {
-    width: min(520px, 100%);
-  }
-  .main-grid {
-    grid-template-columns: 1fr 1fr 1fr;
-  }
-  .hud-time {
-    font-size: 14px;
-  }
-  .chest-anim {
-    height: 80px;
-    margin: 6px auto;
+/* ---- settings (tabbed) */
+.set-tabs {
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-bottom: 6px;
+}
+.set-body {
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+  min-height: 360px;
+}
+.set-label {
+  flex: 1;
+  min-width: 160px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.set-label small {
+  font-size: 10px;
+  color: var(--dim);
+  line-height: 1.35;
+}
+.set-note:not(:empty) {
+  font-size: 11px;
+  color: var(--gold);
+  padding: 6px 8px;
+  background: rgba(255, 210, 61, 0.08);
+  border-radius: 4px;
+}
+.set-hint {
+  font-size: 11px;
+  color: var(--dim);
+  padding: 10px 0;
+  line-height: 1.4;
+}
+.slider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.settings .seg {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.settings .seg button {
+  padding: 7px 9px;
+  min-height: 32px;
+  font-size: 11px;
+}
+.binds {
+  display: flex;
+  gap: 6px;
+}
+.bind {
+  min-width: 96px;
+  min-height: 34px;
+  padding: 6px 10px;
+  font-size: 12px;
+  background: #3a3348;
+  border-radius: 4px;
+  box-shadow: 0 0 0 2px #0b0910;
+}
+.bind:hover {
+  box-shadow: 0 0 0 2px var(--edge-hi);
+}
+.bind.empty {
+  color: var(--dim);
+}
+.bind.wait {
+  background: var(--gold);
+  color: #1a1408;
+  animation: pulse 0.8s infinite alternate;
+}
+@keyframes pulse {
+  to {
+    opacity: 0.6;
   }
 }
-@media (max-width: 420px) {
-  .hp-bar {
-    width: 120px;
-  }
-  .slot {
-    width: 26px;
-    height: 26px;
-  }
-  .slot img.icon {
-    width: 22px;
-    height: 22px;
-  }
-  .hud-time {
-    font-size: 14px;
-    top: 26px;
-  }
+
+/* ---- map screen: lore, modes, records */
+.map-detail {
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.map-detail .diffs,
+.map-detail .btn.big {
+  text-align: center;
+}
+.story {
+  font-style: italic;
+  color: #cfc4e2;
+  line-height: 1.5;
+  padding: 8px 10px;
+  border-left: 3px solid var(--edge-hi);
+  background: rgba(255, 255, 255, 0.03);
+}
+.feature {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: rgba(90, 180, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(90, 180, 255, 0.35);
+}
+.feature b {
+  color: var(--blue);
+}
+.mode-seg {
+  margin-bottom: 6px;
+}
+.mode-seg button {
+  flex: 1;
+}
+.mode-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.wave-strip.big {
+  display: flex;
+  gap: 2px;
+  margin: 4px 0;
+}
+.wave-strip.big i {
+  flex: 1;
+  height: 12px;
+}
+.record {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  background: rgba(255, 210, 61, 0.08);
+  border-radius: 4px;
+}
+.record b {
+  color: var(--gold);
+  font-family: var(--px);
+  font-size: 10px;
+}
+.record.none {
+  color: var(--dim);
+}
+.wave-badge {
+  font-family: var(--px);
+  font-size: 9px;
+  color: var(--blue);
+}
+.record-line {
+  font-family: var(--px);
+  font-size: 10px;
+  color: var(--dim);
+  margin: 6px 0;
+}
+.record-line.new {
+  color: var(--gold);
+  animation: pulse 0.6s infinite alternate;
 }

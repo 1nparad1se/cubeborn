@@ -33,6 +33,7 @@ export class Overlay {
   private h = 1;
   private dpr = 1;
   showNumbers = true;
+  healthBars: 'off' | 'elites' | 'all' = 'elites';
 
   constructor(parent: HTMLElement) {
     this.canvas = document.createElement('canvas');
@@ -94,20 +95,26 @@ export class Overlay {
     ctx.textBaseline = 'middle';
     ctx.lineJoin = 'round';
 
-    // elite / special health bars
+    // health bars: elites always (unless off), ordinary enemies only once damaged
     const px = run.player.x;
     const pz = run.player.z;
-    for (const e of run.enemies.list) {
-      if (!e.active || e.dying > 0 || e.boss || !e.elite) continue;
-      if ((e.x - px) ** 2 + (e.z - pz) ** 2 > 26 * 26) continue;
-      if (!this.project(camera, e.x, 1.2 + e.scale * 1.4, e.z)) continue;
-      const bw = 34;
-      const sx = Math.round(v.x - bw / 2);
-      const sy = Math.round(v.y);
-      ctx.fillStyle = 'rgba(0,0,0,0.65)';
-      ctx.fillRect(sx - 1, sy - 1, bw + 2, 6);
-      ctx.fillStyle = hex(ELITE_MODS[e.elite].color);
-      ctx.fillRect(sx, sy, Math.max(0, (bw * e.hp) / e.maxHp), 4);
+    if (this.healthBars !== 'off') {
+      const all = this.healthBars === 'all';
+      let drawn = 0;
+      for (const e of run.enemies.list) {
+        if (!e.active || e.dying > 0 || e.boss || e.def.behavior === 'prop') continue;
+        if (!e.elite && (!all || e.hp >= e.maxHp || drawn > 160)) continue;
+        if ((e.x - px) ** 2 + (e.z - pz) ** 2 > 30 * 30) continue;
+        if (!this.project(camera, e.x, 1.2 + e.scale * 1.4, e.z)) continue;
+        const bw = e.elite ? 34 : 18;
+        const sx = Math.round(v.x - bw / 2);
+        const sy = Math.round(v.y);
+        ctx.fillStyle = 'rgba(0,0,0,0.65)';
+        ctx.fillRect(sx - 1, sy - 1, bw + 2, e.elite ? 6 : 4);
+        ctx.fillStyle = e.elite ? hex(ELITE_MODS[e.elite].color) : '#ff4a5a';
+        ctx.fillRect(sx, sy, Math.max(0, (bw * e.hp) / e.maxHp), e.elite ? 4 : 2);
+        drawn++;
+      }
     }
 
     // off-screen chest / boss arrows

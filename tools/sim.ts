@@ -1,6 +1,7 @@
 /**
- * Headless balance simulator: plays runs with a simple kiting bot and prints outcomes.
- * Usage: npx tsx tools/sim.ts [mapId] [heroId] [diffId] [runs]
+ * Headless balance simulator: plays runs with a simple kiting bot and prints per-checkpoint metrics.
+ * Usage: npx tsx tools/sim.ts [mapId] [heroId] [diffId] [runs] [perm 0|1|2] [mode campaign|endless]
+ * Env: GOD=1 (player cannot die; damage is still counted), MAXT=seconds, QUIET=1, DMG=1 (damage sources)
  */
 import { Run } from '../src/game/Run';
 import { NullFx } from '../src/game/types';
@@ -10,112 +11,185 @@ import { DIFFICULTY_BY_ID } from '../src/data/difficulty';
 import { WEAPONS } from '../src/data/weapons';
 import { PASSIVES } from '../src/data/passives';
 import type { StatMods } from '../src/data/types';
+import type { Enemy } from '../src/game/Enemy';
+import type { RunMode } from '../src/game/Waves';
 
-const [mapId = 'blightwood', heroId = 'bram', diffId = 'normal', runsArg = '3', permArg = '0'] = process.argv.slice(2);
-const perm: StatMods = permArg === '1' ? { might: 0.25, maxHp: 50, armor: 3, regen: 0.75, growth: 0.25, cooldown: 0.09, area: 0.16, duration: 0.16, luck: 0.24, magnet: 0.6 } : {};
+const [mapId = 'blightwood', heroId = 'bram', diffId = 'normal', runsArg = '3', permArg = '0', modeArg = 'campaign'] = process.argv.slice(2);
+const PERM1: StatMods = { might: 0.25, maxHp: 50, armor: 3, regen: 0.75, growth: 0.25, cooldown: 0.09, area: 0.16, duration: 0.16, luck: 0.24, magnet: 0.6 };
+// perm=2: every permanent upgrade maxed, including Multiplier and Second Chance
+const PERM2: StatMods = { ...PERM1, moveSpeed: 0.15, critChance: 0.09, projSpeed: 0.24, amount: 1, revival: 1 };
+const perm: StatMods = permArg === '2' ? PERM2 : permArg === '1' ? PERM1 : {};
+const mode = modeArg as RunMode;
+const god = !!process.env.GOD;
+const maxT = Number(process.env.MAXT ?? (mode === 'endless' ? 3200 : 1400));
 
-function bot(run: Run): [number, number] {
+/**
+ * Sampling bot: scores 16 headings by predicted danger (enemies, bullets, hazard zones and
+ * tiles, walls) against the pull of gems and chests, the way a careful human kites.
+ */
+export function bot(run: Run): [number, number] {
   const p = run.player;
-  // repulsion from nearby enemies + bullets, attraction to xp and chests
-  let fx = 0;
-  let fz = 0;
-  run.enemies.forEachInRadius(p.x, p.z, 6, (e) => {
-    if (e.def.category === 'prop') return;
-    const dx = p.x - e.x;
-    const dz = p.z - e.z;
-    const d2 = dx * dx + dz * dz + 0.1;
-    const w = (e.boss ? 6 : 1) / d2;
-    fx += dx * w;
-    fz += dz * w;
+  const t = run.terrain;
+  const near: Enemy[] = [];
+  run.enemies.forEachInRadius(p.x, p.z, 10, (e) => {
+    if (e.def.category !== 'prop') near.push(e);
   });
-  for (const b of run.hazards.bullets) {
-    if (!b.active) continue;
-    const dx = p.x - b.x;
-    const dz = p.z - b.z;
-    const d2 = dx * dx + dz * dz;
-    if (d2 < 9) {
-      fx += (dx / (d2 + 0.1)) * 2;
-      fz += (dz / (d2 + 0.1)) * 2;
-    }
-  }
-  for (const z of run.hazards.zones) {
-    if (!z.active || z.visualOnly) continue;
-    const dx = p.x - z.x;
-    const dz = p.z - z.z;
-    const d = Math.hypot(dx, dz);
-    if (d < z.r + 1) {
-      fx += (dx / (d + 0.1)) * 4;
-      fz += (dz / (d + 0.1)) * 4;
-    }
-  }
-  let best: { x: number; z: number } | null = null;
+  let target: { x: number; z: number } | null = null;
   let bd = 1e9;
   for (const pk of run.pickups.list) {
     if (!pk.active) continue;
     const d = (pk.x - p.x) ** 2 + (pk.z - p.z) ** 2;
-    const w = pk.kind === 'chest' ? d * 0.2 : d;
-    if (w < bd && d < 400) {
+    const w = pk.kind === 'chest' ? d * 0.15 : pk.kind === 'xp' ? d : d * 0.7;
+    if (w < bd && d < 30 * 30) {
       bd = w;
-      best = pk;
+      target = pk;
     }
   }
-  if (best) {
-    const dx = best.x - p.x;
-    const dz = best.z - p.z;
-    const d = Math.hypot(dx, dz) || 1;
-    fx += (dx / d) * 0.6;
-    fz += (dz / d) * 0.6;
+  // shrines are worth a detour
+  for (const s of run.features.pois) {
+    if (s.used || s.kind !== 'shrine') continue;
+    const d = (s.x - p.x) ** 2 + (s.z - p.z) ** 2;
+    if (d < 25 * 25 && d * 0.3 < bd) {
+      bd = d * 0.3;
+      target = s;
+    }
   }
-  // avoid hazard tiles (lava, spikes) and walls like a human would
-  for (let a = 0; a < 8; a++) {
-    const ang = (a / 8) * Math.PI * 2;
-    for (const rr of [0.8, 1.6]) {
-      const sx = p.x + Math.cos(ang) * rr;
-      const sz = p.z + Math.sin(ang) * rr;
-      const c = run.terrain.cellAt(sx, sz);
-      if (c === 3 || c === 1 || c === 5 || c === 2) {
-        fx -= Math.cos(ang) * (c === 3 ? 3 : 1) / rr;
-        fz -= Math.sin(ang) * (c === 3 ? 3 : 1) / rr;
+  const speed = p.moveSpeed;
+  let best = -1e9;
+  let bx = 0;
+  let bz = 0;
+  for (let k = 0; k < 16; k++) {
+    const a = (k / 16) * Math.PI * 2;
+    const dx = Math.cos(a);
+    const dz = Math.sin(a);
+    let score = 0;
+    for (const h of [0.35, 0.8]) {
+      const px = p.x + dx * speed * h;
+      const pz = p.z + dz * speed * h;
+      if (t.blocksWalker(Math.floor(px), Math.floor(pz))) score -= h < 0.5 ? 1000 : 60;
+      const c = t.cellAt(px, pz);
+      if (c === 3) score -= 40;
+      for (const e of near) {
+        const ex = e.x + e.vx * h;
+        const ez = e.z + e.vz * h;
+        const d2 = (ex - px) ** 2 + (ez - pz) ** 2;
+        const r = e.radius + p.radius + 0.4;
+        score -= (e.boss ? 6 : e.elite ? 2.5 : 1) * (d2 < r * r ? 60 : 4 / (d2 + 0.3));
+      }
+      for (const b of run.hazards.bullets) {
+        if (!b.active) continue;
+        const d2 = (b.x + b.vx * h - px) ** 2 + (b.z + b.vz * h - pz) ** 2;
+        if (d2 < 1.5) score -= 25;
+      }
+      for (const z of run.hazards.zones) {
+        if (!z.active || z.visualOnly) continue;
+        const d = Math.hypot(px - z.x, pz - z.z);
+        if (d < z.r + 0.6) score -= 50;
       }
     }
+    if (target) {
+      const tx = target.x - p.x;
+      const tz = target.z - p.z;
+      const tl = Math.hypot(tx, tz) || 1;
+      score += ((tx * dx + tz * dz) / tl) * 1.5;
+    }
+    // prefer open space: count free cells ahead
+    const fx = p.x + dx * 4;
+    const fz = p.z + dz * 4;
+    if (t.blocksWalker(Math.floor(fx), Math.floor(fz))) score -= 3;
+    const c = t.size / 2;
+    score += ((c - p.x) * dx + (c - p.z) * dz) * 0.002;
+    if (score > best) {
+      best = score;
+      bx = dx;
+      bz = dz;
+    }
   }
-  // drift toward map center to avoid corners
-  const c = run.terrain.size / 2;
-  fx += (c - p.x) * 0.004;
-  fz += (c - p.z) * 0.004;
-  const l = Math.hypot(fx, fz);
-  if (l < 0.05) return [0, 0];
-  return [fx / l, fz / l];
+  if (!near.length && !target) return [0, 0];
+  return [bx, bz];
 }
 
 const map = MAP_BY_ID[mapId];
 const hero = HERO_BY_ID[heroId];
 const diff = DIFFICULTY_BY_ID[diffId];
+const quiet = !!process.env.QUIET;
+const results: string[] = [];
 for (let r = 0; r < Number(runsArg); r++) {
   const t0 = performance.now();
   const run = new Run({
-    map, diff, hero, permanent: perm,
+    map, diff, hero, permanent: perm, mode,
     unlockedWeapons: new Set(WEAPONS.map((w) => w.id)),
     unlockedPassives: new Set(PASSIVES.map((p) => p.id)),
     fx: NullFx, settings: { damageNumbers: false }, tr: (k) => k, seed: 1000 + r,
   });
+  run.debug.god = god;
+  // --- instrumentation
+  let taken = 0;
+  let takenWin = 0;
   const dmgBy: Record<string, number> = {};
-  if (process.env.DMG) {
-    const orig = run.player.hurt.bind(run.player);
-    run.player.hurt = (raw, src, ig) => {
-      const d = orig(raw, src, ig);
-      if (d > 0) {
-        let k = src ? src.def.id : (new Error().stack!.split('\n')[2].match(/(\w+)\.ts:(\d+)/)?.slice(1).join(':') ?? '?');
+  const orig = run.player.hurt.bind(run.player);
+  run.player.hurt = (raw, src, ig) => {
+    const pl = run.player;
+    const would = god && !(pl.invulnT > 0 && !ig) && pl.buffs.aegis <= 0 ? Math.max(1, raw - pl.stats.armor) : 0;
+    const d = orig(raw, src, ig) || would;
+    if (d > 0) {
+      taken += d;
+      takenWin += d;
+      if (process.env.DMG) {
+        const k = src ? src.def.id : 'hazard';
         dmgBy[k] = (dmgBy[k] ?? 0) + d;
       }
-      return d;
-    };
-  }
+    }
+    return d;
+  };
+  const born = new Map<number, number>();
+  let lifeSum = 0;
+  let lifeN = 0;
+  let hpSum = 0;
+  let hpN = 0;
+  const origSpawn = run.enemies.spawn.bind(run.enemies);
+  run.enemies.spawn = (def, x, z, o) => {
+    const e = origSpawn(def, x, z, o);
+    if (e && !e.boss && def.behavior !== 'prop') {
+      born.set(e.uid, run.time);
+      hpSum += e.maxHp;
+      hpN++;
+    }
+    return e;
+  };
+  const origKill = run.combat.killEnemy.bind(run.combat);
+  run.combat.killEnemy = (e: Enemy, silent?: boolean) => {
+    const b = born.get(e.uid);
+    if (b !== undefined && e.alive) {
+      lifeSum += run.time - b;
+      lifeN++;
+      born.delete(e.uid);
+    }
+    return origKill(e, silent);
+  };
+  let dealtPrev = 0;
+  const dealt = () => Object.values(run.stats.damageBy).reduce((a, b) => a + b, 0);
+
   const dt = 1 / 30;
   let maxEnemies = 0;
   let lastLog = 0;
+  let lastWave = 0;
   let steps = 0;
-  while (run.state !== 'dead' && run.state !== 'victory' && run.time < 1100 && steps < 40000) {
+  const marks = mode === 'endless' ? [10, 20, 30, 50, 70, 100] : [];
+  const minuteMarks = [3, 5, 7, 10, 12, 15, 17];
+  const line = (tag: string) => {
+    const span = Math.max(1, run.time - lastLog);
+    const d = dealt();
+    const dps = (d - dealtPrev) / span;
+    dealtPrev = d;
+    const avgHp = hpN ? hpSum / hpN : 0;
+    const out = `  ${tag.padEnd(7)} t=${run.time.toFixed(0).padStart(4)} wave=${String(run.waves.wave.n).padStart(3)}(${run.waves.wave.type}) lvl=${String(run.player.level).padStart(2)} hp=${run.player.hp.toFixed(0)}/${run.player.stats.maxHp.toFixed(0)} alive=${run.enemies.aliveCount} kills=${run.stats.kills} dmgIn/s=${(takenWin / span).toFixed(1)} enemyHP=${avgHp.toFixed(0)} dps=${dps.toFixed(0)} ttkFull=${dps ? (avgHp / dps).toFixed(3) : '-'}s life=${lifeN ? (lifeSum / lifeN).toFixed(1) : '-'}s xp=${run.stats.xpGained.toFixed(0)} gold=${run.stats.gold.toFixed(0)} chests=${run.stats.chestRarity.join('/')} bosses=${run.stats.bossesKilled.length}/${run.stats.bossesSeen}`;
+    lastLog = run.time;
+    takenWin = 0;
+    hpSum = hpN = lifeSum = lifeN = 0;
+    if (!quiet) console.log(out);
+  };
+  while (run.state !== 'dead' && run.state !== 'victory' && run.time < maxT && steps < 200000) {
     steps++;
     if (run.state === 'levelup') {
       const ch = run.pendingChoices!;
@@ -131,15 +205,18 @@ for (let r = 0; r < Number(runsArg); r++) {
     const [ix, iz] = bot(run);
     run.update(dt, ix, iz);
     maxEnemies = Math.max(maxEnemies, run.enemies.aliveCount);
-    if (run.time - lastLog > 60) {
-      lastLog = run.time;
-      if (process.env.BOSS) for (const b of run.bosses) console.log('   boss', b.def.id, b.e.hp?.toFixed(0), '/', b.e.maxHp?.toFixed(0), 'phase', b.phase, 'cry', b.crystals.length, 'inv', b.e.invuln, 'hid', b.hidden.toFixed(1), 'dist', Math.hypot(b.e.x - run.player.x, b.e.z - run.player.z).toFixed(1));
-      console.log(`  t=${run.time.toFixed(0)} lvl=${run.player.level} hp=${run.player.hp.toFixed(0)}/${run.player.stats.maxHp} alive=${run.enemies.aliveCount} kills=${run.stats.kills} weapons=${run.weapons.list.map((w) => w.def.id + ':' + w.level).join(',')}`);
-    }
+    if (mode === 'campaign') {
+      const m = minuteMarks.find((mm) => run.time >= mm * 60 && lastLog < mm * 60);
+      if (m) line(m + 'min');
+      if (run.waves.wave.n !== lastWave && [25, 30].includes(run.waves.wave.n)) line('W' + run.waves.wave.n);
+    } else if (run.waves.wave.n !== lastWave && marks.includes(run.waves.wave.n)) line('W' + run.waves.wave.n);
+    lastWave = run.waves.wave.n;
   }
+  line('END');
   const s = run.summary();
   const ms = performance.now() - t0;
-  console.log(`RUN ${r}: ${s.victory ? 'VICTORY' : 'DEAD'} time=${s.time.toFixed(0)} level=${s.level} kills=${s.kills} maxAlive=${maxEnemies} gold=${s.gold} bosses=${s.bosses.join('/')} evos=${s.evolutions.join('/')} sim=${(ms / 1000).toFixed(1)}s (${((ms / (s.time / dt)) * 1000).toFixed(0)}us/step)`);
-  if (process.env.DMG) console.log('  taken:', Object.entries(dmgBy).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + '=' + v.toFixed(0)).join(' '));
-  console.log('   dmg:', s.weapons.map((w) => `${w.id}@${w.level}=${w.damage}`).join(' '));
+  const res = `RUN ${r}: ${s.victory ? 'VICTORY' : run.state === 'dead' || run.ending ? 'DEAD' : 'TIMEOUT'} time=${s.time.toFixed(0)} wave=${s.wave} level=${s.level} kills=${s.kills} maxAlive=${maxEnemies} taken=${taken.toFixed(0)} runGold=${s.gold} reward=${Run.goldReward(s, diff.reward)} elites=${s.elites} chests=${s.chestRarity.join('/')} bosses=${s.bosses.join('/')} evos=${s.evolutions.length} sim=${(ms / 1000).toFixed(1)}s`;
+  results.push(res);
+  console.log(res);
+  if (process.env.DMG) console.log('  taken by:', Object.entries(dmgBy).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + '=' + v.toFixed(0)).join(' '));
 }

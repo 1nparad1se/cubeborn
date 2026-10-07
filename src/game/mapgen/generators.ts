@@ -1,7 +1,8 @@
 import type { MapDef } from '../../data/types';
 import { Rng } from '../../core/Rng';
-import { CELL, Terrain } from '../Terrain';
+import { CELL, Terrain, replaceAll } from '../Terrain';
 import { fbm } from './noise';
+import { addZones } from './zones';
 import { border, blobs, clearCenter, disk, distToCenter, fillTiles, path, pine, pond, rockCluster, scatterDecor, sealUnreachable, tree, type GenCtx } from './common';
 
 type Gen = (g: GenCtx) => void;
@@ -20,7 +21,7 @@ const forest: Gen = (g) => {
   blobs(g, 11, 0.74, 9, (x, z) => {
     if (distToCenter(g, x, z) > 14) t.setTile(x, z, 'bog', CELL.hazard);
   });
-  for (let i = 0; i < 9; i++) {
+  for (let i = 0; i < 9 * g.k; i++) {
     const x = rng.int(12, t.size - 12);
     const z = rng.int(12, t.size - 12);
     if (distToCenter(g, x, z) < 18) continue;
@@ -35,9 +36,10 @@ const forest: Gen = (g) => {
       const tz = z + rng.int(0, 1);
       if (!t.areaFree(tx, tz, 1) || distToCenter(g, tx, tz) < 9) continue;
       tree(g, tx, tz, 'trunk', 'leaves', rng.int(3, 5), rng.chance(0.18) ? 3 : rng.int(0, 2));
+      t.spots.push({ x: tx, z: tz });
     }
   // giant mushrooms
-  for (let i = 0; i < 26; i++) {
+  for (let i = 0; i < 26 * g.k; i++) {
     const x = rng.int(6, t.size - 6);
     const z = rng.int(6, t.size - 6);
     if (!t.areaFree(x, z, 1) || distToCenter(g, x, z) < 10) continue;
@@ -46,7 +48,7 @@ const forest: Gen = (g) => {
     t.addBlock(x, 3, z, 'mushroom', 0);
   }
   // abandoned wooden huts (narrow interiors)
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < 7 * g.k; i++) {
     const x = rng.int(15, t.size - 22);
     const z = rng.int(15, t.size - 22);
     if (distToCenter(g, x + 3, z + 3) < 16) continue;
@@ -63,15 +65,15 @@ const forest: Gen = (g) => {
         t.column(x + dx, z + dz, rng.int(1, 3), 'plank');
       }
   }
-  for (let i = 0; i < 60; i++) {
+  for (let i = 0; i < 60 * g.k; i++) {
     const x = rng.int(6, t.size - 6);
     const z = rng.int(6, t.size - 6);
     if (distToCenter(g, x, z) > 10) rockCluster(g, x, z, 'stone', rng.int(1, 4));
   }
-  scatterDecor(g, 1600, [0x6fb34a, 0x7cc455, 0x5a9a3a], { size: 0.12, h: 0.35, sway: true, onTile: ['grass', 'grass2'] });
-  scatterDecor(g, 260, [0xe85a8a, 0xfff07a, 0x9a7aff, 0xffffff], { size: 0.16, h: 0.22, sway: true, onTile: ['grass', 'grass2'] });
-  scatterDecor(g, 160, [0xc8483a, 0xb84aff, 0xe0d0b0], { size: 0.22, h: 0.25, onTile: ['grass', 'grass2', 'dirt'] });
-  scatterDecor(g, 120, [0x9aff6a], { size: 0.12, h: 0.12, glow: true, onTile: ['bog'] });
+  scatterDecor(g, 1600 * g.k, [0x6fb34a, 0x7cc455, 0x5a9a3a], { size: 0.12, h: 0.35, sway: true, onTile: ['grass', 'grass2'] });
+  scatterDecor(g, 260 * g.k, [0xe85a8a, 0xfff07a, 0x9a7aff, 0xffffff], { size: 0.16, h: 0.22, sway: true, onTile: ['grass', 'grass2'] });
+  scatterDecor(g, 160 * g.k, [0xc8483a, 0xb84aff, 0xe0d0b0], { size: 0.22, h: 0.25, onTile: ['grass', 'grass2', 'dirt'] });
+  scatterDecor(g, 120 * g.k, [0x9aff6a], { size: 0.12, h: 0.12, glow: true, onTile: ['bog'] });
   border(g, 'stone', 3, 4);
   clearCenter(g, 7, 'grass');
 };
@@ -154,8 +156,8 @@ const city: Gen = (g) => {
     }
   // fountain at center
   disk(g, g.c, g.c, 3.2, 'plaza');
-  scatterDecor(g, 400, [0x4a4a52, 0x5a5048, 0x6a6a72], { size: 0.25, h: 0.12, onTile: ['road', 'cobble'] });
-  scatterDecor(g, 300, [0x5a8a3a, 0x6a9a44], { size: 0.12, h: 0.3, sway: true, onTile: ['grass', 'cobble'] });
+  scatterDecor(g, 400 * g.k, [0x4a4a52, 0x5a5048, 0x6a6a72], { size: 0.25, h: 0.12, onTile: ['road', 'cobble'] });
+  scatterDecor(g, 300 * g.k, [0x5a8a3a, 0x6a9a44], { size: 0.12, h: 0.3, sway: true, onTile: ['grass', 'cobble'] });
   border(g, 'brick', 3, 6);
   clearCenter(g, 6, 'plaza');
   for (let i = 0; i < 8; i++) {
@@ -176,7 +178,7 @@ const catacombs: Gen = (g) => {
   const solid = new Uint8Array(n * n).fill(1);
   const rooms: { x: number; z: number; w: number; d: number }[] = [];
   rooms.push({ x: g.c - 9, z: g.c - 9, w: 18, d: 18 });
-  for (let i = 0; i < 70 && rooms.length < 26; i++) {
+  for (let i = 0; i < 70 * g.k && rooms.length < 26 * g.k; i++) {
     const w = rng.int(9, 18);
     const d = rng.int(9, 18);
     const x = rng.int(5, n - w - 5);
@@ -221,7 +223,7 @@ const catacombs: Gen = (g) => {
     }
     corridor(rooms[i], rooms[best], rng.int(3, 4));
   }
-  for (let i = 0; i < 10; i++) corridor(rng.pick(rooms), rng.pick(rooms), 3);
+  for (let i = 0; i < 10 * g.k; i++) corridor(rng.pick(rooms), rng.pick(rooms), 3);
   for (let z = 0; z < n; z++)
     for (let x = 0; x < n; x++) {
       if (!solid[z * n + x]) continue;
@@ -267,8 +269,8 @@ const catacombs: Gen = (g) => {
       t.lights.push({ x: x + 0.5, z: z + 0.5, y: 1.6, color: 0xff9a3a, intensity: 1.8 });
     }
   }
-  scatterDecor(g, 500, [0xd8d0b8, 0xc8c0a8, 0xe8e0c8], { size: 0.2, h: 0.12, onTile: ['floor', 'tile'] });
-  scatterDecor(g, 120, [0x5aff9a], { size: 0.1, h: 0.1, glow: true, onTile: ['moss'] });
+  scatterDecor(g, 500 * g.k, [0xd8d0b8, 0xc8c0a8, 0xe8e0c8], { size: 0.2, h: 0.12, onTile: ['floor', 'tile'] });
+  scatterDecor(g, 120 * g.k, [0x5aff9a], { size: 0.1, h: 0.1, glow: true, onTile: ['moss'] });
   border(g, 'wall', 3, 3);
   clearCenter(g, 6, 'tile');
   sealUnreachable(g);
@@ -291,7 +293,7 @@ const volcano: Gen = (g) => {
       else if (band < 0.04) t.setTile(x, z, 'lava', CELL.hazard);
     }
   // basalt bridges across rivers
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 40 * g.k; i++) {
     const x = rng.int(8, t.size - 8);
     const z = rng.int(8, t.size - 8);
     if (t.tile[t.idx(x, z)] !== t.tileId('lava')) continue;
@@ -299,7 +301,7 @@ const volcano: Gen = (g) => {
     for (let k = -5; k <= 5; k++) for (let w = 0; w < 3; w++) t.setTile(horiz ? x + k : x + w, horiz ? z + w : z + k, 'basalt', CELL.floor);
   }
   // lava lakes
-  for (let i = 0; i < 7; i++) {
+  for (let i = 0; i < 7 * g.k; i++) {
     const x = rng.int(15, t.size - 15);
     const z = rng.int(15, t.size - 15);
     if (distToCenter(g, x, z) < 22) continue;
@@ -311,7 +313,7 @@ const volcano: Gen = (g) => {
     if (t.isFree(x, z)) t.setTile(x, z, 'sulfur');
   });
   // obsidian spires and basalt boulders
-  for (let i = 0; i < 160; i++) {
+  for (let i = 0; i < 160 * g.k; i++) {
     const x = rng.int(6, t.size - 6);
     const z = rng.int(6, t.size - 6);
     if (!t.areaFree(x, z, 1) || distToCenter(g, x, z) < 9) continue;
@@ -326,7 +328,7 @@ const volcano: Gen = (g) => {
     } else rockCluster(g, x, z, 'basalt', rng.int(2, 5));
   }
   // giant bones of ancient beasts
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 6 * g.k; i++) {
     const x = rng.int(20, t.size - 20);
     const z = rng.int(20, t.size - 20);
     if (distToCenter(g, x, z) < 20) continue;
@@ -335,8 +337,8 @@ const volcano: Gen = (g) => {
       if (t.isFree(x + k * 2, z + 4)) t.column(x + k * 2, z + 4, 2 + (k % 2), 'bone');
     }
   }
-  scatterDecor(g, 400, [0xff6a1a, 0xffaa3a], { size: 0.1, h: 0.1, glow: true, onTile: ['scorch', 'ash'] });
-  scatterDecor(g, 500, [0x2a2428, 0x3a3236], { size: 0.25, h: 0.15, onTile: ['ash', 'basalt'] });
+  scatterDecor(g, 400 * g.k, [0xff6a1a, 0xffaa3a], { size: 0.1, h: 0.1, glow: true, onTile: ['scorch', 'ash'] });
+  scatterDecor(g, 500 * g.k, [0x2a2428, 0x3a3236], { size: 0.25, h: 0.15, onTile: ['ash', 'basalt'] });
   border(g, 'obsidian', 3, 5);
   clearCenter(g, 7, 'basalt');
 };
@@ -363,9 +365,10 @@ const tundra: Gen = (g) => {
       const tz = z + rng.int(0, 1);
       if (!t.areaFree(tx, tz, 1) || distToCenter(g, tx, tz) < 9) continue;
       pine(g, tx, tz, rng.int(4, 6));
+      t.spots.push({ x: tx, z: tz });
     }
   // ice crystal formations
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 40 * g.k; i++) {
     const x = rng.int(6, t.size - 6);
     const z = rng.int(6, t.size - 6);
     if (!t.areaFree(x, z, 1) || distToCenter(g, x, z) < 10) continue;
@@ -374,7 +377,7 @@ const tundra: Gen = (g) => {
     t.lights.push({ x: x + 0.5, z: z + 0.5, y: 1.5, color: 0x8ad8ff, intensity: 0.8 });
   }
   // snowdrifts (low walls creating passages)
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < 30 * g.k; i++) {
     let x = rng.int(8, t.size - 8);
     let z = rng.int(8, t.size - 8);
     const dir = rng.chance(0.5);
@@ -385,9 +388,9 @@ const tundra: Gen = (g) => {
       if (rng.chance(0.3)) dir ? (z += rng.int(-1, 1)) : (x += rng.int(-1, 1));
     }
   }
-  for (let i = 0; i < 50; i++) rockCluster(g, rng.int(6, t.size - 6), rng.int(6, t.size - 6), 'rock', rng.int(1, 4));
-  scatterDecor(g, 500, [0xffffff, 0xe8f0ff], { size: 0.22, h: 0.12, onTile: ['snow', 'snow2'] });
-  scatterDecor(g, 200, [0x8a9a7a, 0x7a8a6a], { size: 0.1, h: 0.25, sway: true, onTile: ['snow2', 'rock'] });
+  for (let i = 0; i < 50 * g.k; i++) rockCluster(g, rng.int(6, t.size - 6), rng.int(6, t.size - 6), 'rock', rng.int(1, 4));
+  scatterDecor(g, 500 * g.k, [0xffffff, 0xe8f0ff], { size: 0.22, h: 0.12, onTile: ['snow', 'snow2'] });
+  scatterDecor(g, 200 * g.k, [0x8a9a7a, 0x7a8a6a], { size: 0.1, h: 0.25, sway: true, onTile: ['snow2', 'rock'] });
   border(g, 'ice', 3, 4);
   clearCenter(g, 7, 'snow');
 };
@@ -397,7 +400,7 @@ const ruins: Gen = (g) => {
   const { t, rng } = g;
   fillTiles(g, (x, z) => (fbm(x / 10, z / 10, g.seed) > 0.62 ? 'moss' : 'sand'));
   // marble plazas
-  for (let i = 0; i < 14; i++) {
+  for (let i = 0; i < 14 * g.k; i++) {
     const x = rng.int(15, t.size - 15);
     const z = rng.int(15, t.size - 15);
     const r = rng.int(5, 9);
@@ -417,7 +420,7 @@ const ruins: Gen = (g) => {
     }
   }
   // rune circles: glowing tiles used by arcane surge event
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 10 * g.k; i++) {
     const x = rng.int(15, t.size - 15);
     const z = rng.int(15, t.size - 15);
     if (distToCenter(g, x, z) < 12) continue;
@@ -435,7 +438,7 @@ const ruins: Gen = (g) => {
     if (distToCenter(g, x, z) > 16 && t.isFree(x, z)) t.setTile(x, z, 'void', CELL.liquid);
   });
   // broken walls with gaps (corridors)
-  for (let i = 0; i < 45; i++) {
+  for (let i = 0; i < 45 * g.k; i++) {
     let x = rng.int(8, t.size - 8);
     let z = rng.int(8, t.size - 8);
     const horiz = rng.chance(0.5);
@@ -447,7 +450,7 @@ const ruins: Gen = (g) => {
     }
   }
   // crystal clusters & golden statues
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < 30 * g.k; i++) {
     const x = rng.int(6, t.size - 6);
     const z = rng.int(6, t.size - 6);
     if (!t.areaFree(x, z, 1) || distToCenter(g, x, z) < 10) continue;
@@ -459,9 +462,9 @@ const ruins: Gen = (g) => {
       t.column(x, z, 3, 'gold');
     }
   }
-  scatterDecor(g, 500, [0x5a8a4a, 0x6a9a54], { size: 0.12, h: 0.3, sway: true, onTile: ['moss', 'sand'] });
-  scatterDecor(g, 200, [0xb89a6a, 0xd8c8a8], { size: 0.25, h: 0.15, onTile: ['sand', 'marble'] });
-  scatterDecor(g, 150, [0xb89aff], { size: 0.08, h: 0.08, glow: true, onTile: ['rune', 'void'] });
+  scatterDecor(g, 500 * g.k, [0x5a8a4a, 0x6a9a54], { size: 0.12, h: 0.3, sway: true, onTile: ['moss', 'sand'] });
+  scatterDecor(g, 200 * g.k, [0xb89a6a, 0xd8c8a8], { size: 0.25, h: 0.15, onTile: ['sand', 'marble'] });
+  scatterDecor(g, 150 * g.k, [0xb89aff], { size: 0.08, h: 0.08, glow: true, onTile: ['rune', 'void'] });
   border(g, 'sandstone', 3, 4);
   clearCenter(g, 7, 'marble');
 };
@@ -469,13 +472,20 @@ const ruins: Gen = (g) => {
 const GENERATORS: Record<string, Gen> = { forest, city, catacombs, volcano, tundra, ruins };
 
 /** Builds the terrain for a map. Each run uses a new seed so layouts vary. */
-export function generateTerrain(map: MapDef, seed: number): Terrain {
+export function generateTerrain(map: MapDef, seed: number, opts: { zones?: boolean } = {}): Terrain {
   const t = new Terrain(map.size);
-  const g: GenCtx = { t, rng: new Rng(seed), seed: seed % 100000, c: Math.floor(map.size / 2) };
+  const g: GenCtx = { t, rng: new Rng(seed), seed: seed % 100000, c: Math.floor(map.size / 2), k: (map.size * map.size) / (160 * 160) };
   // register palette tiles first so ids are stable
   for (const name of Object.keys(map.palette.tiles)) t.tileId(name);
   const gen = GENERATORS[map.generator] ?? forest;
   gen(g);
+  if (opts.zones !== false) {
+    addZones(g, map.generator);
+    sealUnreachable(g);
+    // drop markers that ended up walled off
+    const keep = t.markers.filter((m) => t.walkableAt(m.x, m.z) || m.kind === 'rune');
+    replaceAll(t.markers, keep);
+  }
   t.cullHidden();
   return t;
 }

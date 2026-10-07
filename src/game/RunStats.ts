@@ -9,6 +9,10 @@ export class RunStats {
   damageTaken = 0;
   treasureSprites = 0;
   bossesKilled: string[] = [];
+  bossesSeen = 0;
+  /** Chests opened by rarity index (common..legendary). */
+  chestRarity = [0, 0, 0, 0, 0];
+  xpGained = 0;
   evolutions: string[] = [];
   seen = new Set<string>();
   weaponsUsed = new Set<string>();

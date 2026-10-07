@@ -104,7 +104,9 @@ export class Combat {
     }
     if (e.elite) {
       run.stats.elites++;
-      if (Math.random() < BALANCE.eliteChestChance) run.pickups.spawnChest(e.x, e.z);
+      // chests are rare, but an elite is likely to carry one once a weapon is ready to evolve
+      const chance = run.weapons.evolvable().length ? BALANCE.evoChestChance : BALANCE.eliteChestChance;
+      if (Math.random() < chance * run.player.stats.luck) run.pickups.spawnChest(e.x, e.z, 0, 'elite');
     }
     if (def.id === 'treasure_sprite') {
       run.stats.treasureSprites++;

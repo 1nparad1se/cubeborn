@@ -1,5 +1,5 @@
 import type { Rng } from '../../core/Rng';
-import { CELL, Terrain } from '../Terrain';
+import { CELL, Terrain, replaceAll } from '../Terrain';
 import { fbm } from './noise';
 
 export interface GenCtx {
@@ -7,6 +7,8 @@ export interface GenCtx {
   rng: Rng;
   seed: number;
   c: number; // center coordinate
+  /** Area factor relative to the original 160x160 maps; scales feature counts. */
+  k: number;
 }
 
 /** Tall cliff wall around the map edge. */
@@ -158,11 +160,9 @@ export function clearCenter(g: GenCtx, r: number, tile: string) {
     }
   // drop blocks inside the cleared radius
   const keep = t.blocks.filter((b) => Math.hypot(b.x - g.c, b.z - g.c) > r + 0.5 || b.y > 6);
-  t.blocks.length = 0;
-  t.blocks.push(...keep);
+  replaceAll(t.blocks, keep);
   const keepD = t.decor.filter((d) => Math.hypot(d.x - g.c, d.z - g.c) > r);
-  t.decor.length = 0;
-  t.decor.push(...keepD);
+  replaceAll(t.decor, keepD);
 }
 
 /** Flood fill from center; converts unreachable floor pockets into solid to avoid trapped spawns. */

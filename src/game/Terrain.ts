@@ -1,3 +1,9 @@
+/** Replaces an array's contents in place (spread arguments overflow the stack on big maps). */
+export function replaceAll<T>(arr: T[], items: T[]) {
+  arr.length = items.length;
+  for (let i = 0; i < items.length; i++) arr[i] = items[i];
+}
+
 /** Cell kinds on the navigation grid (1 cell = 1 world unit = 1 block). */
 export const CELL = {
   floor: 0,
@@ -49,7 +55,9 @@ export class Terrain {
   readonly decor: Decor[] = [];
   readonly lights: TerrainLight[] = [];
   /** Special markers used by events (rune circles etc). */
-  readonly markers: { x: number; z: number; kind: string }[] = [];
+  readonly markers: { x: number; z: number; kind: string; sub?: string }[] = [];
+  /** Vegetation cells (tree trunks) used by the forest ambush feature. */
+  readonly spots: { x: number; z: number }[] = [];
   tileNames: string[] = [];
 
   constructor(readonly size: number) {
@@ -153,7 +161,6 @@ export class Terrain {
       // blocks facing away from the camera (camera looks toward -z) are rarely seen
       if (!hidden) out.push(b);
     }
-    this.blocks.length = 0;
-    this.blocks.push(...out);
+    replaceAll(this.blocks, out);
   }
 }

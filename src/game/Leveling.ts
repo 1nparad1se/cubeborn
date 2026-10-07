@@ -4,7 +4,7 @@ import type { Rarity, StatMods } from '../data/types';
 import { WEAPONS } from '../data/weapons';
 import type { Run } from './Run';
 
-const RARITY_WEIGHT: Record<Rarity, number> = { common: 10, rare: 7, epic: 4, legendary: 2 };
+const RARITY_WEIGHT: Record<Rarity, number> = { common: 10, uncommon: 8.5, rare: 7, epic: 4, legendary: 2 };
 
 /** Passive items owned during a run. */
 export class Passives {
@@ -128,7 +128,7 @@ export class Leveling {
         run.recomputeStats();
         break;
       case 'gold':
-        run.stats.gold += 25 * run.player.stats.greed;
+        run.stats.gold += 3 * run.player.stats.greed;
         break;
       case 'heal':
         run.player.heal(run.player.stats.maxHp * 0.3);

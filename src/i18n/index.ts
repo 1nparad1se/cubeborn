@@ -1,9 +1,10 @@
 import type { Loc } from '../data/types';
 import { RU } from './ru';
 import { EN } from './en';
+import { RU2, EN2 } from './extra';
 
 export type Lang = 'ru' | 'en';
-const DICTS: Record<Lang, Record<string, string>> = { ru: RU, en: EN };
+const DICTS: Record<Lang, Record<string, string>> = { ru: { ...RU, ...RU2 }, en: { ...EN, ...EN2 } };
 let current: Lang = 'ru';
 
 export function setLang(lang: Lang) {

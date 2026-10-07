@@ -2,7 +2,7 @@ import { h, clear, hex } from './dom';
 import { iconImg } from './icons';
 import { t, L } from '../i18n';
 import { statModLines, weaponDeltaLines, fmtNum, fmtTime } from './format';
-import type { Run, ChestReward } from '../game/Run';
+import type { Run, ChestReward, ChestData } from '../game/Run';
 import type { Choice } from '../game/Leveling';
 import { WEAPON_BY_ID, WEAPON_MAX_LEVEL } from '../data/weapons';
 import { PASSIVE_BY_ID } from '../data/passives';
@@ -20,6 +20,8 @@ export interface ResultData {
   achievements: AchievementDef[];
   relic: string | null;
   newUnlocks: string[];
+  /** Endless: whether this run beat the stored record, and the best wave before it. */
+  endless?: { newRecord: boolean; best: number };
 }
 
 /** Level-up, chest, pause and results overlays shown during a run. */
@@ -111,7 +113,7 @@ export class RunModals {
   }
 
   // ------------------------------------------------------------------ chest
-  chest(run: Run, data: { rewards: ChestReward[]; gold: number; tier: number }, done: () => void) {
+  chest(run: Run, data: ChestData, done: () => void) {
     const list = h('div.chest-rewards');
     const chest = h('div.chest-anim' + (data.tier > 0 ? '.boss' : ''), h('div.chest-lid'), h('div.chest-body'), h('div.chest-rays'));
     const btn = h('button.btn.primary.hidden', {
@@ -121,7 +123,22 @@ export class RunModals {
       },
     }, t('btn_take'));
     const goldEl = h('div.chest-gold.hidden', h('i.ic-coin'), '+' + fmtNum(data.gold));
-    this.open(h('div.modal-back', h('div.modal.chest', h('h2.glow', t(data.tier > 0 ? 'chest_boss' : 'chest')), chest, list, goldEl, btn)));
+    const rc = RARITY_COLOR[data.rarity];
+    this.open(
+      h(
+        'div.modal-back',
+        h(
+          'div.modal.chest.rarity-' + data.rarity,
+          { style: `--rc:${rc}` },
+          h('h2.glow', { style: `color:${rc}` }, t('chest_' + data.rarity)),
+          h('div.sub', t(data.tier > 0 ? 'chest_boss' : 'chest') + ' · ' + t('rarity_' + data.rarity)),
+          chest,
+          list,
+          goldEl,
+          btn,
+        ),
+      ),
+    );
     let i = 0;
     const reveal = () => {
       if (!this.isOpen) return;
@@ -165,10 +182,10 @@ export class RunModals {
     const backBtn = () => h('button.btn', { onclick: () => showMain() }, t('btn_back'));
     const showSettings = () => {
       clear(body);
-      body.append(settingsPanel(this.api, showSettings), backBtn());
+      body.append(settingsPanel(this.api, showSettings, true), backBtn());
     };
     showMain();
-    this.open(h('div.modal-back', h('div.modal.pause', h('h2', t('paused')), h('div.sub', `${L(run.map.name)} · ${L(run.diff.name)} · ${fmtTime(run.time)}`), body)));
+    this.open(h('div.modal-back', h('div.modal.pause', h('h2', t('paused')), h('div.sub', `${L(run.map.name)} · ${t('mode_' + run.mode)} · ${L(run.diff.name)} · ${t(run.mode === 'endless' ? 'hud_wave_endless' : 'hud_wave', { n: run.waves.wave.n, total: 30 })} · ${fmtTime(run.time)}`), body)));
   }
 
   // ------------------------------------------------------------------ results
@@ -181,9 +198,11 @@ export class RunModals {
         h(
           'div.modal.results' + (data.victory ? '.victory' : '.defeat'),
           h('h2.glow', data.victory ? t('victory') : t('game_over')),
-          h('div.sub', data.victory ? t('victory_sub') : t('defeat_sub')),
+          h('div.sub', data.victory ? t('victory_sub') : s.mode === 'endless' ? t('endless_over_sub') : t('defeat_sub')),
+          data.endless ? h('div.record-line' + (data.endless.newRecord ? '.new' : ''), data.endless.newRecord ? t('new_record') : t('best_wave', { n: data.endless.best })) : null,
           h(
             'div.stat-grid',
+            h('div.kv', h('span', t('r_wave')), h('span', s.mode === 'endless' ? String(s.wave) : `${s.wave} / 30`)),
             h('div.kv', h('span', t('r_time')), h('span', fmtTime(s.time))),
             h('div.kv', h('span', t('r_level')), h('span', String(s.level))),
             h('div.kv', h('span', t('r_kills')), h('span', fmtNum(s.kills))),
@@ -257,7 +276,7 @@ function choiceCard(run: Run, c: Choice): HTMLElement {
     icon = iconImg('coin', 0xffd23d, 'icon lg');
     name = t('choice_gold');
     tag = '';
-    lines = [t('choice_gold_desc', { n: Math.round(25 * run.player.stats.greed) })];
+    lines = [t('choice_gold_desc', { n: Math.round(3 * run.player.stats.greed) })];
     color = '#ffd23d';
   } else {
     icon = iconImg('heart', 0xff4a6a, 'icon lg');

@@ -24,6 +24,7 @@ export const PERM_UPGRADES: PermUpgradeDef[] = [
 
 export const PERM_BY_ID: Record<string, PermUpgradeDef> = Object.fromEntries(PERM_UPGRADES.map((u) => [u.id, u]));
 
+/** Prices are a quarter of the listed base cost since the v2 economy (gold income dropped ~10x). */
 export function permCost(def: PermUpgradeDef, level: number): number {
-  return Math.round(def.baseCost * Math.pow(def.costGrowth, level) / 10) * 10;
+  return Math.max(5, Math.round((def.baseCost * Math.pow(def.costGrowth, level)) / 4 / 5) * 5);
 }

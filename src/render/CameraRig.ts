@@ -8,7 +8,8 @@ export class CameraRig {
   private tz = 0;
   height = 19.5;
   back = 11.5;
-  shakeEnabled = true;
+  /** Screen shake strength 0..1 from settings. */
+  shake = 1;
   zoom = 1;
 
   constructor(aspect: number) {
@@ -28,8 +29,8 @@ export class CameraRig {
   }
 
   addShake(amount: number) {
-    if (!this.shakeEnabled) return;
-    this.trauma = Math.min(1, this.trauma + amount);
+    if (this.shake <= 0) return;
+    this.trauma = Math.min(1, this.trauma + amount * this.shake);
   }
 
   snap(x: number, z: number) {

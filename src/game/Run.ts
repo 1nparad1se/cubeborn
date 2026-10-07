@@ -24,6 +24,9 @@ import { resolveStats, sumMods } from './Stats';
 import type { Terrain } from './Terrain';
 import { makeDamage, type FxSink } from './types';
 import { WeaponSystem, type WeaponInstance } from './weapons/Weapon';
+import { WaveDirector, type RunMode, type Wave, type WaveScale } from './Waves';
+import { MapFeatures } from './MapFeatures';
+import { RARITIES, type Rarity } from '../data/types';
 import './weapons/behaviors';
 
 export type RunState = 'playing' | 'levelup' | 'chest' | 'dead' | 'victory';
@@ -35,9 +38,21 @@ export interface ChestReward {
   from?: string;
 }
 
+export type ChestSource = 'elite' | 'boss' | 'event' | 'secret' | 'treasure';
+
+export interface ChestData {
+  rewards: ChestReward[];
+  gold: number;
+  tier: number;
+  rarity: Rarity;
+}
+
 export interface RunEvents extends Record<string, unknown> {
   levelup: Choice[];
-  chest: { rewards: ChestReward[]; gold: number; tier: number };
+  chest: ChestData;
+  wave: Wave;
+  modifier: string;
+  feature: string;
   bossSpawn: BossController;
   bossPhase: BossController;
   bossDefeated: BossController;
@@ -59,6 +74,7 @@ export interface RunOptions {
   settings: { damageNumbers: boolean };
   tr: (key: string) => string;
   seed?: number;
+  mode?: RunMode;
 }
 
 /** One playthrough of a map: owns every gameplay system and advances the simulation. */
@@ -91,7 +107,12 @@ export class Run {
   readonly unlockedPassives: Set<string>;
   readonly settings: { damageNumbers: boolean };
   readonly tr: (key: string) => string;
-  readonly weather = { darkness: 0, blizzard: 0, surge: 0 };
+  readonly weather = { darkness: 0, blizzard: 0, surge: 0, storm: 0 };
+  readonly mode: RunMode;
+  readonly waves: WaveDirector;
+  readonly features: MapFeatures;
+  /** Multipliers for enemies spawned in the current wave. */
+  waveScale: WaveScale;
   readonly debug = { god: false };
   readonly reviveBlast = makeDamage();
   readonly nukeBlast = makeDamage();
@@ -124,6 +145,9 @@ export class Run {
     this.unlockedWeapons = o.unlockedWeapons;
     this.unlockedPassives = o.unlockedPassives;
     this.unlockedWeapons.add(o.hero.startWeapon);
+    this.mode = o.mode ?? 'campaign';
+    this.waves = new WaveDirector(this, this.mode);
+    this.waveScale = this.waves.scale();
     this.terrain = generateTerrain(o.map, this.seed);
     this.nav = new NavField(this.terrain);
     const c = Math.floor(o.map.size / 2) + 0.5;
@@ -143,6 +167,7 @@ export class Run {
     this.leveling.initCounters();
     this.spawner = new Spawner(this);
     this.perks = new Perks(this, o.hero.perk);
+    this.features = new MapFeatures(this);
     this.weapons.add(o.hero.startWeapon);
     this.stats.discovered.add(o.hero.startWeapon);
     this.nav.update(0, this.player.x, this.player.z, true);
@@ -197,7 +222,7 @@ export class Run {
     if (this.state !== 'playing') return;
     this.time += dt;
     const p = this.player;
-    for (const k of ['darkness', 'blizzard', 'surge'] as const) if (this.weather[k] > 0) this.weather[k] -= dt;
+    for (const k of ['darkness', 'blizzard', 'surge', 'storm'] as const) if (this.weather[k] > 0) this.weather[k] -= dt;
     if (!p.dead) p.update(dt, ix, iz);
     this.nav.update(dt, p.x, p.z);
     this.surgeBuff();
@@ -212,6 +237,7 @@ export class Run {
     }
     if (!p.dead) {
       this.spawner.update(dt);
+      this.features.update(dt);
       this.weapons.update(dt);
       this.perks.update(dt);
     }
@@ -265,7 +291,7 @@ export class Run {
   skip() {
     if (this.leveling.skips <= 0) return;
     this.leveling.skips--;
-    this.stats.gold += 5;
+    this.stats.gold += 1;
     this.choose(null);
   }
 
@@ -278,14 +304,25 @@ export class Run {
   }
 
   // ---------------------------------------------------------------- chests
-  openChest(tier: number) {
-    const rewards: ChestReward[] = [];
+  /** Rolls a chest rarity for a drop source; luck shifts the odds toward rarer chests. */
+  rollChestRarity(source: ChestSource): number {
     const luck = this.player.stats.luck;
-    let count = tier >= 1 ? 3 : 1;
-    const r = this.rng.next();
-    if (r < 0.04 * luck) count = 5;
-    else if (r < 0.18 * luck) count = Math.max(count, 3);
-    if (tier >= 1 && this.rng.chance(0.3 * luck)) count = 5;
+    const w = source === 'boss' ? [0, 0, 55, 33, 12] : source === 'secret' ? [0, 50, 32, 13, 5] : [52, 28, 13, 5, 2];
+    if (this.mode === 'endless' && this.waves.wave.n > 30) w[0] *= 0.5;
+    const ws = w.map((x, i) => (i === 0 ? x : x * luck));
+    let r = this.rng.next() * ws.reduce((a, b) => a + b, 0);
+    for (let i = 0; i < ws.length; i++) {
+      r -= ws[i];
+      if (r <= 0) return i;
+    }
+    return 0;
+  }
+
+  /** Opens a chest: rarer chests hold more upgrades, more gold and heal more. */
+  openChest(tier: number, rarityIdx = 0) {
+    const rewards: ChestReward[] = [];
+    const rarity = RARITIES[Math.max(0, Math.min(4, rarityIdx))];
+    const count = [1, 2, 3, 4, 5][rarityIdx] ?? 1;
     const used = new Set<string>();
     for (let i = 0; i < count; i++) {
       const evo = this.weapons.evolvable().find((w) => !used.has(w.def.id));
@@ -311,13 +348,15 @@ export class Run {
         rewards.push(pick);
       } else rewards.push({ kind: 'gold', id: 'gold', level: 0 });
     }
-    const gold = Math.round((20 + this.rng.int(0, 40) + (tier >= 1 ? 100 : 0) + rewards.filter((x) => x.kind === 'gold').length * 50) * this.player.stats.greed);
+    const baseGold = [3, 5, 8, 12, 20][rarityIdx] ?? 3;
+    const gold = Math.round((baseGold + this.rng.int(0, 3) + rewards.filter((x) => x.kind === 'gold').length * 5) * this.player.stats.greed);
     this.stats.gold += gold;
     this.stats.chests++;
-    this.player.heal(this.player.stats.maxHp * 0.1 * this.perks.healMul(), true);
+    this.stats.chestRarity[rarityIdx]++;
+    this.player.heal(this.player.stats.maxHp * (0.1 + rarityIdx * 0.05) * this.perks.healMul(), true);
     this.state = 'chest';
     this.fx.sound('chestOpen');
-    this.events.emit('chest', { rewards, gold, tier });
+    this.events.emit('chest', { rewards, gold, tier, rarity });
   }
 
   closeChest() {
@@ -362,6 +401,10 @@ export class Run {
       weapons: this.weapons.list.map((w) => ({ id: w.def.id, level: w.level, damage: Math.round(this.stats.damageBy[w.def.id] ?? 0) })),
       passives: [...this.passives.levels.entries()].map(([id, level]) => ({ id, level })),
       victory: this.state === 'victory' || this.endState === 'victory',
+      mode: this.mode,
+      wave: this.waves.wave.n,
+      damageTaken: Math.round(this.stats.damageTaken),
+      chestRarity: [...this.stats.chestRarity],
       bosses: [...this.stats.bossesKilled],
       evolutions: [...this.stats.evolutions],
       elites: this.stats.elites,
@@ -375,7 +418,8 @@ export class Run {
   }
 
   static goldReward(summary: ReturnType<Run['summary']>, diffReward: number): number {
-    const base = summary.gold + summary.kills * BALANCE.goldPerKill + (summary.time / 60) * BALANCE.goldPerMinute + summary.bosses.length * BALANCE.goldBossBonus + (summary.victory ? BALANCE.goldVictoryBonus : 0);
+    const waves = summary.mode === 'endless' ? summary.wave * BALANCE.goldPerWave : 0;
+    const base = summary.gold + summary.kills * BALANCE.goldPerKill + (summary.time / 60) * BALANCE.goldPerMinute + summary.bosses.length * BALANCE.goldBossBonus + (summary.victory ? BALANCE.goldVictoryBonus : 0) + waves;
     return Math.round(base * diffReward);
   }
 

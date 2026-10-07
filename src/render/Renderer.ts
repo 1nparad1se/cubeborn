@@ -13,6 +13,8 @@ import { makeBlobTexture, makeBlockTexture } from './Textures';
 import { ArticulatedModel } from './ArticulatedModel';
 import { getModel } from '../models';
 
+import type { Settings } from '../meta/Save';
+
 export type Quality = 'low' | 'medium' | 'high';
 
 const AMBIENT: Record<string, [AmbientKind, number]> = {
@@ -45,6 +47,12 @@ export class Renderer {
   private lights: LightPool;
   private run: Run | null = null;
   private quality: Quality = 'medium';
+  private s: Settings;
+  /** MSAA is fixed when the WebGL context is created. */
+  readonly msaa: boolean;
+  private viewMul = 1;
+  private cullT = 0;
+  private zoomLevel = 1;
   private time = 0;
   private torchTerrain: Terrain | null = null;
   // menu diorama
@@ -55,9 +63,11 @@ export class Renderer {
   private w = 1;
   private h = 1;
 
-  constructor(private container: HTMLElement, quality: Quality) {
-    this.quality = quality;
-    this.gl = new THREE.WebGLRenderer({ antialias: quality !== 'low', powerPreference: 'high-performance', alpha: false });
+  constructor(private container: HTMLElement, settings: Settings) {
+    this.s = settings;
+    this.quality = settings.effects;
+    this.msaa = settings.antiAliasing !== 'off';
+    this.gl = new THREE.WebGLRenderer({ antialias: this.msaa, powerPreference: 'high-performance', alpha: false });
     this.gl.outputColorSpace = THREE.SRGBColorSpace;
     this.gl.shadowMap.type = THREE.PCFSoftShadowMap;
     this.gl.domElement.className = 'game-canvas';
@@ -76,7 +86,7 @@ export class Renderer {
     this.sun.shadow.normalBias = 0.03;
     this.scene.add(this.hemi, this.sun, this.sun.target);
     this.lights = new LightPool(this.scene, this.lightCount());
-    this.applyQuality(quality);
+    this.applySettings(settings);
     this.resize();
     window.addEventListener('resize', () => this.resize());
   }
@@ -85,25 +95,62 @@ export class Renderer {
     return this.quality === 'low' ? 2 : this.quality === 'medium' ? 4 : 6;
   }
 
-  applyQuality(q: Quality) {
+  /** Particle budget multiplier from the particle quality setting. */
+  private get particleMul(): number {
+    return this.s.particles === 'low' ? 0.4 : this.s.particles === 'medium' ? 0.75 : 1;
+  }
+
+  /** Applies video settings; most take effect immediately (MSAA needs a restart). */
+  applySettings(st: Settings) {
+    this.s = st;
+    const q = st.effects;
     const changed = q !== this.quality;
     this.quality = q;
-    const dpr = window.devicePixelRatio || 1;
-    this.gl.setPixelRatio(q === 'low' ? Math.min(dpr, 1) * 0.85 : q === 'medium' ? Math.min(dpr, 1.5) : Math.min(dpr, 2));
-    this.gl.shadowMap.enabled = q !== 'low';
-    this.sun.castShadow = q !== 'low';
-    const size = q === 'high' ? 2048 : 1024;
+    // shadows
+    const sh = st.shadows;
+    this.gl.shadowMap.enabled = sh !== 'off';
+    this.sun.castShadow = sh !== 'off';
+    this.gl.shadowMap.type = sh === 'low' ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
+    const size = sh === 'high' ? 4096 : sh === 'medium' ? 2048 : 1024;
     if (this.sun.shadow.mapSize.x !== size) {
       this.sun.shadow.mapSize.set(size, size);
       this.sun.shadow.map?.dispose();
       this.sun.shadow.map = null;
     }
+    // textures: filtering and mipmaps on the shared voxel textures
+    for (const tex of [this.blockTex, this.blobTex]) {
+      const mip = st.textures !== 'low';
+      tex.generateMipmaps = mip;
+      tex.minFilter = mip ? THREE.NearestMipmapLinearFilter : THREE.NearestFilter;
+      tex.anisotropy = st.textures === 'high' ? Math.min(16, this.gl.capabilities.getMaxAnisotropy()) : st.textures === 'medium' ? 4 : 1;
+      tex.needsUpdate = true;
+    }
+    // post processing: filmic tone mapping (the CSS vignette is toggled by the app)
+    this.gl.toneMapping = st.postProcessing ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping;
+    this.gl.toneMappingExposure = st.postProcessing ? 1.35 : 1;
+    this.viewMul = { near: 0.8, medium: 1, far: 1.3, max: 1.7 }[st.viewDistance] ?? 1;
+    this.rig.camera.far = 200 * this.viewMul;
+    this.rig.camera.updateProjectionMatrix();
+    this.rig.shake = st.screenShake;
+    this.overlay.showNumbers = st.damageNumbers;
+    this.overlay.healthBars = st.enemyHealthBars;
     if (changed) {
       // light count is baked into shaders: rebuild the pool
       for (const l of this.lights.lights) this.scene.remove(l);
       this.lights = new LightPool(this.scene, this.lightCount());
     }
+    if (this.scene.fog && this.run) this.setAtmosphere(this.run.map);
     this.resize();
+  }
+
+  /** Current camera zoom (smoothly follows the target set by the wheel). */
+  setZoom(z: number) {
+    this.zoomLevel = z;
+  }
+
+  /** Effects detail level used by world and entity renderers. */
+  private get detail(): Quality {
+    return this.s.shadows === 'off' ? 'low' : (this.quality as Quality);
   }
 
   get currentQuality(): Quality {
@@ -115,6 +162,16 @@ export class Renderer {
     const h = this.container.clientHeight || window.innerHeight;
     this.w = w;
     this.h = h;
+    // render resolution: native device pixels, or a fixed resolution scaled to the window
+    const dpr = window.devicePixelRatio || 1;
+    let ratio = this.quality === 'low' ? Math.min(dpr, 1) : Math.min(dpr, 2);
+    const res = this.s.resolution;
+    if (res && res !== 'native') {
+      const [rw, rh] = res.split('x').map(Number);
+      if (rw > 0 && rh > 0) ratio = Math.min(rw / w, rh / h);
+    }
+    if (this.s.antiAliasing === 'ssaa') ratio *= 1.5;
+    this.gl.setPixelRatio(Math.max(0.5, Math.min(3, ratio)));
     this.gl.setSize(w, h, false);
     this.gl.domElement.style.width = w + 'px';
     this.gl.domElement.style.height = h + 'px';
@@ -125,7 +182,7 @@ export class Renderer {
   private setAtmosphere(map: MapDef) {
     const p = map.palette;
     this.scene.background = new THREE.Color(p.sky);
-    this.scene.fog = new THREE.Fog(p.fog, p.fogNear + 8, p.fogFar + 12);
+    this.scene.fog = new THREE.Fog(p.fog, (p.fogNear + 8) * this.viewMul, (p.fogFar + 12) * this.viewMul);
     this.hemi.color.setHex(p.ambient);
     this.hemi.groundColor.setHex(p.hemiGround);
     this.hemi.intensity = p.ambientIntensity * 2.2;
@@ -136,30 +193,23 @@ export class Renderer {
   private buildWorld(terrain: Terrain, map: MapDef) {
     this.disposeWorld();
     this.setAtmosphere(map);
-    this.world = new WorldRenderer(terrain, map, this.blockTex, this.quality);
+    this.world = new WorldRenderer(terrain, map, this.blockTex, this.detail);
     this.scene.add(this.world.group);
     this.torchTerrain = terrain;
   }
 
   /** Starts drawing a run; returns the FxSink the game logic should use. */
-  startRun(run: Run, hooks: FxHooks, settings: { damageNumbers: boolean; screenShake: boolean }): FxSink {
+  startRun(run: Run, hooks: FxHooks): FxSink {
     this.menuMode = false;
     this.clearShowcase();
     this.run = run;
     this.buildWorld(run.terrain, run.map);
-    this.entities = new EntityRenderer(this.scene, run, this.blockTex, this.blobTex, this.quality, this.lights);
+    this.entities = new EntityRenderer(this.scene, run, this.blockTex, this.blobTex, this.detail === 'high' && this.s.shadows !== 'low' ? 'high' : this.detail === 'low' ? 'low' : 'medium', this.lights);
     const [kind, color] = AMBIENT[run.map.generator] ?? ['motes', 0xffffff];
-    this.particles = new Particles(this.scene, this.blockTex, this.blobTex, this.quality, kind, color);
-    this.overlay.showNumbers = settings.damageNumbers;
+    this.particles = new Particles(this.scene, this.blockTex, this.blobTex, this.s.particles, kind, color);
     this.overlay.clear();
-    this.rig.shakeEnabled = settings.screenShake;
     this.rig.snap(run.player.x, run.player.z);
     return this.makeFx(hooks);
-  }
-
-  setSettings(s: { damageNumbers: boolean; screenShake: boolean }) {
-    this.overlay.showNumbers = s.damageNumbers;
-    this.rig.shakeEnabled = s.screenShake;
   }
 
   private makeFx(hooks: FxHooks): FxSink {
@@ -167,7 +217,7 @@ export class Renderer {
     const self = this;
     return {
       burst(x, y, z, color, count, speed, size, life, kind?: ParticleKind) {
-        const mul = self.quality === 'low' ? 0.5 : self.quality === 'medium' ? 0.8 : 1;
+        const mul = self.particleMul;
         self.particles?.burst(x, y, z, color, Math.max(1, Math.round(count * mul)), speed, size, life, kind);
       },
       number(x, z, value, crit, color) {
@@ -277,7 +327,9 @@ export class Renderer {
     const run = this.run!;
     const p = run.player;
     const lead = { x: p.vx * 0.18, z: p.vz * 0.18 };
+    this.rig.zoom += (this.zoomLevel - this.rig.zoom) * (1 - Math.exp(-10 * Math.max(dt, 1 / 120)));
     this.rig.update(dt, p.x, p.z, lead);
+    const zoom = this.rig.zoom;
     const t = this.rig.target;
     // weather
     const pal = run.map.palette;
@@ -286,8 +338,23 @@ export class Renderer {
     this.sun.intensity = pal.sunIntensity * 1.6 * (1 - dark * 0.8);
     const fog = this.scene.fog as THREE.Fog;
     const bl = run.weather.blizzard;
-    fog.near = (pal.fogNear + 8) * (1 - bl * 0.45) * (1 - dark * 0.3);
-    fog.far = (pal.fogFar + 12) * (1 - bl * 0.4) * (1 - dark * 0.3);
+    const storm = Math.min(1, run.weather.storm);
+    const vm = this.viewMul * Math.max(1, zoom);
+    fog.near = (pal.fogNear + 8) * vm * (1 - bl * 0.45) * (1 - dark * 0.3) * (1 - storm * 0.55);
+    fog.far = (pal.fogFar + 12) * vm * (1 - bl * 0.4) * (1 - dark * 0.3) * (1 - storm * 0.5);
+    // shadow box grows with zoom so the whole view stays shadowed
+    const ext = 20 * Math.max(1, zoom);
+    const sc = this.sun.shadow.camera;
+    if (sc.right !== ext) {
+      sc.left = sc.bottom = -ext;
+      sc.right = sc.top = ext;
+      sc.updateProjectionMatrix();
+    }
+    this.cullT -= dt;
+    if (this.cullT <= 0) {
+      this.cullT = 0.25;
+      this.world?.cull(t.x, t.z, fog.far + 6);
+    }
     // sun follows the camera so the shadow map covers the view
     this.sun.position.set(t.x + 8, 26, t.z + 10);
     this.sun.target.position.set(t.x, 0, t.z - 2);

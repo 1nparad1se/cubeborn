@@ -1,7 +1,7 @@
 import { BALANCE } from '../config/balance';
 import { TAU } from '../core/math';
 import type { Enemy } from './Enemy';
-import type { Run } from './Run';
+import type { ChestSource, Run } from './Run';
 
 export type PickupKind = 'xp' | 'gold' | 'heart' | 'magnet' | 'chest' | 'fury' | 'haste' | 'aegis' | 'frenzy' | 'chrono' | 'nuke' | 'star' | 'pouch';
 
@@ -19,6 +19,8 @@ export class Pickup {
   age = 0;
   /** Chest tier: 0 normal, 1 boss. */
   tier = 0;
+  /** Chest rarity index (0 common .. 4 legendary). */
+  rarity = 0;
 }
 
 export const POWERUPS: PickupKind[] = ['fury', 'haste', 'aegis', 'frenzy', 'chrono', 'nuke'];
@@ -45,6 +47,7 @@ export class Pickups {
     p.attracted = false;
     p.age = 0;
     p.tier = 0;
+    p.rarity = 0;
     p.vx = p.vz = p.vy = 0;
     if (pop) {
       const a = Math.random() * TAU;
@@ -70,7 +73,7 @@ export class Pickups {
   rollKillDrops(e: Enemy) {
     const luck = this.run.player.stats.luck;
     const r = Math.random();
-    if (r < BALANCE.goldDropChance * luck) this.spawn('gold', e.x, e.z, 1 + Math.floor(Math.random() * 3), true);
+    if (r < BALANCE.goldDropChance * luck) this.spawn('gold', e.x, e.z, e.elite ? 2 : 1, true);
     else if (r < (BALANCE.goldDropChance + BALANCE.heartDropChance) * luck) this.spawn('heart', e.x, e.z, 0, true);
     else if (Math.random() < BALANCE.magnetDropChance * luck) this.spawn('magnet', e.x, e.z, 0, true);
     else if (Math.random() < BALANCE.powerupDropChance * luck) this.spawn(this.run.rng.pick(POWERUPS), e.x, e.z, 0, true);
@@ -81,22 +84,24 @@ export class Pickups {
     const luck = this.run.player.stats.luck;
     const roll = rng.next();
     if (roll < 0.3) this.spawn('heart', x, z, 0, true);
-    else if (roll < 0.55) this.spawn('gold', x, z, 3 + rng.int(0, 6), true);
+    else if (roll < 0.55) this.spawn('gold', x, z, 1 + rng.int(0, 1), true);
     else if (roll < 0.66) this.spawn('magnet', x, z, 0, true);
     else if (roll < 0.66 + 0.25 * luck) this.spawn(rng.pick(POWERUPS), x, z, 0, true);
-    else if (roll < 0.97) this.spawn('pouch', x, z, 25 + rng.int(0, 30), true);
+    else if (roll < 0.97) this.spawn('pouch', x, z, 3 + rng.int(0, 3), true);
     else this.spawn('star', x, z, 0, true);
   }
 
-  spawnChest(x: number, z: number, tier = 0) {
-    const c = this.spawn('chest', x, z, 0, true);
+  spawnChest(x: number, z: number, tier = 0, source: ChestSource = tier ? 'boss' : 'elite', pop = true): Pickup {
+    const c = this.spawn('chest', x, z, 0, pop);
     c.tier = tier;
+    c.rarity = this.run.rollChestRarity(source);
     this.run.fx.sound('chestDrop');
+    return c;
   }
 
   treasureBurst(x: number, z: number) {
-    for (let i = 0; i < 12; i++) this.spawn('gold', x, z, 5 + Math.floor(Math.random() * 6), true);
-    this.spawnChest(x, z);
+    for (let i = 0; i < 6; i++) this.spawn('gold', x, z, 1, true);
+    if (this.run.rng.chance(0.3)) this.spawnChest(x, z, 0, 'treasure');
   }
 
   collectAllXp() {
@@ -171,7 +176,7 @@ export class Pickups {
         run.fx.sound('coin');
         break;
       case 'heart':
-        pl.heal(30 * run.perks.healMul());
+        pl.heal((10 + pl.stats.maxHp * 0.2) * run.perks.healMul());
         run.fx.sound('heal');
         run.fx.burst(pl.x, 1, pl.z, 0x6bff8a, 12, 2.5, 0.14, 0.6, 'glow');
         break;
@@ -180,7 +185,7 @@ export class Pickups {
         run.fx.sound('magnet');
         break;
       case 'chest':
-        run.openChest(p.tier);
+        run.openChest(p.tier, p.rarity);
         break;
       case 'fury':
         pl.buffs.fury = 12;
@@ -206,6 +211,7 @@ export class Pickups {
         this.powerFx(0xffffff, 'pu_nuke');
         run.fx.light(pl.x, pl.z, 0xffffff, 6, 30, 0.5);
         run.fx.shake(0.6);
+        run.nukeBlast.damage = 60 * run.waveScale.hp * run.diff.hp * run.map.tier;
         run.enemies.forEachInRadius(pl.x, pl.z, 20, (e) => {
           if (!e.boss) run.combat.hit(e, run.nukeBlast, 1);
         });

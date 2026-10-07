@@ -187,7 +187,7 @@ export function runAttack(b: BossController, a: BossAttack) {
       const count = n(a, 'count', 2);
       for (let i = 0; i < count; i++) {
         const ang = (i / count) * TAU + Math.random();
-        const c = BossController.spawn(run, b.def.id, e.x + Math.cos(ang) * 3, e.z + Math.sin(ang) * 3, b.isFinal, n(a, 'hpFrac', 0.15), true);
+        const c = BossController.spawn(run, b.def.id, e.x + Math.cos(ang) * 3, e.z + Math.sin(ang) * 3, b.isFinal, n(a, 'hpFrac', 0.15) * b.hpScale, true, b.dmgScale);
         if (c) {
           c.e.scale = 0.65;
           c.e.radius = b.def.radius * 0.7;

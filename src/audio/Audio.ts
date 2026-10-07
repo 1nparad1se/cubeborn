@@ -41,10 +41,16 @@ const SONGS: Record<string, SongDef> = {
 
 const mtof = (m: number) => 440 * Math.pow(2, (m - 69) / 12);
 
+/** Menu and interface sounds follow the UI volume slider. */
+const UI_SOUNDS = new Set(['ui', 'uiBack', 'select', 'buy', 'denied']);
+
 export class AudioEngine {
   ctx: AudioContext | null = null;
   master!: GainNode;
   sfxBus!: GainNode;
+  uiBus!: GainNode;
+  /** Bus the current recipe plays into (sfx or ui). */
+  private bus!: GainNode;
   musicBus!: GainNode;
   private comp!: DynamicsCompressorNode;
   private noiseBuf!: AudioBuffer;
@@ -52,6 +58,8 @@ export class AudioEngine {
   private voices = 0;
   private sfxVol = 0.8;
   private musicVol = 0.6;
+  private uiVol = 0.8;
+  private masterVol = 1;
   private song: SongDef | null = null;
   private songId = '';
   private step = 0;
@@ -72,11 +80,14 @@ export class AudioEngine {
       this.master = this.ctx.createGain();
       this.master.gain.value = 0.9;
       this.sfxBus = this.ctx.createGain();
+      this.uiBus = this.ctx.createGain();
+      this.bus = this.sfxBus;
       this.musicBus = this.ctx.createGain();
       this.musicFilter = this.ctx.createBiquadFilter();
       this.musicFilter.type = 'lowpass';
       this.musicFilter.frequency.value = 2400;
       this.sfxBus.connect(this.comp);
+      this.uiBus.connect(this.comp);
       this.musicBus.connect(this.musicFilter);
       this.musicFilter.connect(this.comp);
       this.comp.connect(this.master);
@@ -85,7 +96,7 @@ export class AudioEngine {
       this.noiseBuf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
       const d = this.noiseBuf.getChannelData(0);
       for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
-      this.setVolumes(this.sfxVol, this.musicVol);
+      this.setVolumes(this.masterVol, this.sfxVol, this.musicVol, this.uiVol);
       if (this.songId) {
         const id = this.songId;
         this.songId = '';
@@ -95,10 +106,14 @@ export class AudioEngine {
     if (this.ctx.state === 'suspended') void this.ctx.resume();
   }
 
-  setVolumes(sfx: number, music: number) {
+  setVolumes(master: number, sfx: number, music: number, ui: number) {
+    this.masterVol = master;
     this.sfxVol = sfx;
     this.musicVol = music;
+    this.uiVol = ui;
     if (!this.ctx) return;
+    this.master.gain.value = 0.9 * master;
+    this.uiBus.gain.value = ui * 0.9;
     this.sfxBus.gain.value = sfx * 0.9;
     this.musicBus.gain.value = music * 0.32;
   }
@@ -121,7 +136,7 @@ export class AudioEngine {
     g.gain.exponentialRampToValueAtTime(vol, t + attack);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     o.connect(g);
-    g.connect(out ?? this.sfxBus);
+    g.connect(out ?? this.bus);
     o.start(t);
     o.stop(t + dur + 0.02);
   }
@@ -142,14 +157,15 @@ export class AudioEngine {
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
     s.connect(f);
     f.connect(g);
-    g.connect(out ?? this.sfxBus);
+    g.connect(out ?? this.bus);
     s.start(t, Math.random() * 0.5);
     s.stop(t + dur + 0.02);
   }
 
   // ------------------------------------------------------------- sfx
   play(id: string, volume = 1) {
-    if (!this.ctx || this.ctx.state !== 'running' || this.sfxVol <= 0) return;
+    const ui = UI_SOUNDS.has(id);
+    if (!this.ctx || this.ctx.state !== 'running' || (ui ? this.uiVol : this.sfxVol) <= 0 || this.masterVol <= 0) return;
     const now = this.ctx.currentTime;
     const gap = MIN_GAP[id] ?? 0.045;
     if (now - (this.last[id] ?? -1) < gap) return;
@@ -159,7 +175,9 @@ export class AudioEngine {
     if (!r) return;
     this.voices++;
     setTimeout(() => this.voices--, 250);
+    this.bus = ui ? this.uiBus : this.sfxBus;
     r(this, now, Math.min(1.2, volume));
+    this.bus = this.sfxBus;
   }
 
   // ------------------------------------------------------------- music

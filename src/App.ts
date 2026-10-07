@@ -1,7 +1,7 @@
 import { Run } from './game/Run';
 import { NullFx, type FxSink } from './game/types';
 import { Renderer } from './render/Renderer';
-import { Input } from './input/Input';
+import { Input, keyName } from './input/Input';
 import { audio } from './audio/Audio';
 import { Profile } from './meta/Profile';
 import { Hud } from './ui/Hud';
@@ -17,8 +17,12 @@ import { PASSIVES, PASSIVE_BY_ID } from './data/passives';
 import { BOSS_BY_ID, RELIC_BY_ID } from './data/bosses';
 import { generateTerrain } from './game/mapgen/generators';
 import type { BossController } from './game/bosses/Boss';
+import { WAVE_TYPE_COLOR, MODIFIERS, type RunMode, type Wave } from './game/Waves';
 
-export const VERSION = 'v1.0.0';
+export const VERSION = 'v2.0.0';
+
+/** Discrete camera zoom steps for the mouse wheel (camera distance multipliers). */
+const ZOOM_STEPS = [0.75, 0.88, 1, 1.15, 1.35];
 
 /** Forwards FxSink calls to a target that can be swapped once the renderer exists. */
 class ProxyFx implements FxSink {
@@ -61,7 +65,9 @@ export class App implements MenuApi {
   private modals: RunModals;
   private toasts: HTMLElement;
   private run: Run | null = null;
-  private runArgs: [string, string, string] = ['bram', 'blightwood', 'normal'];
+  private runArgs: [string, string, string, RunMode] = ['bram', 'blightwood', 'normal', 'campaign'];
+  private postVignette: HTMLElement;
+  private frameDue = 0;
   private paused = false;
   private mode: Mode = 'splash';
   private last = performance.now();
@@ -75,15 +81,17 @@ export class App implements MenuApi {
     setLang(s.lang);
     this.view = h('div.view');
     root.appendChild(this.view);
-    this.renderer = new Renderer(this.view, s.quality);
-    this.input = new Input(this.view);
-    this.input.onPause = () => this.togglePause();
+    this.renderer = new Renderer(this.view, s);
+    this.postVignette = h('div.post-vignette.hidden');
+    this.view.appendChild(this.postVignette);
+    this.input = new Input(this.view, s.keybinds);
+    this.input.onPause = () => this.handleEscape();
+    this.input.onZoom = (dir) => this.stepZoom(dir);
+    this.input.onMap = () => this.hud.toggleMap();
     this.hud = new Hud(root);
     this.hud.onPause = () => this.togglePause();
     this.hud.setVisible(false);
     this.menus = new Menus(root, this);
-    // Android back button (APK shell): pause / resume / step back through menus.
-    (window as unknown as { cubebornBack: () => boolean }).cubebornBack = () => this.handleBack();
     this.menus.setVisible(false);
     this.modals = new RunModals(root, this);
     this.toasts = h('div.toasts');
@@ -91,13 +99,21 @@ export class App implements MenuApi {
     this.applySettings();
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
-        if (this.mode === 'run' && !this.paused && this.run?.state === 'playing') this.togglePause();
+        this.autoPause();
         audio.suspend(true);
       } else audio.suspend(false);
     });
+    window.addEventListener('blur', () => this.autoPause());
+    document.addEventListener('fullscreenchange', () => {
+      // leaving fullscreen with the browser's own key: keep the setting honest
+      if (!document.fullscreenElement && s.displayMode !== 'windowed') {
+        s.displayMode = 'windowed';
+        this.profile.saveSoon();
+      }
+    });
     this.showMenuBackdrop();
     this.splash();
-    requestAnimationFrame(this.loop);
+    this.schedule();
   }
 
   // ------------------------------------------------------------------ MenuApi
@@ -111,14 +127,64 @@ export class App implements MenuApi {
 
   applySettings() {
     const s = this.profile.data.settings;
-    audio.setVolumes(s.sfx, s.music);
-    if (s.quality !== this.renderer.currentQuality) {
-      this.renderer.applyQuality(s.quality);
-      if (this.mode === 'menu') this.showMenuBackdrop();
-    }
-    this.renderer.setSettings({ damageNumbers: s.damageNumbers, screenShake: s.screenShake });
-    this.hud.setFpsVisible(s.showFps);
+    audio.setVolumes(s.master, s.sfx, s.music, s.ui);
+    const effectsChanged = s.effects !== this.renderer.currentQuality;
+    this.renderer.applySettings(s);
+    if (effectsChanged && this.mode === 'menu') this.showMenuBackdrop();
+    this.renderer.setZoom(s.cameraZoom);
+    this.hud.setOptions({ minimap: s.showMinimap, waves: s.showWaveCounter, fps: s.showFps, enemies: s.showEnemyCount });
+    this.postVignette.classList.toggle('hidden', !s.postProcessing);
+    this.input.binds = s.keybinds;
     if (this.run) this.run.settings.damageNumbers = s.damageNumbers;
+    this.applyDisplayMode();
+  }
+
+  /** Fullscreen API stand-in for display modes (borderless = fullscreen without browser UI). */
+  private applyDisplayMode() {
+    const want = this.profile.data.settings.displayMode !== 'windowed';
+    try {
+      if (want && !document.fullscreenElement) void document.documentElement.requestFullscreen?.({ navigationUI: 'hide' }).catch(() => {});
+      else if (!want && document.fullscreenElement) void document.exitFullscreen?.().catch(() => {});
+    } catch {
+      /* fullscreen unavailable */
+    }
+  }
+
+  captureKey(cb: (code: string) => void) {
+    this.input.capture = cb;
+  }
+
+  needsRestart(): boolean {
+    return this.renderer.msaa !== (this.profile.data.settings.antiAliasing !== 'off');
+  }
+
+  private stepZoom(dir: number) {
+    const s = this.profile.data.settings;
+    let i = 0;
+    for (let k = 0; k < ZOOM_STEPS.length; k++) if (Math.abs(ZOOM_STEPS[k] - s.cameraZoom) < Math.abs(ZOOM_STEPS[i] - s.cameraZoom)) i = k;
+    const next = ZOOM_STEPS[Math.max(0, Math.min(ZOOM_STEPS.length - 1, i + dir))];
+    if (next === s.cameraZoom) return;
+    s.cameraZoom = next;
+    this.renderer.setZoom(next);
+    this.profile.saveSoon();
+  }
+
+  private autoPause() {
+    if (!this.profile.data.settings.autoPause) return;
+    if (this.mode === 'run' && !this.paused && this.run?.state === 'playing' && !this.run.ending) this.togglePause();
+  }
+
+  private handleEscape() {
+    const confirm = this.root.querySelector('.modal-back.confirm');
+    if (confirm) {
+      confirm.remove();
+      return;
+    }
+    if (this.mode === 'run') {
+      if (this.paused || (this.run?.state === 'playing' && !this.run.ending)) this.togglePause();
+      return;
+    }
+    if (this.mode === 'menu' && this.menus.canGoBack) this.menus.back();
   }
 
   resetProgress() {
@@ -157,7 +223,8 @@ export class App implements MenuApi {
   private showMenuBackdrop() {
     const p = this.profile.data;
     const map = MAP_BY_ID[p.last.map] && this.profile.isMapUnlocked(p.last.map) ? MAP_BY_ID[p.last.map] : MAPS[0];
-    const terrain = generateTerrain(map, 4242);
+    // a small slice of the map is enough for the menu backdrop
+    const terrain = generateTerrain({ ...map, size: 96 }, 4242, { zones: false });
     // clear a small stage in the middle for the hero
     this.renderer.showMenu(map, terrain, HERO_BY_ID[p.last.hero]?.model ?? 'bram');
   }
@@ -173,8 +240,8 @@ export class App implements MenuApi {
   }
 
   // ------------------------------------------------------------------ run lifecycle
-  startRun(heroId: string, mapId: string, diffId: string) {
-    this.runArgs = [heroId, mapId, diffId];
+  startRun(heroId: string, mapId: string, diffId: string, mode: RunMode = 'campaign') {
+    this.runArgs = [heroId, mapId, diffId, mode];
     this.menus.setVisible(false);
     this.modals.close();
     this.renderer.endRun();
@@ -190,45 +257,34 @@ export class App implements MenuApi {
       fx,
       settings: { damageNumbers: p.data.settings.damageNumbers },
       tr: (k) => t(k),
+      mode,
     });
-    const s = p.data.settings;
-    fx.target = this.renderer.startRun(
-      run,
-      {
-        sound: (id, v) => audio.play(id, v),
-        vibrate: (ms) => {
-          if (!s.vibration || !navigator.vibrate) return;
-          try {
-            navigator.vibrate(ms);
-          } catch {
-            /* vibration unavailable */
-          }
-        },
-      },
-      { damageNumbers: s.damageNumbers, screenShake: s.screenShake },
-    );
+    fx.target = this.renderer.startRun(run, { sound: (id, v) => audio.play(id, v), vibrate: () => {} });
+    this.renderer.setZoom(p.data.settings.cameraZoom);
     this.run = run;
     this.finished = false;
     this.paused = false;
-    this.hud.reset();
+    this.hud.bestWave = mode === 'endless' ? (p.data.endless[mapId]?.wave ?? 0) : 0;
+    this.hud.reset(run);
     this.hud.setVisible(true);
     this.input.setEnabled(true);
     this.mode = 'run';
     this.bindRunEvents(run);
     audio.playMusic(run.map.generator);
-    this.hud.showBanner(L(run.map.name), '#ffffff', 2.2);
+    this.hud.showBanner(L(run.map.name), '#ffffff', 2.2, mode === 'endless' ? t('mode_endless') : t('campaign_banner', { n: 30 }));
     if (!p.data.seenIntro) {
       this.hintActive = true;
-      this.hud.showHint(true, matchMedia('(pointer: coarse)').matches);
+      const kb = p.data.settings.keybinds;
+      this.hud.showHint(true, [kb.up, kb.left, kb.down, kb.right].map((k) => keyName(k[0] ?? '')).join(''));
       this.input.onFirstMove = () => {
         setTimeout(() => {
-          this.hud.showHint(false, false);
+          this.hud.showHint(false);
           this.hintActive = false;
         }, 1200);
         p.data.seenIntro = true;
         p.save();
       };
-    } else this.hud.showHint(false, false);
+    } else this.hud.showHint(false);
   }
 
   private bindRunEvents(run: Run) {
@@ -263,29 +319,24 @@ export class App implements MenuApi {
       if (!b.isFinal) audio.playMusic(run.map.generator);
     });
     run.events.on('banner', (key) => this.hud.showBanner(t(key), key === 'ev_treasure' ? '#ffd23d' : '#ff8a5a'));
+    run.events.on('wave', (w: Wave) => {
+      if (w.n === 1) return;
+      const title = run.mode === 'endless' ? t('hud_wave_endless', { n: w.n }) : t('hud_wave', { n: w.n, total: 30 });
+      const sub = t('wave_' + w.type) + (w.boss ? ' — ' + L(BOSS_BY_ID[w.boss]?.name) : '') + ' · ' + t('wave_hint_' + w.type);
+      this.hud.showBanner(title, WAVE_TYPE_COLOR[w.type], 2.8, sub);
+      audio.play(w.type === 'boss' || w.type === 'final' ? 'bossRoar' : 'levelup');
+    });
+    run.events.on('modifier', (id) => {
+      const m = MODIFIERS.find((x) => x.id === id);
+      this.toast(t('mod_' + id) + ': ' + t('mod_' + id + '_desc'), m?.color ?? '#ffffff');
+    });
+    run.events.on('feature', (key) => this.hud.showBanner(t(key), '#ffcf7a', 2.6, t(key + '_desc')));
     run.events.on('evolution', (id) => {
       const w = WEAPON_BY_ID[id];
       this.toast(t('evolved', { name: L(w.name) }), '#ffb02e');
     });
     run.events.on('gameover', () => this.finishRun(false));
     run.events.on('victory', () => this.finishRun(true));
-  }
-
-  private handleBack(): boolean {
-    const confirm = this.root.querySelector('.modal-back.confirm');
-    if (confirm) {
-      confirm.remove();
-      return true;
-    }
-    if (this.mode === 'run') {
-      if (this.run?.state === 'playing' && !this.run.ending) this.togglePause();
-      return true;
-    }
-    if (this.mode === 'menu' && this.menus.canGoBack) {
-      this.menus.back();
-      return true;
-    }
-    return this.mode === 'results' || this.mode === 'splash' ? this.mode === 'results' : false;
   }
 
   private togglePause() {
@@ -355,7 +406,15 @@ export class App implements MenuApi {
       if (BOSS_BY_ID[id]) p.discover('bosses', id);
       else p.discover('enemies', id);
     }
-    if (victory) {
+    let endless: { newRecord: boolean; best: number } | undefined;
+    if (run.mode === 'endless') {
+      const prev = p.data.endless[run.map.id];
+      const newRecord = !prev || s.wave > prev.wave || (s.wave === prev.wave && s.time > prev.time);
+      endless = { newRecord: newRecord && !!prev, best: prev?.wave ?? s.wave };
+      if (newRecord) p.data.endless[run.map.id] = { wave: s.wave, time: Math.round(s.time), kills: s.kills, gold: goldEarned, level: s.level, hero: run.hero.id };
+      p.maxStat('bestEndlessWave', s.wave);
+    }
+    if (victory && run.mode === 'campaign') {
       p.addStat('herowin_' + run.hero.id, 1);
       p.addStat('diffwin_' + diff.id, 1);
       const di = DIFFICULTIES.findIndex((d) => d.id === diff.id);
@@ -368,14 +427,14 @@ export class App implements MenuApi {
     this.mode = 'results';
     audio.playMusic(victory ? 'victory' : 'menu');
     const newUnlocks: string[] = [];
-    if (victory && run.map.id !== MAPS[MAPS.length - 1].id) {
+    if (victory && run.mode === 'campaign' && run.map.id !== MAPS[MAPS.length - 1].id) {
       const di = DIFFICULTIES.findIndex((d) => d.id === diff.id);
       if (di < 3 && (p.data.mapClears[run.map.id] ?? -1) === di) newUnlocks.push(t('diff_unlocked', { name: L(DIFFICULTIES[di + 1].name) }));
     }
     setTimeout(
       () =>
         this.modals.results(
-          { victory, summary: s, goldEarned, diffName: L(diff.name), achievements, relic, newUnlocks },
+          { victory, summary: s, goldEarned, diffName: L(diff.name), achievements, relic, newUnlocks, endless },
           {
             retry: () => this.startRun(...this.runArgs),
             menu: () => this.exitToMenu(),
@@ -400,8 +459,32 @@ export class App implements MenuApi {
   }
 
   // ------------------------------------------------------------------ loop
+  /**
+   * Frame pacing: with VSync the loop follows requestAnimationFrame; without it a message
+   * channel drives frames as fast as the FPS limit allows. The limit skips frames in both modes.
+   */
+  private channel: MessageChannel | null = null;
+  private schedule() {
+    const s = this.profile.data.settings;
+    if (s.vsync || document.hidden) {
+      requestAnimationFrame(this.loop);
+      return;
+    }
+    if (!this.channel) {
+      this.channel = new MessageChannel();
+      this.channel.port1.onmessage = () => this.loop(performance.now());
+    }
+    this.channel.port2.postMessage(0);
+  }
+
   private loop = (now: number) => {
-    requestAnimationFrame(this.loop);
+    this.schedule();
+    const limit = this.profile.data.settings.fpsLimit;
+    if (limit > 0) {
+      // allow 1 ms of slack so a 60 Hz limit on a 60 Hz display does not drop frames
+      if (now < this.frameDue - 1) return;
+      this.frameDue = Math.max(this.frameDue + 1000 / limit, now);
+    } else if (!this.profile.data.settings.vsync && now - this.last < 1) return;
     const realDt = Math.min(0.1, Math.max(0, (now - this.last) / 1000));
     this.last = now;
     const dt = Math.min(realDt, 1 / 20);

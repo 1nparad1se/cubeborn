@@ -67,14 +67,19 @@ export class BossController {
     this.enterPhase(0);
   }
 
-  static spawn(run: Run, id: string, x: number, z: number, isFinal: boolean, hpMul = 1, isClone = false): BossController | null {
+  /** Health/damage scale this boss was spawned with (clones inherit it). */
+  hpScale = 1;
+  dmgScale = 1;
+  enraged = false;
+
+  static spawn(run: Run, id: string, x: number, z: number, isFinal: boolean, hpMul = 1, isClone = false, dmgMul = 1): BossController | null {
     const def = BOSS_BY_ID[id];
     if (!def) return null;
     const e = run.enemies.spawn(bossEnemyDef(def), x, z, { noScale: true });
     if (!e) return null;
     // re-skin the pooled enemy as the boss
     e.maxHp = e.hp = def.hp * BALANCE.bossHpMul * run.diff.hp * hpMul * (1 + (run.player.stats.curse - 1) * 0.5);
-    e.damage = def.damage * run.diff.damage;
+    e.damage = def.damage * run.diff.damage * dmgMul;
     e.speed = 0;
     e.radius = def.radius;
     e.scale = 1;
@@ -82,6 +87,8 @@ export class BossController {
     e.xp = isClone ? 20 : 150;
     e.flying = !!def.flying;
     const c = new BossController(run, e, def, isFinal, isClone);
+    c.hpScale = hpMul;
+    c.dmgScale = dmgMul;
     e.boss = c;
     run.bosses.push(c);
     return c;
@@ -291,8 +298,8 @@ export class BossController {
     if (!this.isClone) {
       run.pickups.spawnChest(e.x, e.z, 1);
       run.stats.bossesKilled.push(this.def.id);
-      run.stats.gold += 40 * run.player.stats.greed;
-      for (let i = 0; i < 10; i++) run.pickups.spawn('gold', e.x, e.z, 5, true);
+      run.stats.gold += 4 * run.player.stats.greed;
+      for (let i = 0; i < 4; i++) run.pickups.spawn('gold', e.x, e.z, 1, true);
       run.events.emit('bossDefeated', this);
     }
     if (this.isFinal && !run.bosses.some((b) => b.isFinal)) run.onFinalBossDefeated();

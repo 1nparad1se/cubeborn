@@ -1,25 +1,32 @@
 import { h, clear, hex, put } from './dom';
 import { iconImg } from './icons';
 import { thumbImg } from '../render/Thumbnails';
-import { t, L, LANGS, setLang, type Lang } from '../i18n';
+import { t, L } from '../i18n';
+import type { RunMode } from '../game/Waves';
 import { statModLines, weaponDeltaLines, fmtNum, fmtTime } from './format';
 import type { Profile } from '../meta/Profile';
 import { HEROES, HERO_BY_ID } from '../data/heroes';
 import { WEAPONS, WEAPON_BY_ID, WEAPON_MAX_LEVEL } from '../data/weapons';
 import { PASSIVES, PASSIVE_BY_ID } from '../data/passives';
-import { ENEMIES } from '../data/enemies';
+import { ENEMIES, ENEMY_BY_ID } from '../data/enemies';
+import { MAP_LORE } from '../data/mapLore';
+import { WAVE_TYPE_COLOR, WaveDirector } from '../game/Waves';
 import { BOSSES, RELICS, BOSS_BY_ID } from '../data/bosses';
 import { MAPS } from '../data/maps';
 import { DIFFICULTIES } from '../data/difficulty';
 import { PERM_UPGRADES } from '../data/upgrades';
 import { ACHIEVEMENTS } from '../data/achievements';
 import type { AchievementDef, UnlockRef, WeaponDef } from '../data/types';
-import type { Quality } from '../meta/Save';
+import { settingsPanel } from './Settings';
 
 export interface MenuApi {
   profile: Profile;
   sfx(id: string): void;
-  startRun(hero: string, map: string, diff: string): void;
+  startRun(hero: string, map: string, diff: string, mode?: RunMode): void;
+  /** Captures the next key press for rebinding. */
+  captureKey(cb: (code: string) => void): void;
+  /** True when a setting changed that only applies after a restart. */
+  needsRestart(): boolean;
   setShowcase(modelId: string): void;
   applySettings(): void;
   resetProgress(): void;
@@ -207,13 +214,17 @@ export class Menus {
   }
 
   // ------------------------------------------------------------------ maps
+  private selMode: RunMode = 'campaign';
+
   private mapScreen(): HTMLElement {
     const p = this.api.profile;
     if (!p.isMapUnlocked(this.selMap)) this.selMap = MAPS[0].id;
+    this.selMode = p.data.last.mode ?? 'campaign';
     const list = h('div.map-list');
-    const detail = h('div.detail');
+    const detail = h('div.detail.map-detail');
     const show = (id: string) => {
       const m = MAPS.find((x) => x.id === id)!;
+      const lore = MAP_LORE[id];
       const unlocked = p.isMapUnlocked(id);
       if (unlocked) this.selMap = id;
       for (const c of list.children) c.classList.toggle('sel', (c as HTMLElement).dataset.id === id);
@@ -252,18 +263,70 @@ export class Menus {
       renderDiffs();
       const prev = MAPS[MAPS.indexOf(m) - 1];
       const prevBoss = prev && BOSS_BY_ID[prev.boss];
-      put(detail, 
+      const seenBoss = (bid: string) => unlocked || p.data.discovered.bosses.includes(bid);
+      // main enemies: the heaviest weights across the map's pools
+      const weights = new Map<string, number>();
+      for (const seg of m.segments) for (const [eid, w] of seg.pool) weights.set(eid, (weights.get(eid) ?? 0) + w);
+      const mainEnemies = [...weights.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([eid]) => (p.data.discovered.enemies.includes(eid) || unlocked ? L(ENEMY_BY_ID[eid]?.name) : '???'));
+      const next = MAPS[MAPS.indexOf(m) + 1];
+      const relics = [m.midBoss, m.boss].map((b) => RELICS.find((r) => r.id === BOSS_BY_ID[b]?.relic)).filter(Boolean);
+      const rec = p.data.endless[id];
+      const modes = h('div.seg.mode-seg');
+      const modeInfo = h('div.mode-info');
+      const renderModes = () => {
+        clear(modes);
+        for (const md of ['campaign', 'endless'] as RunMode[])
+          modes.append(
+            h('button' + (this.selMode === md ? '.sel' : ''), {
+              onclick: () => {
+                this.api.sfx('select');
+                this.selMode = md;
+                renderModes();
+              },
+            }, t('mode_' + md)),
+          );
+        clear(modeInfo);
+        if (this.selMode === 'campaign') {
+          const plan = WaveDirector.campaignPlan();
+          const strip = h('div.wave-strip.big');
+          plan.forEach((type, i) => strip.append(h('i' + (type === 'boss' || type === 'final' ? '.boss' : ''), { style: `--wc:${WAVE_TYPE_COLOR[type]}`, title: `${i + 1}: ${t('wave_' + type)}` })));
+          const idx = (ty: string) => plan.map((x, i) => (x === ty ? i + 1 : 0)).filter(Boolean).join(', ');
+          modeInfo.append(
+            h('p.small', t('campaign_desc', { n: plan.length })),
+            strip,
+            h('div.kv', h('span', t('wave_elite')), h('span', idx('elite'))),
+            h('div.kv', h('span', t('wave_danger')), h('span', idx('danger'))),
+            h('div.kv', h('span', t('wave_boss')), h('span', `10, 20 — ${seenBoss(m.midBoss) ? L(BOSS_BY_ID[m.midBoss].name) : '???'}`)),
+            h('div.kv', h('span', t('wave_final')), h('span', `30 — ${seenBoss(m.boss) ? L(BOSS_BY_ID[m.boss].name) : '???'}`)),
+          );
+        } else {
+          modeInfo.append(
+            h('p.small', t('endless_desc')),
+            rec
+              ? h('div.record', h('b', t('best_wave', { n: rec.wave })), h('span', `${fmtTime(rec.time)} · ${fmtNum(rec.kills)} ${t('r_kills').toLowerCase()} · ${t('lvl_short', { n: rec.level })} · ${rec.gold} ${t('gold')}`))
+              : h('div.record.none', t('no_record')),
+          );
+        }
+      };
+      renderModes();
+      put(
+        detail,
         h('div.detail-title', h('h3', L(m.name)), h('div.stars', '★'.repeat(m.difficultyStars) + '☆'.repeat(Math.max(0, 6 - m.difficultyStars)))),
         h('p', L(m.desc)),
-        h('div.kv', h('span', t('boss_mid')), h('span', unlocked || p.data.discovered.bosses.includes(m.midBoss) ? L(BOSS_BY_ID[m.midBoss].name) : '???')),
-        h('div.kv', h('span', t('boss_final')), h('span', unlocked || p.data.discovered.bosses.includes(m.boss) ? L(BOSS_BY_ID[m.boss].name) : '???')),
+        lore ? h('p.story', L(lore.story)) : null,
+        lore ? h('div.feature', h('b', '✦ ' + L(lore.feature.name)), h('span', L(lore.feature.desc))) : null,
+        lore ? h('div.kv', h('span', t('recommended')), h('span', L(lore.recommended))) : null,
+        h('div.kv', h('span', t('main_enemies')), h('span', mainEnemies.join(', '))),
+        h('div.kv', h('span', t('boss_mid')), h('span', seenBoss(m.midBoss) ? L(BOSS_BY_ID[m.midBoss].name) : '???')),
+        h('div.kv', h('span', t('boss_final')), h('span', seenBoss(m.boss) ? L(BOSS_BY_ID[m.boss].name) : '???')),
+        h('div.kv', h('span', t('rewards')), h('span', [t('relics') + ': ' + relics.map((r) => (p.data.discovered.relics.includes(r!.id) ? L(r!.name) : '???')).join(', '), next ? t('opens_map', { name: L(next.name) }) : t('last_map')].join(' · '))),
         h('div.kv', h('span', t('best_clear')), h('span', p.data.mapClears[id] !== undefined ? L(DIFFICULTIES[p.data.mapClears[id]].name) : '—')),
-        unlocked ? h('div', h('div.label', t('difficulty')), diffs, diffInfo) : h('div.locked-note', '🔒 ' + t('map_unlock', { boss: prevBoss ? L(prevBoss.name) : '?' })),
+        unlocked ? h('div', h('div.label', t('mode')), modes, modeInfo, h('div.label', t('difficulty')), diffs, diffInfo) : h('div.locked-note', '🔒 ' + t('map_unlock', { boss: prevBoss ? L(prevBoss.name) : '?' })),
         unlocked
           ? this.btn(t('btn_start'), () => {
-              p.data.last = { hero: this.selHero, map: this.selMap, diff: this.selDiff };
+              p.data.last = { hero: this.selHero, map: this.selMap, diff: this.selDiff, mode: this.selMode };
               p.save();
-              this.api.startRun(this.selHero, this.selMap, this.selDiff);
+              this.api.startRun(this.selHero, this.selMap, this.selDiff, this.selMode);
             }, '.primary.big')
           : null,
       );
@@ -271,6 +334,7 @@ export class Menus {
     for (const m of MAPS) {
       const unlocked = p.isMapUnlocked(m.id);
       const clear_ = p.data.mapClears[m.id];
+      const rec = p.data.endless[m.id];
       list.append(
         h(
           'button.map-card' + (unlocked ? '' : '.locked'),
@@ -284,6 +348,7 @@ export class Menus {
           },
           h('div.map-swatch'),
           h('div.name', unlocked ? L(m.name) : '???'),
+          rec ? h('div.badge.wave-badge', '∞' + rec.wave) : null,
           clear_ !== undefined ? h('div.badge', { style: `color:${DIFFICULTIES[clear_].color}` }, '★') : null,
         ),
       );
@@ -599,70 +664,5 @@ export function confirmBox(parent: HTMLElement, text: string, yes: () => void) {
   (parent.closest('.app') ?? parent).appendChild(box);
 }
 
-/** Settings controls, shared by the main menu and the pause menu. */
-export function settingsPanel(api: MenuApi, rerender: () => void): HTMLElement {
-  const s = api.profile.data.settings;
-  const save = () => {
-    api.profile.saveSoon();
-    api.applySettings();
-  };
-  const slider = (label: string, key: 'music' | 'sfx') => {
-    const val = h('span.val', Math.round(s[key] * 100) + '%');
-    const input = h('input', { type: 'range', min: 0, max: 100, value: Math.round(s[key] * 100) }) as HTMLInputElement;
-    input.addEventListener('input', () => {
-      s[key] = Number(input.value) / 100;
-      val.textContent = input.value + '%';
-      save();
-    });
-    return h('label.set-row', h('span', label), input, val);
-  };
-  const toggle = (label: string, key: 'vibration' | 'damageNumbers' | 'screenShake' | 'showFps') => {
-    const b = h('button.toggle' + (s[key] ? '.on' : ''), {
-      onclick: () => {
-        s[key] = !s[key];
-        b.classList.toggle('on', s[key]);
-        b.textContent = s[key] ? t('on') : t('off');
-        api.sfx('ui');
-        save();
-      },
-    }, s[key] ? t('on') : t('off'));
-    return h('div.set-row', h('span', label), b);
-  };
-  const seg = <T extends string>(label: string, opts: { id: T; name: string }[], cur: T, set: (v: T) => void) => {
-    const row = h('div.seg');
-    for (const o of opts)
-      row.append(
-        h('button' + (o.id === cur ? '.sel' : ''), {
-          onclick: () => {
-            api.sfx('ui');
-            set(o.id);
-            save();
-            rerender();
-          },
-        }, o.name),
-      );
-    return h('div.set-row', h('span', label), row);
-  };
-  return h(
-    'div.settings',
-    slider(t('set_music'), 'music'),
-    slider(t('set_sfx'), 'sfx'),
-    toggle(t('set_vibration'), 'vibration'),
-    seg<Quality>(t('set_quality'), [
-      { id: 'low', name: t('q_low') },
-      { id: 'medium', name: t('q_medium') },
-      { id: 'high', name: t('q_high') },
-    ], s.quality, (v) => (s.quality = v)),
-    toggle(t('set_numbers'), 'damageNumbers'),
-    toggle(t('set_shake'), 'screenShake'),
-    toggle(t('set_fps'), 'showFps'),
-    seg<Lang>(t('set_lang'), LANGS, s.lang, (v) => {
-      s.lang = v;
-      setLang(v);
-    }),
-    h('div.set-row', h('span', t('set_reset')), h('button.btn.danger.small', { onclick: (e: MouseEvent) => confirmBox(e.target as HTMLElement, t('reset_confirm'), () => api.resetProgress()) }, t('btn_reset'))),
-    h('div.credits', t('credits'), h('br'), api.version),
-  );
-}
-
+export { settingsPanel };
 export { fmtTime };

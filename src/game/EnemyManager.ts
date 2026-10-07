@@ -58,14 +58,16 @@ export class EnemyManager {
     e.x = x;
     e.z = z;
     const r = this.run;
-    const minute = r.time / 60;
+    const sc = r.waveScale;
     const tier = r.map.tier;
-    const timeHp = 1 + Math.min(minute, 10) * BALANCE.enemyHpPerMinute + Math.max(0, minute - 10) * BALANCE.enemyHpPerMinuteLate;
-    const hpMul = opts.noScale ? 1 : tier * r.diff.hp * timeHp * (1 + (r.player.stats.curse - 1) * 0.5);
-    const dmgMul = opts.noScale ? 1 : (0.85 + tier * 0.15) * r.diff.damage * (1 + minute * BALANCE.enemyDamagePerMinute);
+    const curse = r.player.stats.curse;
+    const hpMul = opts.noScale ? 1 : tier * r.diff.hp * sc.hp * (1 + (curse - 1) * 0.5);
+    const dmgMul = opts.noScale ? 1 : (0.85 + tier * 0.15) * r.diff.damage * sc.damage;
     e.maxHp = e.hp = Math.max(1, def.hp * hpMul * (opts.hpMul ?? 1));
     e.damage = def.damage * dmgMul;
-    e.speed = def.speed * r.diff.speed * (1 + (r.player.stats.curse - 1) * 0.25) * (0.92 + Math.random() * 0.16);
+    // wave speed-ups mostly affect slow enemies so that fast ones stay outrunnable
+    const spBoost = opts.noScale ? 0 : (sc.speed - 1) * Math.min(1, Math.max(0.25, (5.5 - def.speed) / 3));
+    e.speed = Math.min(def.speed * r.diff.speed * (1 + spBoost) * (1 + (curse - 1) * 0.25) * (0.92 + Math.random() * 0.16), r.waves.mode === 'endless' ? 7 : 6.2);
     e.xp = def.xp;
     if (def.behavior === 'prop') e.speed = 0;
     if (opts.elite) this.makeElite(e, opts.elite);
@@ -89,7 +91,7 @@ export class EnemyManager {
       e.kbResist = Math.min(1, e.kbResist + 0.5);
       e.xp *= 8;
     } else e.elite2 = id;
-    e.maxHp *= m.hp * 4;
+    e.maxHp *= m.hp * 4 * (1 + BALANCE.eliteHpPerWave * (this.run.waves.wave.n - 1));
     e.hp = e.maxHp;
     e.speed *= m.speed;
     e.damage *= m.damage;
@@ -364,6 +366,7 @@ export class EnemyManager {
       }
     }
     let speed = e.speed * e.slowMul;
+    if (!e.flying && !e.boss) speed *= run.features.moveMul(e.x, e.z, false);
     if (e.hasElite('frenzied') && e.hp < e.maxHp * 0.5) speed *= 1.5;
     const pp = e.def.p ?? {};
     switch (e.def.behavior) {

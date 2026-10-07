@@ -58,6 +58,7 @@ export class Player {
     if (this.burstT > 0) s *= 1.35;
     if (this.slowT > 0) s *= 0.6;
     if (this.run.weather.blizzard > 0) s *= 0.85;
+    s *= this.run.features.moveMul(this.x, this.z, true);
     return s;
   }
 
@@ -187,6 +188,7 @@ export class Player {
       // clear nearby threats
       run.hazards.clearNear(this.x, this.z, 8);
       run.enemies.forEachInRadius(this.x, this.z, 6, (e) => {
+        run.reviveBlast.damage = 40 * run.waveScale.hp * run.diff.hp * run.map.tier;
         if (!e.boss) run.combat.hit(e, run.reviveBlast, 1);
       });
       return;
@@ -207,6 +209,7 @@ export class Player {
 
   addXp(v: number) {
     this.xp += v * this.stats.growth;
+    this.run.stats.xpGained += v * this.stats.growth;
     while (this.xp >= this.xpNext) {
       this.xp -= this.xpNext;
       this.level++;
