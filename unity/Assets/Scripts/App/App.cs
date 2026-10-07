@@ -819,11 +819,12 @@ namespace Cubeborn
 
         void DumpUi(Transform t, int depth)
         {
-            if (depth > 4) return;
+            if (depth > 12) return;
             var rt = t as RectTransform;
             var g = t.GetComponent<Graphic>();
             var cg = t.GetComponent<CanvasGroup>();
-            Debug.Log($"[cbui] {new string(' ', depth * 2)}{t.name} active={t.gameObject.activeInHierarchy} rect={(rt != null ? rt.rect.ToString() : "-")} pos={(rt != null ? rt.position.ToString() : "-")} scale={t.lossyScale} g={(g != null ? g.color.ToString() : "-")} cg={(cg != null ? cg.alpha.ToString() : "-")}");
+            var cr = t.GetComponent<CanvasRenderer>();
+            Debug.Log($"[cbui] {new string(' ', depth * 2)}{t.name} cull={(cr != null ? cr.cull.ToString() : "-")} alpha={(cr != null ? cr.GetAlpha().ToString() : "-")} active={t.gameObject.activeInHierarchy} rect={(rt != null ? rt.rect.ToString() : "-")} pos={(rt != null ? rt.position.ToString() : "-")} scale={t.lossyScale} g={(g != null ? g.color.ToString() : "-")} cg={(cg != null ? cg.alpha.ToString() : "-")}");
             for (int i = 0; i < t.childCount; i++) DumpUi(t.GetChild(i), depth + 1);
         }
 
