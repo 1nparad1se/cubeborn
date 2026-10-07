@@ -40,11 +40,46 @@ public static class BuildScript
         PlayerSettings.colorSpace = ColorSpace.Gamma;
         PlayerSettings.runInBackground = false;
         PlayerSettings.SplashScreen.showUnityLogo = false;
+        PlayerSettings.SplashScreen.show = false;
+        PlayerSettings.gpuSkinning = false;
+        PlayerSettings.SetUseDefaultGraphicsAPIs(BuildTarget.Android, false);
+        PlayerSettings.SetGraphicsAPIs(BuildTarget.Android, new[] { UnityEngine.Rendering.GraphicsDeviceType.OpenGLES3, UnityEngine.Rendering.GraphicsDeviceType.Vulkan });
+        PlayerSettings.SetUseDefaultGraphicsAPIs(BuildTarget.StandaloneLinux64, false);
+        PlayerSettings.SetGraphicsAPIs(BuildTarget.StandaloneLinux64, new[] { UnityEngine.Rendering.GraphicsDeviceType.OpenGLCore });
+        CreateMaterials();
         PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.Android, "com.cubeborn.unity");
         PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.iOS, "com.cubeborn.unity");
 
         var icon = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/Resources/Icon.png");
         if (icon != null) PlayerSettings.SetIcons(NamedBuildTarget.Unknown, new[] { icon }, IconKind.Any);
+    }
+
+    // Instanced shader variants are stripped unless a material in the build enables instancing,
+    // so the base materials live in Resources (Gfx.Base loads them).
+    static void CreateMaterials()
+    {
+        Directory.CreateDirectory("Assets/Resources/Materials");
+        foreach (var name in new[] { "Voxel", "Ground", "Glow", "Blend", "Multiply" })
+        {
+            var path = "Assets/Resources/Materials/" + name + ".mat";
+            var sh = Shader.Find("Cubeborn/" + name);
+            if (sh == null)
+            {
+                Debug.LogError("Shader not found: Cubeborn/" + name);
+                continue;
+            }
+            var m = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (m == null)
+            {
+                m = new Material(sh);
+                AssetDatabase.CreateAsset(m, path);
+            }
+            m.shader = sh;
+            m.enableInstancing = true;
+            EditorUtility.SetDirty(m);
+        }
+        AssetDatabase.SaveAssets();
+        AssetDatabase.Refresh();
     }
 
     static string OutputPath(string fallback)
@@ -103,6 +138,23 @@ public static class BuildScript
             scenes = new[] { ScenePath },
             locationPathName = OutputPath("build/iOS/iOS"),
             target = BuildTarget.iOS,
+            options = BuildOptions.None,
+        });
+    }
+
+    public static void BuildLinux()
+    {
+        Prepare();
+        PlayerSettings.fullScreenMode = FullScreenMode.Windowed;
+        PlayerSettings.defaultScreenWidth = 1280;
+        PlayerSettings.defaultScreenHeight = 720;
+        PlayerSettings.resizableWindow = true;
+        PlayerSettings.SetScriptingBackend(NamedBuildTarget.Standalone, ScriptingImplementation.Mono2x);
+        Run(new BuildPlayerOptions
+        {
+            scenes = new[] { ScenePath },
+            locationPathName = OutputPath("build/StandaloneLinux64/Cubeborn.x86_64"),
+            target = BuildTarget.StandaloneLinux64,
             options = BuildOptions.None,
         });
     }

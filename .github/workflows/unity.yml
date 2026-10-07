@@ -30,6 +30,8 @@ jobs:
             method: BuildScript.BuildAndroid
           - platform: iOS
             method: BuildScript.BuildIOS
+          - platform: StandaloneLinux64
+            method: BuildScript.BuildLinux
     steps:
       - uses: jlumbroso/free-disk-space@v1.3.1
         with:
@@ -68,9 +70,49 @@ jobs:
         with:
           name: Cubeborn-xcode
           path: xcode.tgz
+      - uses: actions/upload-artifact@v4
+        if: matrix.platform == 'StandaloneLinux64'
+        with:
+          name: Cubeborn-linux
+          path: build/StandaloneLinux64
+
+  # Runs the desktop build headless and captures screenshots of every screen (visual check).
+  shots:
+    needs: build
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Cubeborn-linux
+          path: game
+      - name: Capture screenshots
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb libglu1-mesa > /dev/null
+          EXE=$(find game -maxdepth 2 -name "*.x86_64" | head -1)
+          chmod +x "$EXE"
+          mkdir -p shots
+          timeout 300 xvfb-run -a -s "-screen 0 1280x720x24" "$EXE" -force-glcore -screen-fullscreen 0 \
+            -screen-width 1280 -screen-height 720 -logFile "$PWD/shots/player.log" -cbshots "$PWD/shots" || echo "exit $?"
+          ls -la shots
+          grep -iE "error|exception|shader" shots/player.log | head -60 || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Cubeborn-shots
+          path: shots
+      - name: Publish screenshots
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view unity-shots --repo "${{ github.repository }}" > /dev/null 2>&1 || \
+            gh release create unity-shots --repo "${{ github.repository }}" --prerelease --title "Unity CI screenshots" --notes "Latest CI screenshots"
+          gh release upload unity-shots shots/* --clobber --repo "${{ github.repository }}"
 
   ipa:
     needs: build
+    if: ${{ !cancelled() }}
     runs-on: macos-15
     steps:
       - uses: actions/download-artifact@v4
@@ -98,6 +140,7 @@ jobs:
 
   release:
     needs: [build, ipa]
+    if: ${{ !cancelled() && needs.ipa.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
