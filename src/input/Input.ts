@@ -15,6 +15,7 @@ export class Input {
   /** +1 zoom out, -1 zoom in. */
   onZoom: ((dir: number) => void) | null = null;
   onMap: (() => void) | null = null;
+  onJump: (() => void) | null = null;
   /** Developer hotkeys; returns true when developer mode handled the key. */
   onDev: ((action: 'devPanel' | 'devDebug' | 'devGod') => boolean) | null = null;
   /** Fired when the player first moves (used by the controls hint). */
@@ -22,6 +23,7 @@ export class Input {
   /** While set, the next key press is captured for rebinding instead of played. */
   capture: ((code: string) => void) | null = null;
   private padPause = false;
+  private padJump = false;
 
   constructor(area: HTMLElement, binds: Keybinds) {
     this.binds = binds;
@@ -53,6 +55,10 @@ export class Input {
         if (this.is('zoomIn', e.code)) this.onZoom?.(-1);
         else if (this.is('zoomOut', e.code)) this.onZoom?.(1);
         else if (this.is('map', e.code)) this.onMap?.();
+        if (this.is('jump', e.code)) {
+          e.preventDefault();
+          this.onJump?.();
+        }
       }
       this.keys.add(e.code);
     });
@@ -100,6 +106,11 @@ export class Input {
         this.padPause = true;
         if (this.enabled) this.onPause?.();
       } else if (!gp.buttons[9]?.pressed) this.padPause = false;
+      // A / Cross jumps
+      if (gp.buttons[0]?.pressed && !this.padJump) {
+        this.padJump = true;
+        if (this.enabled) this.onJump?.();
+      } else if (!gp.buttons[0]?.pressed) this.padJump = false;
     }
     const l = Math.hypot(x, z);
     if (l > 1) {

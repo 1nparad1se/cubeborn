@@ -11,6 +11,29 @@ export const BALANCE = {
    */
   permCostMul: 5,
 
+  /**
+   * Jump (Space / gamepad A). One jump from the ground, no double jump; walls, water and the
+   * map border still block horizontal movement in the air. While high enough the hero clears
+   * ground threats (hazard tiles, poison/fire pools, shockwave rings); bullets, lasers,
+   * explosions and enemy contact still hit. Dying in the air drops the hero to the ground.
+   */
+  jump: {
+    /** Apex height in world units. */
+    height: 1.35,
+    /** Time in the air (s). */
+    airTime: 0.56,
+    /** Crouch before take-off (s); input is never delayed more than this. */
+    windup: 0.05,
+    /** Landing recovery (s) before the next jump. */
+    landLag: 0.1,
+    /** Presses this early still count once the hero lands (s). */
+    buffer: 0.14,
+    /** Height above which ground threats pass underneath. */
+    groundClear: 0.45,
+    /** Horizontal speed multiplier while airborne. */
+    airSpeed: 1.0,
+  },
+
   // player
   basePickupRadius: 1.6,
   hurtInvuln: 0.12,

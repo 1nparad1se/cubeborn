@@ -291,6 +291,25 @@ const RECIPES: Record<string, Recipe> = {
     a.noise(t, 0.06, 0.1 * v, 'highpass', 2500, 5000);
   },
   whoosh: (a, t, v) => a.noise(t, 0.22, 0.18 * v, 'bandpass', 600, 2400, 1.5),
+  jump: (a, t, v) => {
+    a.noise(t, 0.12, 0.12 * v, 'bandpass', 900, 2600, 1.2);
+    a.tone(t, 'sine', 260, 420, 0.08, 0.08 * v);
+  },
+  land: (a, t, v) => {
+    a.noise(t, 0.12, 0.22 * v, 'lowpass', 900, 200, 0.8);
+    a.tone(t, 'sine', 120, 60, 0.08, 0.16 * v);
+  },
+  nightfall: (a, t, v) => [392, 311, 262, 196].forEach((f, i) => a.tone(t + i * 0.18, 'triangle', f, f * 0.99, 0.6, 0.1 * v)),
+  dawn: (a, t, v) => [392, 494, 587, 784].forEach((f, i) => a.tone(t + i * 0.12, 'sine', f, f * 1.01, 0.5, 0.09 * v)),
+  warning: (a, t, v) => [0, 0.3, 0.6].forEach((d) => a.tone(t + d, 'square', 440, 330, 0.2, 0.07 * v)),
+  achieve: (a, t, v) => [659, 784, 988, 1318].forEach((f, i) => a.tone(t + i * 0.07, 'triangle', f, f, 0.3, 0.12 * v)),
+  ignite: (a, t, v) => a.noise(t, 0.18, 0.16 * v, 'bandpass', 1200, 400, 1.2),
+  frost: (a, t, v) => {
+    a.tone(t, 'triangle', 2400, 3200, 0.08, 0.06 * v);
+    a.noise(t, 0.08, 0.08 * v, 'highpass', 6000, 9000, 4);
+  },
+  venom: (a, t, v) => a.noise(t, 0.16, 0.1 * v, 'bandpass', 500, 900, 5),
+  shadow: (a, t, v) => a.tone(t, 'sawtooth', 110, 70, 0.22, 0.06 * v),
   saw: (a, t, v) => a.tone(t, 'sawtooth', 900, 700, 0.1, 0.06 * v),
   zap: (a, t, v) => {
     a.tone(t, 'square', 1200, 200, 0.1, 0.08 * v);

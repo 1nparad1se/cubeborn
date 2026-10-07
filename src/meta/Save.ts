@@ -10,7 +10,7 @@ export type DisplayMode = 'windowed' | 'fullscreen' | 'borderless';
 export type HealthBars = 'off' | 'elites' | 'all';
 
 /** Rebindable actions; each holds up to two KeyboardEvent.code values. */
-export type BindAction = 'up' | 'down' | 'left' | 'right' | 'pause' | 'zoomIn' | 'zoomOut' | 'map' | 'devPanel' | 'devDebug' | 'devGod';
+export type BindAction = 'up' | 'down' | 'left' | 'right' | 'jump' | 'pause' | 'zoomIn' | 'zoomOut' | 'map' | 'devPanel' | 'devDebug' | 'devGod';
 export type Keybinds = Record<BindAction, string[]>;
 
 export function defaultKeybinds(): Keybinds {
@@ -19,6 +19,7 @@ export function defaultKeybinds(): Keybinds {
     down: ['KeyS', 'ArrowDown'],
     left: ['KeyA', 'ArrowLeft'],
     right: ['KeyD', 'ArrowRight'],
+    jump: ['Space'],
     pause: ['Escape', 'KeyP'],
     zoomIn: ['Equal', 'NumpadAdd'],
     zoomOut: ['Minus', 'NumpadSubtract'],

@@ -74,6 +74,13 @@ export class HeroAnimator {
   side = 0;
   /** Yaw rate (rad/s) for cape and hair sway. */
   turn = 0;
+  /** Jump state from the host: airborne, vertical speed (-1 falling .. +1 rising), crouch 0..1 (take-off/landing). */
+  air = false;
+  airV = 0;
+  crouch = 0;
+  private airW = 0;
+  private crouchW = 0;
+  private airVs = 0;
   /** Viewer override: pretend to walk or run in place. */
   forceGait: 'walk' | 'run' | null = null;
   /** Fired at named moments of clips: 'impulse', 'charge', 'death', 'levelup', 'ability'. */
@@ -187,6 +194,8 @@ export class HeroAnimator {
     // 2. idle + locomotion
     this.idleLayer(t, g, 1 - moveW);
     if (moveW > 0.001) this.locoLayer(g, moveW, this.runW);
+    // 2b. jump: crouch into the take-off and the landing, tuck the legs in the air
+    this.jumpLayer(dt);
     // 3. action clips
     if (this.fading) {
       this.fading.out += dt;
@@ -237,6 +246,53 @@ export class HeroAnimator {
     this.bobVel += (bv - this.bobVel) * (1 - Math.exp(-20 * dt));
     this.springLayer(dt, t, fwd);
     this.write();
+  }
+
+  private jumpLayer(dt: number) {
+    const ka = 1 - Math.exp(-22 * dt);
+    this.airW += ((this.air ? 1 : 0) - this.airW) * ka;
+    this.crouchW += (this.crouch - this.crouchW) * (1 - Math.exp(-30 * dt));
+    this.airVs += (this.airV - this.airVs) * (1 - Math.exp(-12 * dt));
+    const c = this.crouchW;
+    if (c > 0.001) {
+      // knees bend, hips drop, chest leans in, arms swing back
+      this.add('hipsPos', 0, -0.95 * c, 0);
+      for (const sd of ['L', 'R']) {
+        this.blend('leg' + sd, -38, 0, 0, c);
+        this.blend('shin' + sd, 62, 0, 0, c);
+        this.blend('foot' + sd, -24, 0, 0, c);
+      }
+      this.add('chest', 12 * c, 0, 0);
+      this.add('spine', 6 * c, 0, 0);
+      this.add('armL', 22 * c, 0, 8 * c);
+      this.add('armR', 22 * c, 0, -8 * c);
+    }
+    const w = this.airW;
+    if (w <= 0.001) return;
+    // rising: knees tucked high, arms up and out; falling: legs reach for the ground, arms spread
+    const up = Math.max(0, Math.min(1, (this.airVs + 1) / 2));
+    const fall = 1 - up;
+    this.blend('legL', -48 * up - 16 * fall, 0, 4, w);
+    this.blend('legR', -20 * up - 6 * fall, 0, -4, w);
+    this.blend('shinL', 78 * up + 22 * fall, 0, 0, w);
+    this.blend('shinR', 46 * up + 14 * fall, 0, 0, w);
+    this.blend('footL', -20 * up, 0, 0, w);
+    this.blend('footR', -12 * up, 0, 0, w);
+    this.add('armL', (-26 * up - 8 * fall) * w, 0, (26 * up + 46 * fall) * w);
+    this.add('armR', (-26 * up - 8 * fall) * w, 0, -(26 * up + 46 * fall) * w);
+    this.add('foreL', -20 * up * w, 0, 0);
+    this.add('foreR', -20 * up * w, 0, 0);
+    this.add('chest', (-8 * up + 6 * fall) * w, 0, 0);
+    this.add('head', (6 * up - 8 * fall) * w, 0, 0);
+  }
+
+  /** Moves a bone's pose toward a target by weight (overrides the locomotion legs). */
+  private blend(key: string, x: number, y: number, z: number, w: number) {
+    const v = this.pose.get(key);
+    if (!v) return;
+    v[0] += (x - v[0]) * w;
+    v[1] += (y - v[1]) * w;
+    v[2] += (z - v[2]) * w;
   }
 
   private add(key: string, x: number, y: number, z: number) {

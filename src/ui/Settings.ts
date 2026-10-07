@@ -205,7 +205,7 @@ export function settingsPanel(api: MenuApi, rerender: () => void, inRun = false)
         );
         break;
       case 'controls': {
-        for (const a of ['up', 'down', 'left', 'right', 'pause', 'zoomIn', 'zoomOut', 'map'] as BindAction[]) body.append(bindRow(a));
+        for (const a of ['up', 'down', 'left', 'right', 'jump', 'pause', 'zoomIn', 'zoomOut', 'map'] as BindAction[]) body.append(bindRow(a));
         body.append(
           h('div.set-hint', t('bind_hint')),
           h('div.center', h('button.btn.small', {

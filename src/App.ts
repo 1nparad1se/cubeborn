@@ -90,6 +90,9 @@ export class App implements MenuApi {
     this.input.onPause = () => this.handleEscape();
     this.input.onZoom = (dir) => this.stepZoom(dir);
     this.input.onMap = () => this.hud.toggleMap();
+    this.input.onJump = () => {
+      if (this.run && this.mode !== 'menu' && !this.paused && !this.modals.isOpen) this.run.player.requestJump();
+    };
     this.hud = new Hud(root);
     this.hud.onPause = () => this.togglePause();
     this.hud.setVisible(false);

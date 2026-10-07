@@ -1,3 +1,4 @@
+import { BALANCE } from '../config/balance';
 import * as THREE from 'three';
 import type { Run } from '../game/Run';
 import type { VoxelModel } from '../data/types';
@@ -162,7 +163,7 @@ export class EntityRenderer {
       const h = this.hero;
       const sp = Math.hypot(p.vx, p.vz);
       this.heroWalk += dt * (4 + sp * 2.2);
-      h.root.position.set(p.x, 0, p.z);
+      h.root.position.set(p.x, p.jumpY, p.z);
       const yaw = Math.atan2(p.fx, p.fz);
       h.root.rotation.y += angleDelta(h.root.rotation.y, yaw) * Math.min(1, dt * 14);
       const blink = p.invulnT > 0 && Math.floor(time * 20) % 2 === 0;
@@ -172,7 +173,9 @@ export class EntityRenderer {
     }
     // hero-coloured ring keeps the hero easy to find in a crowd
     if (!p.dead) this.glowRingThin.push(p.x, 0.04, p.z, 0, 0.78, 1, 0.78, this.run.hero.color, 0, 0, 0, 0.55);
-    this.shadows.push(p.x, 0.03, p.z, 0, 1.3, 1, 1.3);
+    // the blob shadow stays on the ground and shrinks as the hero rises
+    const shS = 1.3 * (1 - Math.min(0.45, (this.heroY / BALANCE.jump.height) * 0.4));
+    this.shadows.push(p.x, 0.03, p.z, 0, shS, 1, shS);
     // buffs
     if (p.buffs.aegis > 0) this.glowRing.push(p.x, 0.9, p.z, time * 2, 1.2, 1, 1.2, 0xffe080, 0, 0, 0, 0.6);
     if (p.shield) this.glowRingThin.push(p.x, 0.06, p.z, 0, 1.0, 1, 1.0, 0x8ad0ff, 0, 0, 0, 0.8);
@@ -192,7 +195,13 @@ export class EntityRenderer {
     // animation runs on real time slowed a touch when the game is slowed, never frozen by hit-stop
     // the hero keeps near real-time pace through the slow-motion ending so death and victory read
     const adt = run.ending ? (dt / Math.max(0.2, run.timeScale)) * 0.8 : dt;
-    rig.root.position.set(p.x, 0, p.z);
+    // jump height; a hero who dies mid-air falls to the ground
+    this.heroY = p.dead ? Math.max(0, this.heroY - 14 * adt) : p.jumpY;
+    rig.root.position.set(p.x, this.heroY, p.z);
+    const J = BALANCE.jump;
+    a.air = p.jumpPhase === 'air' && !p.dead;
+    a.airV = Math.max(-1, Math.min(1, p.jumpV / ((4 * J.height) / J.airTime)));
+    a.crouch = p.dead ? 0 : p.jumpPhase === 'windup' ? Math.min(1, p.jumpT / J.windup) : p.jumpPhase === 'land' ? Math.max(0, 1 - p.jumpT / (J.landLag * 1.6)) : 0;
     // facing: toward the attack while it plays (plus a short hold), else toward travel
     const c = p.cues;
     if (c.attack !== this.cues.attack && c.aim && !p.dead) {
@@ -248,6 +257,7 @@ export class EntityRenderer {
     rig.flash.value = p.hurtT > 0 ? p.hurtT * 3 : blink ? 0.3 : 0;
   }
 
+  private heroY = 0;
   private tipPos = new THREE.Vector3();
   private onHeroEvent(ev: string) {
     const run = this.run;

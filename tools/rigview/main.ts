@@ -41,6 +41,11 @@ ids.forEach((id, i) => {
   rig.root.rotation.y = view === 'back' ? Math.PI : view === 'side' ? Math.PI / 2 : view === 'front' ? 0.35 : 0;
   scene.add(rig.root);
   if (animName === 'walk' || animName === 'run') a.forceGait = animName;
+  else if (animName === 'jumprise' || animName === 'jumpfall') {
+    a.air = true;
+    a.airV = animName === 'jumprise' ? 0.8 : -0.8;
+    rig.root.position.y = 1.1;
+  } else if (animName === 'crouch') a.crouch = 1;
   else if (animName !== 'idle') a.play(animName as never, { force: true });
   const steps = Math.round(t / 0.01);
   for (let k = 0; k < steps; k++) a.update(0.01);

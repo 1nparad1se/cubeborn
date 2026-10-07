@@ -269,7 +269,8 @@ export class Hazards {
         o.tick -= dt;
         if (o.tick <= 0) {
           o.tick = 0.5;
-          if ((p.x - o.x) ** 2 + (p.z - o.z) ** 2 < o.r * o.r && t.los(o.x, o.z, p.x, p.z)) p.hurt(o.dmg * 0.35, null, true);
+          // lingering pools burn the ground: a jumping hero is clear of them
+          if ((p.x - o.x) ** 2 + (p.z - o.z) ** 2 < o.r * o.r && !p.clearsGround && t.los(o.x, o.z, p.x, p.z)) p.hurt(o.dmg * 0.35, null, true);
         }
         if (o.poolT <= 0) o.active = false;
       }
@@ -302,7 +303,8 @@ export class Hazards {
       if (!s.active) continue;
       s.r += s.speed * dt;
       const d = Math.hypot(p.x - s.x, p.z - s.z);
-      if (!s.hit && Math.abs(d - s.r) < s.width / 2 + p.radius && t.los(s.x, s.z, p.x, p.z)) {
+      // shockwaves roll along the ground: jump over them
+      if (!s.hit && !p.clearsGround && Math.abs(d - s.r) < s.width / 2 + p.radius && t.los(s.x, s.z, p.x, p.z)) {
         s.hit = true;
         p.hurt(s.dmg, null);
       }

@@ -3,9 +3,10 @@ import { RU } from './ru';
 import { EN } from './en';
 import { RU2, EN2 } from './extra';
 import { RU3, EN3 } from './v3';
+import { RU4, EN4 } from './v4';
 
 export type Lang = 'ru' | 'en';
-const DICTS: Record<Lang, Record<string, string>> = { ru: { ...RU, ...RU2, ...RU3 }, en: { ...EN, ...EN2, ...EN3 } };
+const DICTS: Record<Lang, Record<string, string>> = { ru: { ...RU, ...RU2, ...RU3, ...RU4 }, en: { ...EN, ...EN2, ...EN3, ...EN4 } };
 let current: Lang = 'ru';
 
 export function setLang(lang: Lang) {

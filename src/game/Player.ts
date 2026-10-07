@@ -37,7 +37,13 @@ export class Player {
   anim = 0;
   attackPulse = 0;
   /** Animation cues for the renderer: each counter ticks when the event happens. */
-  cues = { attack: 0, aim: false, aimX: 0, aimZ: 1, hit: 0, hitX: 0, hitZ: 0, ability: 0, jump: 0 };
+  cues = { attack: 0, aim: false, aimX: 0, aimZ: 1, hit: 0, hitX: 0, hitZ: 0, ability: 0, jump: 0, land: 0 };
+  /** Jump: height above ground, vertical speed, phase and time in phase. */
+  jumpY = 0;
+  jumpV = 0;
+  jumpPhase: 'ground' | 'windup' | 'air' | 'land' = 'ground';
+  jumpT = 0;
+  private jumpBuf = 0;
   buffs: Buffs = { fury: 0, haste: 0, aegis: 0, frenzy: 0 };
   /** Bastion perk shield. */
   shield = false;
@@ -54,10 +60,89 @@ export class Player {
     this.z = z;
   }
 
+  get airborne(): boolean {
+    return this.jumpPhase === 'air' || this.jumpPhase === 'windup';
+  }
+  /** High enough for ground threats (hazard tiles, pools, shockwaves) to pass underneath. */
+  get clearsGround(): boolean {
+    return this.jumpY > BALANCE.jump.groundClear;
+  }
+
+  /** Queues a jump (buffered so a press just before landing still counts). */
+  requestJump() {
+    if (this.dead) return;
+    this.jumpBuf = BALANCE.jump.buffer;
+  }
+
+  private updateJump(dt: number) {
+    const J = BALANCE.jump;
+    // the buffer only runs down in the air, so a press just before touching down survives the landing lag
+    if (this.jumpBuf > 0 && this.jumpPhase !== 'land') this.jumpBuf -= dt;
+    this.jumpT += dt;
+    switch (this.jumpPhase) {
+      case 'ground':
+        if (this.jumpBuf > 0) {
+          this.jumpBuf = 0;
+          this.jumpPhase = 'windup';
+          this.jumpT = 0;
+          this.cues.jump++;
+          this.run.stats.jumps++;
+        }
+        break;
+      case 'windup':
+        if (this.jumpT >= J.windup) {
+          this.jumpPhase = 'air';
+          this.jumpT = 0;
+          // ballistic arc reaching `height` at airTime / 2
+          this.jumpV = (4 * J.height) / J.airTime;
+          this.run.fx.sound('jump', 0.5);
+        }
+        break;
+      case 'air': {
+        // exact parabola: apex `height` at airTime / 2
+        const u = this.jumpT / J.airTime;
+        if (u >= 1) this.land();
+        else {
+          this.jumpY = 4 * J.height * u * (1 - u);
+          this.jumpV = ((4 * J.height) / J.airTime) * (1 - 2 * u);
+        }
+        break;
+      }
+      case 'land':
+        if (this.jumpT >= J.landLag) this.jumpPhase = 'ground';
+        break;
+    }
+  }
+
+  private land() {
+    const run = this.run;
+    this.jumpY = 0;
+    this.jumpV = 0;
+    this.jumpPhase = 'land';
+    this.jumpT = 0;
+    this.cues.land++;
+    // landing dust
+    run.fx.burst(this.x, 0.15, this.z, 0xb8a888, 10, 2.6, 0.22, 0.5, 'smoke');
+    run.fx.burst(this.x, 0.1, this.z, 0x8a7a64, 6, 2, 0.1, 0.35, 'debris');
+    const ring = run.effects.add('ring', this.x, this.z, 0.3, 0xd8ccb0);
+    ring.r = 1.1;
+    ring.w = 0.25;
+    run.fx.sound('land', 0.5);
+  }
+
+  /** Drops out of a jump at once (death, revive, teleport). */
+  cancelJump() {
+    this.jumpPhase = 'ground';
+    this.jumpY = 0;
+    this.jumpV = 0;
+    this.jumpBuf = 0;
+  }
+
   get moveSpeed(): number {
     let s = this.run.hero.baseSpeed * this.stats.moveSpeed;
     if (this.buffs.haste > 0) s *= 1.4;
     if (this.burstT > 0) s *= 1.35;
+    if (this.airborne) s *= BALANCE.jump.airSpeed;
     if (this.slowT > 0) s *= 0.6;
     if (this.run.weather.blizzard > 0) s *= 0.85;
     s *= this.run.features.moveMul(this.x, this.z, true);
@@ -77,6 +162,7 @@ export class Player {
       if (this.buffs[key] > 0) this.buffs[key] -= dt;
     }
     this.damageMul = (this.buffs.fury > 0 ? 1.5 : 1) * run.perks.damageMul();
+    this.updateJump(dt);
 
     const len = Math.hypot(ix, iz);
     if (len > 1) {
@@ -90,7 +176,7 @@ export class Player {
       this.fz = iz / l;
     }
     const speed = this.moveSpeed;
-    const onIce = t.cellAt(this.x, this.z) === CELL.ice;
+    const onIce = t.cellAt(this.x, this.z) === CELL.ice && !this.airborne;
     const tx = ix * speed;
     const tz = iz * speed;
     const accel = onIce ? 2.2 : 30;
@@ -107,7 +193,7 @@ export class Player {
 
     // hazard tiles
     const cell = t.cellAt(this.x, this.z);
-    if (cell === CELL.hazard) {
+    if (cell === CELL.hazard && !this.clearsGround) {
       this.hazardTick -= dt;
       if (this.hazardTick <= 0) {
         this.hazardTick = 0.5;
@@ -202,6 +288,7 @@ export class Player {
     }
     this.hp = 0;
     this.dead = true;
+    this.cancelJump();
     run.onPlayerDeath();
   }
 
