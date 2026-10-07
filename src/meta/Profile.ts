@@ -136,17 +136,16 @@ export class Profile {
     const cost = permCost(def, lvl);
     if (this.data.gold < cost) return false;
     this.data.gold -= cost;
+    this.data.permSpent = (this.data.permSpent ?? 0) + cost;
     this.data.perm[id] = lvl + 1;
     this.save();
     return true;
   }
   /** Refunds all gold spent on upgrades. */
   refundPerms(): void {
-    let total = 0;
-    for (const def of PERM_UPGRADES) {
-      const lvl = this.permLevel(def.id);
-      for (let i = 0; i < lvl; i++) total += permCost(def, i);
-    }
+    // refunds what was actually paid (levels bought before the ×5 price change refund old prices)
+    const total = this.data.permSpent ?? 0;
+    this.data.permSpent = 0;
     this.data.perm = {};
     this.data.gold += total;
     this.save();

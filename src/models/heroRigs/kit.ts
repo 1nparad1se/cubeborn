@@ -20,6 +20,7 @@ export function shade(c: number, k: number): number {
 const SWAP: Record<string, string> = {
   armL: 'armR', foreL: 'foreR', handL: 'handR', legL: 'legR', shinL: 'shinR', footL: 'footR',
   armR: 'armL', foreR: 'foreL', handR: 'handL', legR: 'legL', shinR: 'shinL', footR: 'footL',
+  gripL: 'gripR', gripR: 'gripL',
 };
 
 /** Mirror of a part across x: limb parts move to the opposite limb. */

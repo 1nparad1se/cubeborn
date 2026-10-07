@@ -53,6 +53,9 @@ export class HeroAnimator {
   private action: Playing | null = null;
   private fading: Playing | null = null;
   private phase = 0;
+  /** Smoothed direction of travel relative to the facing: back-pedal weight and hip yaw (deg). */
+  private backW = 0;
+  private hipYaw = 0;
   private time = 0;
   private walkW = 0;
   private runW = 0;
@@ -154,7 +157,21 @@ export class HeroAnimator {
     const k = 1 - Math.exp(-10 * dt);
     this.walkW += (wantWalk - this.walkW) * k;
     this.runW += (wantRun - this.runW) * k;
-    this.phase += dt * Math.max(sp, this.walkW * 1.2) * g.cadence * Math.PI * 2 * (1 - this.runW * 0.12);
+    // travel direction vs facing: forward runs, sideways steps turn the hips, backwards back-pedals
+    let wantBack = 0;
+    let wantYaw = 0;
+    if (!this.forceGait && sp > 0.3) {
+      const th = (Math.atan2(this.side, this.fwd) * 180) / Math.PI;
+      if (Math.abs(th) > 105) {
+        wantBack = 1;
+        wantYaw = (th - Math.sign(th) * 180) * 0.6;
+      } else wantYaw = Math.max(-55, Math.min(55, th * 0.6));
+    }
+    const kd = 1 - Math.exp(-12 * dt);
+    this.backW += (wantBack - this.backW) * kd;
+    this.hipYaw += (wantYaw - this.hipYaw) * kd;
+    const dirSign = this.backW > 0.5 ? -1 : 1;
+    this.phase += dirSign * dt * Math.max(sp, this.walkW * 1.2) * g.cadence * Math.PI * 2 * (1 - this.runW * 0.12) * (1 - this.backW * 0.15);
     const accel = (fwd - this.prevFwd) / Math.max(dt, 1e-4);
     this.prevFwd = fwd;
     this.accelF += (accel - this.accelF) * (1 - Math.exp(-8 * dt));
@@ -267,7 +284,7 @@ export class HeroAnimator {
     const armSwing = lerp(g.armSwing * 0.55, g.armSwing) * w;
     const elbow = lerp(g.elbow * 0.4, g.elbow + 25) * w;
     const bounce = lerp(g.bounce * 0.45, g.bounce) * w;
-    const lean = lerp(g.lean * 0.25, g.lean) * w;
+    const lean = lerp(g.lean * 0.25, g.lean) * w * (1 - this.backW * 1.5);
     // legs: swing thighs, bend the knee through the swing, keep the foot flat at contact
     const thL = -s * stride;
     const thR = s * stride;
@@ -286,7 +303,10 @@ export class HeroAnimator {
     const runBob = Math.abs(s) - 0.55;
     const heavyDip = g.heavy * Math.exp(-Math.pow((Math.abs(s) - 1) * 6, 2)) * 0.6;
     this.add('hipsPos', 0, (lerp(walkBob, runBob) - heavyDip) * bounce, 0);
-    this.add('hips', 0, g.twist * s * w, g.sway * s * w);
+    this.add('hips', 0, g.twist * s * w + this.hipYaw * w, g.sway * s * w);
+    // the upper body keeps facing the attack direction while the legs turn toward travel
+    this.add('spine', 0, -this.hipYaw * 0.45 * w, 0);
+    this.add('chest', 0, -this.hipYaw * 0.4 * w, 0);
     this.add('spine', lean * 0.4, -g.twist * 0.5 * s * w, -g.sway * 0.5 * s * w);
     this.add('chest', lean * 0.6 - g.heavy * 2 * Math.abs(s) * w, -g.twist * 1.3 * s * w, 0);
     this.add('head', -lean * 0.8 + g.headBob * Math.sin(this.phase * 2) * w, g.twist * 0.6 * s * w, 0);
@@ -400,7 +420,9 @@ export class HeroAnimator {
     const sc = rig.def.scale;
     for (const id of BONES) {
       const v = this.pose.get(id)!;
-      rig.bones[id].rotation.set(v[0] * D2R, v[1] * D2R, v[2] * D2R);
+      const r = rig.restRot[id];
+      if (r) rig.bones[id].rotation.set((v[0] + r[0]) * D2R, (v[1] + r[1]) * D2R, (v[2] + r[2]) * D2R);
+      else rig.bones[id].rotation.set(v[0] * D2R, v[1] * D2R, v[2] * D2R);
     }
     for (const s of this.springs) {
       const b = rig.bones[s.bone];

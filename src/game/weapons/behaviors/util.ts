@@ -15,6 +15,7 @@ const tmp: Aim = { x: 0, z: 1, target: null };
 export function aim(w: WeaponInstance, run: Run, range = 14): Aim {
   const p = run.player;
   tmp.target = null;
+  w.aimAt = run.time;
   let t: Enemy | null = null;
   switch (w.def.targeting) {
     case 'nearest':
@@ -36,16 +37,20 @@ export function aim(w: WeaponInstance, run: Run, range = 14): Aim {
     tmp.x = dx / d;
     tmp.z = dz / d;
     tmp.target = t;
+    w.aimX = tmp.x;
+    w.aimZ = tmp.z;
     return tmp;
   }
   if (w.def.targeting === 'random') {
     const a = run.rng.next() * TAU;
     tmp.x = Math.cos(a);
     tmp.z = Math.sin(a);
+    w.aimAt = -1;
     return tmp;
   }
   tmp.x = p.fx;
   tmp.z = p.fz;
+  w.aimAt = -1;
   return tmp;
 }
 

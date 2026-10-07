@@ -1,3 +1,4 @@
+import { BALANCE } from '../config/balance';
 import type { PermUpgradeDef } from './types';
 
 /** Permanent upgrades bought with gold between runs. Cost = baseCost * costGrowth^level. */
@@ -24,7 +25,10 @@ export const PERM_UPGRADES: PermUpgradeDef[] = [
 
 export const PERM_BY_ID: Record<string, PermUpgradeDef> = Object.fromEntries(PERM_UPGRADES.map((u) => [u.id, u]));
 
-/** Prices are a quarter of the listed base cost since the v2 economy (gold income dropped ~10x). */
-export function permCost(def: PermUpgradeDef, level: number): number {
-  return Math.max(5, Math.round((def.baseCost * Math.pow(def.costGrowth, level)) / 4 / 5) * 5);
+/**
+ * Real price of the next level (shown in the shop and charged on purchase): a quarter of the
+ * listed base cost since the v2 economy, times BALANCE.permCostMul (×5 since v2.2).
+ */
+export function permCost(def: PermUpgradeDef, level: number, mul = BALANCE.permCostMul): number {
+  return Math.max(5, Math.round((def.baseCost * Math.pow(def.costGrowth, level)) / 4 / 5) * 5) * mul;
 }

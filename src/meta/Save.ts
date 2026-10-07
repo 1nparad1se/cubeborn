@@ -1,3 +1,4 @@
+import { PERM_UPGRADES, permCost } from '../data/upgrades';
 import type { Lang } from '../i18n';
 
 export type Quality = 'low' | 'medium' | 'high' | 'ultra' | 'custom';
@@ -97,11 +98,13 @@ export interface SaveData {
   /** Endless best results per map id. */
   endless: Record<string, EndlessRecord>;
   seenIntro: boolean;
+  /** Gold actually paid for permanent upgrades (what a refund returns). */
+  permSpent: number;
   last: { hero: string; map: string; diff: string; mode: 'campaign' | 'endless' };
 }
 
 const KEY = 'cubeborn.save.v1';
-const VERSION = 2;
+const VERSION = 3;
 
 export function defaultSettings(): Settings {
   const lang: Lang = (navigator.language || 'ru').toLowerCase().startsWith('ru') ? 'ru' : 'en';
@@ -143,6 +146,7 @@ export function defaultSave(): SaveData {
     settings: defaultSettings(),
     endless: {},
     seenIntro: false,
+    permSpent: 0,
     last: { hero: 'bram', map: 'blightwood', diff: 'normal', mode: 'campaign' },
   };
 }
@@ -178,6 +182,12 @@ export function migrate(raw: any): SaveData {
     mapClears: { ...(raw.mapClears || {}) },
   };
   if (oldVersion < 2) out.gold = Math.floor((Number(raw.gold) || 0) / 4);
+  // v3: upgrade prices ×5; levels already bought stay, and their refund value is the old price paid
+  if (oldVersion < 3 || typeof raw.permSpent !== 'number') {
+    let spent = 0;
+    for (const u of PERM_UPGRADES) for (let i = 0; i < (out.perm[u.id] ?? 0); i++) spent += permCost(u, i, 1);
+    out.permSpent = spent;
+  }
   out.version = VERSION;
   return out;
 }

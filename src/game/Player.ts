@@ -37,7 +37,7 @@ export class Player {
   anim = 0;
   attackPulse = 0;
   /** Animation cues for the renderer: each counter ticks when the event happens. */
-  cues = { attack: 0, hit: 0, hitX: 0, hitZ: 0, ability: 0 };
+  cues = { attack: 0, aim: false, aimX: 0, aimZ: 1, hit: 0, hitX: 0, hitZ: 0, ability: 0, jump: 0 };
   buffs: Buffs = { fury: 0, haste: 0, aegis: 0, frenzy: 0 };
   /** Bastion perk shield. */
   shield = false;

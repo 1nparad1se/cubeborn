@@ -61,20 +61,20 @@ function bram(): HeroRigDef {
     P('accA', [0, 0.95, -0.7], [1.1, 1.9, 4.4], red, { s: 'rbox', t: [0.8, 0.9], bv: [0.3, 0.6] }),
     P('accA', [0, 0.35, -3.3], [1.0, 1.6, 2.2], shade(red, 0.85), { sh: [0, -0.6] }),
     // rune blade
-    P('handR', [0, -0.8, 0.4], [0.65, 2.2, 0.65], leather, { s: 'cyl', n: 6, r: [90, 0, 0] }),
-    P('handR', [0, -0.8, -0.9], [0.9, 0.9, 0.9], gold, { s: 'ball' }),
-    P('handR', [0, -0.8, 1.7], [3.0, 0.55, 0.6], gold),
-    P('handR', [0, -0.8, 5.2], [1.15, 6.6, 0.32], 0xd8e6f4, { r: [90, 0, 0], t: [0.25, 1] }),
-    P('handR', [0, -0.8, 4.6], [0.3, 4.2, 0.38], 0x6ad8ff, { r: [90, 0, 0], g: true }),
+    P('gripR', [0, -0.8, 0.4], [0.65, 2.2, 0.65], leather, { s: 'cyl', n: 6, r: [90, 0, 0] }),
+    P('gripR', [0, -0.8, -0.9], [0.9, 0.9, 0.9], gold, { s: 'ball' }),
+    P('gripR', [0, -0.8, 1.7], [3.0, 0.55, 0.6], gold),
+    P('gripR', [0, -0.8, 5.2], [1.15, 6.6, 0.32], 0xd8e6f4, { r: [90, 0, 0], t: [0.25, 1] }),
+    P('gripR', [0, -0.8, 4.6], [0.3, 4.2, 0.38], 0x6ad8ff, { r: [90, 0, 0], g: true }),
     // tower shield on the left hand (faces forward when the forearm is raised)
-    P('handL', [0, -1.7, 0.9], [4.9, 0.5, 3.9], steel),
-    P('handL', [0, -1.7, -1.55], [3.5, 0.5, 2.0], steel),
-    P('handL', [0, -1.7, -2.95], [1.9, 0.5, 1.0], steel),
-    P('handL', [0, -2.0, 0.9], [4.2, 0.3, 3.3], blue),
-    P('handL', [0, -2.0, -1.45], [2.9, 0.3, 1.7], blue),
-    P('handL', [0, -2.2, 0.5], [1.5, 0.6, 1.9], gold, { s: 'gem' }),
-    P('handL', [0, -2.15, 0.5], [0.4, 0.2, 4.6], gold, { flat: true }),
-    P('handL', [0, -2.15, 0.9], [3.6, 0.2, 0.4], gold, { flat: true }),
+    P('gripL', [0, -1.7, 0.9], [4.9, 0.5, 3.9], steel),
+    P('gripL', [0, -1.7, -1.55], [3.5, 0.5, 2.0], steel),
+    P('gripL', [0, -1.7, -2.95], [1.9, 0.5, 1.0], steel),
+    P('gripL', [0, -2.0, 0.9], [4.2, 0.3, 3.3], blue),
+    P('gripL', [0, -2.0, -1.45], [2.9, 0.3, 1.7], blue),
+    P('gripL', [0, -2.2, 0.5], [1.5, 0.6, 1.9], gold, { s: 'gem' }),
+    P('gripL', [0, -2.15, 0.5], [0.4, 0.2, 4.6], gold, { flat: true }),
+    P('gripL', [0, -2.15, 0.9], [3.6, 0.2, 0.4], gold, { flat: true }),
   ];
   return {
     id: 'bram',
@@ -82,7 +82,8 @@ function bram(): HeroRigDef {
     props: pr,
     parts,
     springs: { accA: { parent: 'head', at: [0, 7.0, -0.2], kind: 'bob', k: 0.8 } },
-    tip: { bone: 'handR', p: [0, -0.8, 7.5] },
+    tip: { bone: 'gripR', p: [0, -0.8, 7.5] },
+    grip: { R: { rot: [-8, -28, 0] } },
     anim: {
       weapon: 'sword',
       gait: { cadence: 0.48, stride: 30, knee: 45, armSwing: 14, elbow: 20, bounce: 0.55, lean: 6, sway: 5, twist: 6, heavy: 1, headBob: 2, armOut: 9, idle: 0.8 },
@@ -135,12 +136,12 @@ function lyra(): HeroRigDef {
     P('accA', [0, 1.0, -0.6], [3.0, 2.2, 3.0], hat, { s: 'cyl', n: 8, t: [0.2, 0.2], sh: [0, -1.4] }),
     P('accA', [0, 2.3, -2.1], [0.8, 0.8, 0.8], 0xffd060, { s: 'gem', g: true }),
     // flame staff
-    P('handR', [0, 1.5, 0.35], [0.6, 13.5, 0.6], 0x6a4a2a, { s: 'cyl', n: 6 }),
-    P('handR', [0, 6.8, 0.35], [0.85, 0.8, 0.85], gold, { s: 'cyl', n: 6 }),
-    ...sym([P('handR', [0.7, 8.6, 0.35], [0.4, 1.8, 0.4], gold, { r: [0, 0, -18] })]),
-    P('handR', [0, 8.55, 1.0], [0.4, 1.8, 0.4], gold, { r: [18, 0, 0] }),
-    P('handR', [0, 9.5, 0.35], [1.8, 2.6, 1.8], 0xff8a2a, { s: 'gem', g: true }),
-    P('handR', [0, 9.5, 0.35], [0.9, 1.4, 0.9], 0xffe080, { s: 'gem', g: true }),
+    P('gripR', [0, 1.5, 0.35], [0.6, 13.5, 0.6], 0x6a4a2a, { s: 'cyl', n: 6 }),
+    P('gripR', [0, 6.8, 0.35], [0.85, 0.8, 0.85], gold, { s: 'cyl', n: 6 }),
+    ...sym([P('gripR', [0.7, 8.6, 0.35], [0.4, 1.8, 0.4], gold, { r: [0, 0, -18] })]),
+    P('gripR', [0, 8.55, 1.0], [0.4, 1.8, 0.4], gold, { r: [18, 0, 0] }),
+    P('gripR', [0, 9.5, 0.35], [1.8, 2.6, 1.8], 0xff8a2a, { s: 'gem', g: true }),
+    P('gripR', [0, 9.5, 0.35], [0.9, 1.4, 0.9], 0xffe080, { s: 'gem', g: true }),
   ];
   return {
     id: 'lyra',
@@ -151,7 +152,8 @@ function lyra(): HeroRigDef {
       accA: { parent: 'head', at: [0, 10.1, -1.4], kind: 'bob', k: 0.7 },
       accC: { parent: 'head', at: [0, 2.6, -3.0], kind: 'bob', k: 0.8 },
     },
-    tip: { bone: 'handR', p: [0, 9.5, 0.35] },
+    tip: { bone: 'gripR', p: [0, 9.5, 0.35] },
+    grip: { R: { rot: [6, 0, 22] } },
     anim: {
       weapon: 'staff',
       gait: { cadence: 0.5, stride: 22, knee: 34, armSwing: 10, elbow: 14, bounce: 0.25, lean: 4, sway: 3, twist: 7, heavy: 0, headBob: 1, armOut: 4, idle: 1 },
@@ -199,16 +201,16 @@ function kestrel(): HeroRigDef {
     P('accB', [-0.8, 3.4, -0.6], [0.5, 1.2, 0.22], 0xf0e8d8, { r: [0, 30, 22] }),
     P('accB', [-1.5, 3.25, -0.6], [0.5, 1.1, 0.22], 0xd84a3a, { r: [0, -30, 22] }),
     // recurve longbow (along the hand's z axis: vertical at rest, vertical when aimed)
-    P('handL', [0, -0.8, 0.2], [0.75, 0.75, 1.8], leatherD),
-    P('handL', [0, -0.42, 3.1], [0.55, 4.6, 0.7], 0x8a6a3a, { r: [80, 0, 0], t: [0.6, 0.8] }),
-    P('handL', [0, -0.42, -2.7], [0.55, 4.6, 0.7], 0x8a6a3a, { r: [-80, 0, 0], t: [0.6, 0.8] }),
-    P('handL', [0, 0.15, 5.45], [0.45, 1.2, 0.5], 0x6a4a2a, { r: [55, 0, 0] }),
-    P('handL', [0, 0.15, -5.05], [0.45, 1.2, 0.5], 0x6a4a2a, { r: [-55, 0, 0] }),
-    P('handL', [0, 0.55, 0.2], [0.12, 0.12, 10.9], 0xeeeeee, { flat: true }),
+    P('gripL', [0, -0.8, 0.2], [0.75, 0.75, 1.8], leatherD),
+    P('gripL', [0, -0.42, 3.1], [0.55, 4.6, 0.7], 0x8a6a3a, { r: [80, 0, 0], t: [0.6, 0.8] }),
+    P('gripL', [0, -0.42, -2.7], [0.55, 4.6, 0.7], 0x8a6a3a, { r: [-80, 0, 0], t: [0.6, 0.8] }),
+    P('gripL', [0, 0.15, 5.45], [0.45, 1.2, 0.5], 0x6a4a2a, { r: [55, 0, 0] }),
+    P('gripL', [0, 0.15, -5.05], [0.45, 1.2, 0.5], 0x6a4a2a, { r: [-55, 0, 0] }),
+    P('gripL', [0, 0.55, 0.2], [0.12, 0.12, 10.9], 0xeeeeee, { flat: true }),
     // nocked arrow, shown while drawing
-    P('handL', [0, 0.4, 0.45], [0.18, 6.6, 0.18], 0xc8a070, { grp: 'arrow' }),
-    P('handL', [0, -3.05, 0.45], [0.55, 0.9, 0.55], 0xc8d0dc, { s: 'cyl', n: 4, t: [0, 0], r: [180, 0, 0], grp: 'arrow' }),
-    P('handL', [0, 3.3, 0.45], [0.7, 1.1, 0.12], 0xd84a3a, { grp: 'arrow' }),
+    P('gripL', [0, 0.4, 0.45], [0.18, 6.6, 0.18], 0xc8a070, { grp: 'arrow' }),
+    P('gripL', [0, -3.05, 0.45], [0.55, 0.9, 0.55], 0xc8d0dc, { s: 'cyl', n: 4, t: [0, 0], r: [180, 0, 0], grp: 'arrow' }),
+    P('gripL', [0, 3.3, 0.45], [0.7, 1.1, 0.12], 0xd84a3a, { grp: 'arrow' }),
   ];
   return {
     id: 'kestrel',
@@ -219,7 +221,7 @@ function kestrel(): HeroRigDef {
       accB: { parent: 'chest', at: [1.0, 1.8, -2.1], kind: 'bob', k: 1.2 },
       accC: { parent: 'head', at: [0, 5.5, -3.1], kind: 'bob', k: 0.8 },
     },
-    tip: { bone: 'handL', p: [0, -3.5, 0.45] },
+    tip: { bone: 'gripL', p: [0, -3.5, 0.45] },
     hidden: ['arrow'],
     anim: {
       weapon: 'bow',
@@ -272,13 +274,13 @@ function morwen(): HeroRigDef {
     P('head', [0, 4.75, 2.55], [5.2, 0.9, 0.2], 0x15101c, { flat: true }),
     P('accC', [0, -0.4, -1.0], [2.6, 3.2, 2.4], robeD, { t: [0.3, 0.3], sh: [0, -1.2], r: [-45, 0, 0] }),
     // skull staff
-    P('handR', [0, 2.0, 0.35], [0.6, 15, 0.6], 0x2a2230, { s: 'cyl', n: 6 }),
-    ...[3.5, 5.0, 6.5].map((y) => P('handR', [0, y, 0.35], [0.85, 0.4, 0.85], bone, { s: 'cyl', n: 6 })),
-    P('handR', [0, 10.6, 0.35], [2.6, 2.5, 2.6], bone, { s: 'ball' }),
-    ...sym([P('handR', [0.55, 10.8, 1.55], [0.55, 0.55, 0.2], glow, { g: true })]),
-    ...sym([P('handR', [1.25, 11.5, 0.0], [0.6, 1.9, 0.6], bone, { s: 'cyl', n: 5, t: [0.1, 0.1], r: [0, 0, -38] })]),
-    P('handR', [0, 9.6, 0.75], [1.8, 0.7, 1.6], bone),
-    P('handR', [0, 12.5, 0.35], [1.0, 1.5, 1.0], glow, { s: 'gem', g: true }),
+    P('gripR', [0, 2.0, 0.35], [0.6, 15, 0.6], 0x2a2230, { s: 'cyl', n: 6 }),
+    ...[3.5, 5.0, 6.5].map((y) => P('gripR', [0, y, 0.35], [0.85, 0.4, 0.85], bone, { s: 'cyl', n: 6 })),
+    P('gripR', [0, 10.6, 0.35], [2.6, 2.5, 2.6], bone, { s: 'ball' }),
+    ...sym([P('gripR', [0.55, 10.8, 1.55], [0.55, 0.55, 0.2], glow, { g: true })]),
+    ...sym([P('gripR', [1.25, 11.5, 0.0], [0.6, 1.9, 0.6], bone, { s: 'cyl', n: 5, t: [0.1, 0.1], r: [0, 0, -38] })]),
+    P('gripR', [0, 9.6, 0.75], [1.8, 0.7, 1.6], bone),
+    P('gripR', [0, 12.5, 0.35], [1.0, 1.5, 1.0], glow, { s: 'gem', g: true }),
     // spirit wisps orbiting the necromancer
     P('accB', [5.6, 1.6, 0], [0.9, 1.3, 0.9], glow, { s: 'gem', g: true }),
     P('accB', [-5.6, 0.4, 0], [0.8, 1.1, 0.8], 0x9affdc, { s: 'gem', g: true }),
@@ -292,7 +294,8 @@ function morwen(): HeroRigDef {
       accB: { parent: 'chest', at: [0, 1.5, 0], kind: 'spin', axis: 'y', speed: 1.3 },
       accC: { parent: 'head', at: [0, 5.6, -3.0], kind: 'bob', k: 0.7 },
     },
-    tip: { bone: 'handR', p: [0, 12.5, 0.35] },
+    tip: { bone: 'gripR', p: [0, 12.5, 0.35] },
+    grip: { R: { rot: [6, 0, 20] } },
     anim: {
       weapon: 'summon',
       gait: { cadence: 0.45, stride: 20, knee: 30, armSwing: 6, elbow: 10, bounce: 0.12, lean: 8, sway: 2, twist: 4, heavy: 0, headBob: 0.5, armOut: 10, idle: 1.1 },
@@ -355,9 +358,9 @@ function fizz(): HeroRigDef {
     P('accB', [-2.0, 4.1, -2.7], [0.9, 2.4, 0.9], 0x4a4a52, { s: 'cyl', n: 6 }),
     P('accB', [0, -2.7, -1.6], [1.7, 5.8, 1.7], 0xb89a6a, { s: 'cyl', n: 8, r: [0, 0, 90] }),
     // flask in hand, hidden for a moment after a throw
-    P('handR', [0, -1.95, 0.4], [1.4, 1.5, 1.4], 0x9cff4f, { s: 'cyl', n: 8, g: true, grp: 'flask' }),
-    P('handR', [0, -1.0, 0.4], [0.6, 0.7, 0.6], 0xc8f0e0, { s: 'cyl', n: 6, grp: 'flask' }),
-    P('handR', [0, -2.75, 0.4], [1.0, 0.25, 1.0], 0x5aa02a, { s: 'cyl', n: 8, grp: 'flask', flat: true }),
+    P('gripR', [0, -1.95, 0.4], [1.4, 1.5, 1.4], 0x9cff4f, { s: 'cyl', n: 8, g: true, grp: 'flask' }),
+    P('gripR', [0, -1.0, 0.4], [0.6, 0.7, 0.6], 0xc8f0e0, { s: 'cyl', n: 6, grp: 'flask' }),
+    P('gripR', [0, -2.75, 0.4], [1.0, 0.25, 1.0], 0x5aa02a, { s: 'cyl', n: 8, grp: 'flask', flat: true }),
   ];
   return {
     id: 'fizz',
@@ -365,7 +368,7 @@ function fizz(): HeroRigDef {
     props: pr,
     parts,
     springs: { accB: { parent: 'chest', at: [0, 1.8, -2.1], kind: 'bob', k: 0.9 } },
-    tip: { bone: 'handR', p: [0, -1.95, 0.4] },
+    tip: { bone: 'gripR', p: [0, -1.95, 0.4] },
     anim: {
       weapon: 'throw',
       gait: { cadence: 0.72, stride: 26, knee: 40, armSwing: 18, elbow: 24, bounce: 0.6, lean: 5, sway: 9, twist: 5, heavy: 0.2, headBob: 3, armOut: 8, idle: 1.2 },
@@ -473,12 +476,12 @@ function vex(): HeroRigDef {
     ...sym([P('accA', [1.6, 0.4, -1.0], [1.2, 1.7, 2.6], hair, { t: [0.2, 0.4], sh: [0.4, -1.2], r: [-25, 0, -20] })]),
     P('accA', [0, 1.95, -3.05], [0.6, 0.6, 0.6], cyan, { s: 'gem', g: true }),
     // lightning rod
-    P('handR', [0, 1.8, 0.35], [0.55, 13.5, 0.55], silver, { s: 'cyl', n: 6 }),
-    ...[5.8, 6.6, 7.4].map((y) => P('handR', [0, y, 0.35], [0.95, 0.35, 0.95], 0xc8803a, { s: 'cyl', n: 6 })),
-    ...sym([P('handR', [0.55, 9.0, 0.35], [0.35, 2.1, 0.35], silver, { r: [0, 0, -15] })]),
-    P('handR', [0, 10.3, 0.35], [1.2, 2.0, 1.2], 0xfff27a, { s: 'gem', g: true }),
-    P('handR', [0.95, 10.9, 0.35], [0.4, 0.6, 0.4], cyan, { s: 'gem', g: true }),
-    P('handR', [-0.8, 9.9, 0.6], [0.35, 0.5, 0.35], cyan, { s: 'gem', g: true }),
+    P('gripR', [0, 1.8, 0.35], [0.55, 13.5, 0.55], silver, { s: 'cyl', n: 6 }),
+    ...[5.8, 6.6, 7.4].map((y) => P('gripR', [0, y, 0.35], [0.95, 0.35, 0.95], 0xc8803a, { s: 'cyl', n: 6 })),
+    ...sym([P('gripR', [0.55, 9.0, 0.35], [0.35, 2.1, 0.35], silver, { r: [0, 0, -15] })]),
+    P('gripR', [0, 10.3, 0.35], [1.2, 2.0, 1.2], 0xfff27a, { s: 'gem', g: true }),
+    P('gripR', [0.95, 10.9, 0.35], [0.4, 0.6, 0.4], cyan, { s: 'gem', g: true }),
+    P('gripR', [-0.8, 9.9, 0.6], [0.35, 0.5, 0.35], cyan, { s: 'gem', g: true }),
   ];
   return {
     id: 'vex',
@@ -486,7 +489,8 @@ function vex(): HeroRigDef {
     props: pr,
     parts,
     springs: { accA: { parent: 'head', at: [0, 6.2, -0.5], kind: 'bob', k: 1.0 } },
-    tip: { bone: 'handR', p: [0, 10.3, 0.35] },
+    tip: { bone: 'gripR', p: [0, 10.3, 0.35] },
+    grip: { R: { rot: [4, 0, 20] } },
     anim: {
       weapon: 'rod',
       gait: { cadence: 0.47, stride: 32, knee: 46, armSwing: 16, elbow: 18, bounce: 0.3, lean: 9, sway: 3, twist: 10, heavy: 0, headBob: 1, armOut: 5, idle: 0.9 },
@@ -544,9 +548,9 @@ function tink(): HeroRigDef {
       return P('accC', [Math.sin(a) * 2.05, Math.cos(a) * 2.05, 0], [0.8, 0.8, 0.6], brass, { r: [0, 0, (-a * 180) / Math.PI] });
     }),
     // bomb in the left hand
-    P('handL', [0, -1.85, 0.4], [1.9, 1.9, 1.9], 0x2a2a2e, { s: 'ball', grp: 'bomb' }),
-    P('handL', [0, -0.85, 0.4], [0.7, 0.4, 0.7], brass, { grp: 'bomb' }),
-    P('handL', [0.2, -0.45, 0.4], [0.4, 0.4, 0.4], 0xffa030, { s: 'gem', g: true, grp: 'bomb' }),
+    P('gripL', [0, -1.85, 0.4], [1.9, 1.9, 1.9], 0x2a2a2e, { s: 'ball', grp: 'bomb' }),
+    P('gripL', [0, -0.85, 0.4], [0.7, 0.4, 0.7], brass, { grp: 'bomb' }),
+    P('gripL', [0.2, -0.45, 0.4], [0.4, 0.4, 0.4], 0xffa030, { s: 'gem', g: true, grp: 'bomb' }),
   ];
   return {
     id: 'tink',
@@ -557,7 +561,7 @@ function tink(): HeroRigDef {
       accB: { parent: 'chest', at: [0, 1.9, -2.0], kind: 'bob', k: 1.0 },
       accC: { parent: 'chest', at: [0, 2.2, -4.7], kind: 'spin', axis: 'z', speed: 2.2 },
     },
-    tip: { bone: 'handL', p: [0, -1.85, 0.4] },
+    tip: { bone: 'gripL', p: [0, -1.85, 0.4] },
     anim: {
       weapon: 'lob',
       gait: { cadence: 0.75, stride: 28, knee: 44, armSwing: 20, elbow: 30, bounce: 0.5, lean: 8, sway: 5, twist: 6, heavy: 0.3, headBob: 2, armOut: 6, idle: 1.2 },
@@ -611,13 +615,13 @@ function aurelia(): HeroRigDef {
     P('capeB', [0, -3.95, 0], [7.1, 0.35, 0.5], gold, { flat: true }),
     P('capeA', [0, -2.1, 0.2], [5.2, 4.2, 0.2], blue, { t: [0.85, 1], flat: true }),
     // holy mace
-    P('handR', [0, -0.8, 1.8], [0.6, 5.0, 0.6], 0x8a6a3a, { s: 'cyl', n: 6, r: [90, 0, 0] }),
-    P('handR', [0, -0.8, -0.8], [0.9, 0.9, 0.9], gold, { s: 'ball' }),
-    P('handR', [0, -0.8, 4.0], [1.0, 0.4, 1.0], halo, { s: 'cyl', n: 8, r: [90, 0, 0], g: true }),
-    P('handR', [0, -0.8, 5.0], [2.0, 2.0, 2.2], gold),
-    ...sym([P('handR', [1.15, -0.8, 5.0], [0.4, 1.6, 1.8], 0xf0d070)]),
-    P('handR', [0, 0.35, 5.0], [1.6, 0.4, 1.8], 0xf0d070),
-    P('handR', [0, -0.8, 6.5], [0.8, 1.0, 0.8], gold, { s: 'cyl', n: 6, t: [0, 0], r: [90, 0, 0] }),
+    P('gripR', [0, -0.8, 1.8], [0.6, 5.0, 0.6], 0x8a6a3a, { s: 'cyl', n: 6, r: [90, 0, 0] }),
+    P('gripR', [0, -0.8, -0.8], [0.9, 0.9, 0.9], gold, { s: 'ball' }),
+    P('gripR', [0, -0.8, 4.0], [1.0, 0.4, 1.0], halo, { s: 'cyl', n: 8, r: [90, 0, 0], g: true }),
+    P('gripR', [0, -0.8, 5.0], [2.0, 2.0, 2.2], gold),
+    ...sym([P('gripR', [1.15, -0.8, 5.0], [0.4, 1.6, 1.8], 0xf0d070)]),
+    P('gripR', [0, 0.35, 5.0], [1.6, 0.4, 1.8], 0xf0d070),
+    P('gripR', [0, -0.8, 6.5], [0.8, 1.0, 0.8], gold, { s: 'cyl', n: 6, t: [0, 0], r: [90, 0, 0] }),
   ];
   return {
     id: 'aurelia',
@@ -628,7 +632,8 @@ function aurelia(): HeroRigDef {
       accA: { parent: 'head', at: [0, 8.2, -0.6], kind: 'bob', k: 0.5 },
       accC: { parent: 'head', at: [0, 3.0, -2.9], kind: 'bob', k: 0.9 },
     },
-    tip: { bone: 'handR', p: [0, -0.8, 5.2] },
+    tip: { bone: 'gripR', p: [0, -0.8, 5.2] },
+    grip: { R: { rot: [-10, -22, 0] } },
     anim: {
       weapon: 'hammer',
       gait: { cadence: 0.47, stride: 30, knee: 44, armSwing: 12, elbow: 16, bounce: 0.35, lean: 5, sway: 3, twist: 6, heavy: 0.5, headBob: 1, armOut: 5, idle: 0.8 },

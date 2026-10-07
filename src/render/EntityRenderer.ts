@@ -46,6 +46,9 @@ export class EntityRenderer {
   private cues = { attack: 0, hit: 0, ability: 0, level: 1, revive: 0 };
   private lastAttack = -9;
   private heroYaw = 0;
+  /** While > 0 the hero faces its attack direction instead of its travel direction. */
+  private aimHold = 0;
+  private aimYaw = 0;
   private victoryPlayed = false;
   private bossModels = new Map<string, ArticulatedModel>();
   private shadows: InstancedBatch;
@@ -190,8 +193,17 @@ export class EntityRenderer {
     // the hero keeps near real-time pace through the slow-motion ending so death and victory read
     const adt = run.ending ? (dt / Math.max(0.2, run.timeScale)) * 0.8 : dt;
     rig.root.position.set(p.x, 0, p.z);
-    const yaw = Math.atan2(p.fx, p.fz);
-    const dy = angleDelta(this.heroYaw, yaw) * Math.min(1, adt * 14);
+    // facing: toward the attack while it plays (plus a short hold), else toward travel
+    const c = p.cues;
+    if (c.attack !== this.cues.attack && c.aim && !p.dead) {
+      this.aimYaw = Math.atan2(c.aimX, c.aimZ);
+      this.aimHold = 0.8;
+    }
+    this.aimHold = Math.max(0, this.aimHold - adt);
+    const yaw = this.aimHold > 0 ? this.aimYaw : Math.atan2(p.fx, p.fz);
+    // eased, rate-limited turn so auto-targeting never snaps the model around
+    const maxTurn = 11 * adt;
+    const dy = Math.max(-maxTurn, Math.min(maxTurn, angleDelta(this.heroYaw, yaw) * Math.min(1, adt * 16)));
     this.heroYaw += dy;
     rig.root.rotation.y = this.heroYaw;
     const sp = p.dead ? 0 : Math.hypot(p.vx, p.vz);
@@ -202,7 +214,6 @@ export class EntityRenderer {
     a.side = p.vx * cs - p.vz * sn;
     a.turn = adt > 0 ? Math.max(-3, Math.min(3, dy / adt / 4)) : 0;
     // gameplay cues
-    const c = p.cues;
     if (p.dead) {
       if (!a.dead.value) a.play('death');
     } else {

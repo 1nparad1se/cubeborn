@@ -12,6 +12,7 @@ export const BONES = [
   'root', 'hips', 'spine', 'chest', 'head',
   'armL', 'foreL', 'handL', 'armR', 'foreR', 'handR',
   'legL', 'shinL', 'footL', 'legR', 'shinR', 'footR',
+  'gripL', 'gripR',
   'capeA', 'capeB', 'skirtF', 'skirtB', 'accA', 'accB', 'accC',
 ] as const;
 export type BoneId = (typeof BONES)[number];
@@ -65,6 +66,21 @@ export interface SpringDef {
   rest?: number;
 }
 
+export interface GripDef {
+  /** Grip point in hand-bone space (voxels). Default: centre of the palm. */
+  at?: V3;
+  /** Rest rotation of the held item around the grip point (deg). */
+  rot?: V3;
+  /** Uniform scale of the held item. */
+  scale?: number;
+}
+
+export const DEFAULT_GRIP: V3 = [0, -0.8, 0.35];
+
+export function gripAt(def: HeroRigDef, side: 'L' | 'R'): V3 {
+  return def.grip?.[side]?.at ?? DEFAULT_GRIP;
+}
+
 export interface HeroRigDef {
   id: string;
   /** World units per voxel. */
@@ -72,6 +88,12 @@ export interface HeroRigDef {
   props: Proportions;
   parts: RigPart[];
   springs?: Partial<Record<BoneId, SpringDef>>;
+  /**
+   * Weapon attach points: one grip bone per hand, at the palm. Held items are authored on
+   * 'gripR' / 'gripL' in hand-bone coordinates (as if on the hand) and pivot around the grip
+   * point; `rot` is the item's rest orientation in the palm (deg), kept through every animation.
+   */
+  grip?: Partial<Record<'L' | 'R', GripDef>>;
   /** Where weapon effects start (staff tip, blade, fist). */
   tip: { bone: BoneId; p: V3 };
   /** Visibility groups hidden at rest. */
@@ -101,6 +123,8 @@ export function restLayout(def: HeroRigDef): Record<BoneId, { parent: BoneId | n
     legR: { parent: 'hips', at: [-P.hipX, 0, 0] },
     shinR: { parent: 'legR', at: [0, -P.thigh, 0] },
     footR: { parent: 'shinR', at: [0, -P.shin, 0] },
+    gripL: { parent: 'handL', at: gripAt(def, 'L') },
+    gripR: { parent: 'handR', at: gripAt(def, 'R') },
     capeA: { parent: 'chest', at: [0, P.shoulderY + 0.2, -P.depth / 2 - 0.3] },
     capeB: { parent: 'capeA', at: [0, -4.2, 0] },
     skirtF: { parent: 'hips', at: [0, 0.2, 1.2] },
@@ -113,6 +137,13 @@ export function restLayout(def: HeroRigDef): Record<BoneId, { parent: BoneId | n
   return L as Record<BoneId, { parent: BoneId | null; at: V3 }>;
 }
 
+/** Grip-bone parts are authored in hand space; shift them so they pivot on the grip point. */
+function toGripSpace(def: HeroRigDef, part: RigPart): RigPart {
+  if (part.b !== 'gripL' && part.b !== 'gripR') return part;
+  const g = gripAt(def, part.b === 'gripL' ? 'L' : 'R');
+  return { ...part, p: [part.p[0] - g[0], part.p[1] - g[1], part.p[2] - g[2]] };
+}
+
 /**
  * A hero model built from a rig definition: one THREE.Group per bone, one merged mesh
  * per bone (plus one per visibility group), a shared material with hit flash and rim light.
@@ -121,6 +152,8 @@ export class HeroRig {
   readonly root = new THREE.Group();
   readonly bones = {} as Record<BoneId, THREE.Group>;
   readonly rest = {} as Record<BoneId, THREE.Vector3>;
+  /** Constant rest rotations (deg) added to the animated pose: the grip orientations. */
+  readonly restRot: Partial<Record<BoneId, V3>> = {};
   readonly groups = new Map<string, THREE.Mesh[]>();
   readonly tip = new THREE.Object3D();
   readonly flash = { value: 0 };
@@ -148,7 +181,14 @@ export class HeroRig {
     }
     // parts grouped by bone and visibility group
     const sinks = new Map<string, GeoSink>();
-    for (const part of def.parts) {
+    for (const side of ['L', 'R'] as const) {
+      const rot = def.grip?.[side]?.rot;
+      if (rot) this.restRot[('grip' + side) as BoneId] = rot;
+      const gs = def.grip?.[side]?.scale;
+      if (gs) this.bones[('grip' + side) as BoneId].scale.setScalar(gs);
+    }
+    for (const part0 of def.parts) {
+      const part = toGripSpace(def, part0);
       const key = part.b + '|' + (part.grp ?? '');
       let sink = sinks.get(key);
       if (!sink) sinks.set(key, (sink = new GeoSink()));
@@ -171,7 +211,8 @@ export class HeroRig {
       }
     }
     for (const grp of def.hidden ?? []) this.show(grp, false);
-    this.tip.position.set(def.tip.p[0] * s, def.tip.p[1] * s, def.tip.p[2] * s);
+    const tp = toGripSpace(def, { b: def.tip.bone, p: def.tip.p } as RigPart).p;
+    this.tip.position.set(tp[0] * s, tp[1] * s, tp[2] * s);
     this.bones[def.tip.bone].add(this.tip);
   }
 

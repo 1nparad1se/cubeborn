@@ -5,6 +5,11 @@ export const BALANCE = {
   weaponSlots: 6,
   passiveSlots: 6,
   passiveMaxDefault: 5,
+  /**
+   * Price multiplier for permanent upgrades (v2.2: ×5 so meta progress is earned).
+   * permCost() is the single source for the shop label and the purchase.
+   */
+  permCostMul: 5,
 
   // player
   basePickupRadius: 1.6,

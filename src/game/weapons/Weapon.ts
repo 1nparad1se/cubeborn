@@ -41,6 +41,10 @@ export class WeaponInstance {
   /** Behaviour scratch state. */
   state: Record<string, any> = {};
   kills = 0;
+  /** Last aimed direction (set by aim() when a target was found) and when. */
+  aimX = 0;
+  aimZ = 1;
+  aimAt = -1;
 
   constructor(public def: WeaponDef, public source: number) {
     this.behavior = getBehavior(def.behavior);
@@ -111,6 +115,9 @@ export class WeaponInstance {
 }
 
 /** Holds the player's weapons and drives them each frame. */
+/** Behaviours that hit all around the hero, so the hero keeps facing the way it moves. */
+const UNDIRECTED = new Set(['aura', 'nova', 'orbit', 'radial', 'summon', 'wisp', 'pool', 'mine', 'tornado']);
+
 export class WeaponSystem {
   readonly list: WeaponInstance[] = [];
   private nextSource = 1;
@@ -169,7 +176,32 @@ export class WeaponSystem {
         w.cdT += w.cooldown(run);
         if (w.cdT < 0) w.cdT = w.cooldown(run);
         w.behavior.fire(w, run);
-        if (w.def.id === this.heroWeapon || w.def.id === this.heroEvolved) run.player.cues.attack++;
+        if (w.def.id === this.heroWeapon || w.def.id === this.heroEvolved) this.heroAttackCue(w);
+      }
+    }
+  }
+
+  /**
+   * Tells the renderer the hero attacked and where: the aimed target, else the nearest enemy for
+   * targeted attacks; area attacks around the hero (auras, novas, orbits, summons) have no direction.
+   */
+  private heroAttackCue(w: WeaponInstance) {
+    const run = this.run;
+    const c = run.player.cues;
+    c.attack++;
+    c.aim = false;
+    if (w.aimAt === run.time) {
+      c.aimX = w.aimX;
+      c.aimZ = w.aimZ;
+      c.aim = true;
+    } else if (!UNDIRECTED.has(w.def.behavior)) {
+      const p = run.player;
+      const t = run.enemies.nearest(p.x, p.z, 12);
+      if (t) {
+        const d = Math.hypot(t.x - p.x, t.z - p.z) || 1;
+        c.aimX = (t.x - p.x) / d;
+        c.aimZ = (t.z - p.z) / d;
+        c.aim = true;
       }
     }
   }
