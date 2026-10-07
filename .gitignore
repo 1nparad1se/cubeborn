@@ -9,3 +9,5 @@ unity/obj/
 unity/UserSettings/
 unity/Build/
 unity/build/
+unity/Sim/bin/
+unity/Sim/obj/

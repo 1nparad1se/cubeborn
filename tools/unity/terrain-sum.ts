@@ -1,0 +1,11 @@
+import { generateTerrain } from '../../src/game/mapgen/generators';
+import { MAP_BY_ID } from '../../src/data/maps';
+const [mapId, seedArg] = process.argv.slice(2);
+const t = generateTerrain(MAP_BY_ID[mapId], Number(seedArg));
+let h = 0;
+for (let i = 0; i < t.cell.length; i++) h = Number((BigInt(h) * 31n + BigInt(t.cell[i] * 7 + t.tile[i])) % 1000000007n);
+let bsum = 0;
+for (const b of t.blocks) bsum += b.x * 3 + b.y * 5 + b.z * 7 + b.v;
+let dsum = 0;
+for (const d of t.decor) dsum += d.x + d.z + d.size;
+console.log(`cells=${h} blocks=${t.blocks.length} bsum=${bsum.toFixed(2)} decor=${t.decor.length} dsum=${dsum.toFixed(4)} lights=${t.lights.length} tiles=${t.tileNames.join(',')}`);
