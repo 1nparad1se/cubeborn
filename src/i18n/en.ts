@@ -87,7 +87,7 @@ export const EN: Record<string, string> = {
   q_high: 'High',
   on: 'On',
   off: 'Off',
-  credits: 'Cubeborn is an original game. All graphics, models, sounds and music are procedural. Fonts: Press Start 2P and Rubik (SIL OFL).',
+  credits: 'Cubeborn is an original game. All graphics, models, sounds and music are procedural. Fonts: Russo One, Rubik and Press Start 2P (SIL OFL).',
   hud_level: 'LV {n}',
   buff_fury: 'FURY',
   buff_haste: 'HASTE',

@@ -12,10 +12,33 @@
   --green-dk: #2f8a3e;
   --red: #ff4a5a;
   --blue: #5ab4ff;
-  --px: 'Pixelify Sans', 'Press Start 2P', monospace;
+  /*
+   * Typography (v2.2). Two families with full Cyrillic + Latin + digits + symbols:
+   * Russo One for display text (titles, buttons, HUD headings) and Rubik for everything that
+   * is read (descriptions, stats, labels). The logo keeps the pixel font.
+   */
+  --font-display: 'Russo One', 'Rubik', system-ui, sans-serif;
+  --font-ui: 'Rubik', system-ui, sans-serif;
+  --px: var(--font-display);
   --px-logo: 'Press Start 2P', monospace;
-  --fmc: 'Pixelify Sans', 'Rubik', system-ui, sans-serif;
-  --ui: 'Rubik', system-ui, sans-serif;
+  --fmc: var(--font-display);
+  --ui: var(--font-ui);
+  /* type scale: one size per role, nothing below --fs-min */
+  --fs-title: 30px;
+  --fs-subtitle: 21px;
+  --fs-body: 16px;
+  --fs-secondary: 14px;
+  --fs-button: 16px;
+  --fs-stats: 15px;
+  --fs-warning: 18px;
+  --fs-small: 14px;
+  --fs-min: 13px;
+  --lh-tight: 1.15;
+  --lh-body: 1.42;
+  --text-strong: #ffffff;
+  --text-warn: #ffb03a;
+  --text-danger: #ff6a6a;
+  --shadow-text: 0 2px 0 rgba(0, 0, 0, 0.85);
   --sat: env(safe-area-inset-top, 0px);
   --sab: env(safe-area-inset-bottom, 0px);
   --sal: env(safe-area-inset-left, 0px);
@@ -36,6 +59,8 @@ body {
   color: var(--text);
   font-family: var(--ui);
   font-weight: 500;
+  /* Russo One ships one weight: never fake a bold over it */
+  font-synthesis: none;
   user-select: none;
   -webkit-user-select: none;
   touch-action: none;
@@ -106,9 +131,8 @@ img.thumb.big {
 /* ------------------------------------------------------------------ buttons */
 .btn {
   position: relative;
-  font-family: var(--px);
-  font-size-adjust: cap-height 0.95;
-  font-size: 11px;
+  font-family: var(--font-display);
+  font-size: 15px;
   line-height: 1.4;
   padding: 12px 16px;
   min-height: 44px;
@@ -150,7 +174,7 @@ img.thumb.big {
   min-height: 58px;
 }
 .btn.small {
-  font-size: 9px;
+  font-size: var(--fs-min);
   padding: 8px 10px;
   min-height: 36px;
 }
@@ -186,16 +210,15 @@ img.thumb.big {
   pointer-events: none;
 }
 .tap {
-  font-family: var(--px);
-  font-size-adjust: cap-height 0.95;
-  font-size: 12px;
+  font-family: var(--font-display);
+  font-size: 16px;
   color: var(--gold);
   animation: blink 1.2s steps(2) infinite;
 }
 .splash-foot {
   position: absolute;
   bottom: calc(16px + var(--sab));
-  font-size: 12px;
+  font-size: var(--fs-min);
   color: var(--dim);
   text-align: center;
   padding: 0 16px;
@@ -221,9 +244,8 @@ img.thumb.big {
 }
 .logo-sub {
   margin-top: 14px;
-  font-family: var(--px);
-  font-size-adjust: cap-height 0.95;
-  font-size: clamp(9px, 2.2vw, 13px);
+  font-family: var(--font-display);
+  font-size: clamp(13px, 2.2vw, 18px);
   color: var(--gold);
   text-shadow: 0 2px 0 #000;
 }
@@ -311,21 +333,20 @@ img.thumb.big {
   gap: 12px;
 }
 .main-grid .btn {
-  font-size: 9px;
+  font-size: var(--fs-min);
   min-height: 48px;
 }
 .main-foot {
   display: flex;
   gap: 16px;
   align-items: center;
-  font-size: 12px;
+  font-size: var(--fs-min);
   color: var(--dim);
   flex-wrap: wrap;
 }
 .gold-chip {
-  font-family: var(--px);
-  font-size-adjust: cap-height 0.95;
-  font-size: 11px;
+  font-family: var(--font-display);
+  font-size: 15px;
   color: var(--gold);
   background: rgba(0, 0, 0, 0.55);
   padding: 8px 10px;
@@ -336,12 +357,11 @@ img.thumb.big {
   box-shadow: 0 0 0 2px #08090b;
 }
 .power {
-  font-family: var(--px);
-  font-size-adjust: cap-height 0.95;
-  font-size: 9px;
+  font-family: var(--font-display);
+  font-size: 13px;
 }
 .version {
-  font-size: 11px;
+  font-size: var(--fs-min);
   opacity: 0.6;
 }
 
@@ -387,15 +407,13 @@ i.ic-skull::after {
 .screen-head h2 {
   flex: 1;
   margin: 0;
-  font-family: var(--px);
-  font-size-adjust: cap-height 0.95;
-  font-size: clamp(12px, 3vw, 18px);
+  font-family: var(--font-display);
+  font-size: clamp(16px, 3vw, 24px);
   text-shadow: 0 3px 0 #000;
 }
 .count {
-  font-family: var(--px);
-  font-size-adjust: cap-height 0.95;
-  font-size: 11px;
+  font-family: var(--font-display);
+  font-size: 15px;
   color: var(--gold);
   background: rgba(0, 0, 0, 0.55);
   padding: 8px 10px;
@@ -437,9 +455,8 @@ i.ic-skull::after {
 }
 .detail h3 {
   margin: 0;
-  font-family: var(--px);
-  font-size-adjust: cap-height 0.95;
-  font-size: 14px;
+  font-family: var(--font-display);
+  font-size: 19px;
   line-height: 1.4;
 }
 .detail p {
@@ -457,7 +474,7 @@ i.ic-skull::after {
   flex-wrap: wrap;
 }
 .sub {
-  font-size: 12px;
+  font-size: var(--fs-min);
   color: var(--dim);
   margin-top: 4px;
 }
@@ -500,9 +517,8 @@ i.ic-skull::after {
   font-size: 13px;
 }
 .label {
-  font-family: var(--px);
-  font-size-adjust: cap-height 0.95;
-  font-size: 9px;
+  font-family: var(--font-display);
+  font-size: 13px;
   color: var(--dim);
   margin: 12px 0 8px;
 }
@@ -524,7 +540,7 @@ i.ic-skull::after {
   gap: 4px;
 }
 .hero-card .name {
-  font-size: 12px;
+  font-size: var(--fs-min);
   text-align: center;
 }
 .hero-card.sel,
@@ -572,9 +588,8 @@ i.ic-skull::after {
   flex: none;
 }
 .map-card .name {
-  font-family: var(--px);
-  font-size-adjust: cap-height 0.95;
-  font-size: 10px;
+  font-family: var(--font-display);
+  font-size: 14px;
   line-height: 1.5;
 }
 .map-card .badge {
@@ -591,9 +606,8 @@ i.ic-skull::after {
   gap: 6px;
 }
 .diff {
-  font-family: var(--px);
-  font-size-adjust: cap-height 0.95;
-  font-size: 8px;
+  font-family: var(--font-display);
+  font-size: 13px;
   padding: 10px 2px;
   background: var(--panel2);
   border-radius: 4px;
@@ -613,7 +627,7 @@ i.ic-skull::after {
   justify-content: space-between;
   gap: 10px;
   margin-top: 8px;
-  font-size: 12px;
+  font-size: var(--fs-min);
   color: var(--dim);
 }
 .diff-info .reward {
@@ -649,7 +663,6 @@ i.ic-skull::after {
 }
 .icon-cell .q {
   font-family: var(--px);
-  font-size-adjust: cap-height 0.95;
   color: var(--dim);
 }
 .thumb-cell img.thumb {
@@ -664,7 +677,7 @@ i.ic-skull::after {
 }
 .levels {
   margin: 8px 0;
-  font-size: 12px;
+  font-size: var(--fs-min);
 }
 .levels .lv {
   display: flex;
@@ -672,9 +685,8 @@ i.ic-skull::after {
   padding: 3px 0;
 }
 .levels b {
-  font-family: var(--px);
-  font-size-adjust: cap-height 0.95;
-  font-size: 9px;
+  font-family: var(--font-display);
+  font-size: 13px;
   color: var(--gold);
   min-width: 52px;
   padding-top: 2px;
@@ -690,17 +702,16 @@ i.ic-skull::after {
   background: rgba(255, 176, 46, 0.08);
   padding: 8px;
   border-radius: 4px;
-  font-size: 12px;
+  font-size: var(--fs-min);
 }
 .recipe-row > span {
-  font-family: var(--px);
-  font-size-adjust: cap-height 0.95;
-  font-size: 8px;
+  font-family: var(--font-display);
+  font-size: 13px;
   color: var(--gold);
 }
 .recipe-row .recipe-text {
   font-family: var(--ui);
-  font-size: 12px;
+  font-size: var(--fs-min);
   color: var(--dim);
   flex-basis: 100%;
 }
@@ -712,9 +723,8 @@ i.ic-skull::after {
   flex-wrap: wrap;
 }
 .tab {
-  font-family: var(--px);
-  font-size-adjust: cap-height 0.95;
-  font-size: 9px;
+  font-family: var(--font-display);
+  font-size: 13px;
   padding: 10px 12px;
   background: var(--panel2);
   border-radius: 4px;
@@ -751,7 +761,7 @@ i.ic-skull::after {
   font-weight: 700;
 }
 .up-desc {
-  font-size: 12px;
+  font-size: var(--fs-min);
   color: var(--dim);
   margin: 2px 0 6px;
 }
@@ -771,7 +781,7 @@ i.ic-skull::after {
 }
 .btn.buy {
   min-width: 86px;
-  font-size: 10px;
+  font-size: var(--fs-min);
 }
 .center {
   text-align: center;
@@ -810,11 +820,11 @@ i.ic-skull::after {
   font-weight: 700;
 }
 .ach-desc {
-  font-size: 12px;
+  font-size: var(--fs-min);
   color: var(--dim);
 }
 .ach-reward {
-  font-size: 12px;
+  font-size: var(--fs-min);
   color: #9cff6a;
   margin-top: 4px;
 }
@@ -856,13 +866,12 @@ i.ic-skull::after {
 .set-row .val {
   width: 44px;
   text-align: right;
-  font-size: 12px;
+  font-size: var(--fs-min);
   color: var(--dim);
 }
 .toggle {
-  font-family: var(--px);
-  font-size-adjust: cap-height 0.95;
-  font-size: 9px;
+  font-family: var(--font-display);
+  font-size: 13px;
   padding: 10px 12px;
   min-width: 72px;
   min-height: 38px;
@@ -879,7 +888,7 @@ i.ic-skull::after {
   gap: 4px;
 }
 .seg button {
-  font-size: 12px;
+  font-size: var(--fs-min);
   padding: 9px 10px;
   min-height: 38px;
   background: #3a3f48;
@@ -891,7 +900,7 @@ i.ic-skull::after {
   color: #1a1408;
 }
 .credits {
-  font-size: 11px;
+  font-size: var(--fs-min);
   color: var(--dim);
   margin-top: 12px;
   line-height: 1.5;
@@ -916,7 +925,7 @@ i.ic-skull::after {
   min-width: 22px;
   height: 22px;
   padding: 0 5px;
-  font: 700 13px var(--fmc);
+  font: 700 14px var(--font-ui);
   color: #1a1c20;
   background: linear-gradient(#f4f4f4, #c9cbd0);
   border-radius: 3px;
@@ -962,7 +971,7 @@ i.ic-skull::after {
   display: flex;
   align-items: center;
   gap: 6px;
-  font: 700 15px var(--fmc);
+  font: 700 16px var(--font-ui);
   color: #fff;
   text-shadow: 0 2px 0 #000;
   background: none;
@@ -1047,7 +1056,7 @@ i.ic-map {
   align-items: center;
   justify-content: center;
   padding-bottom: 8px;
-  font: 700 17px var(--fmc);
+  font: 700 17px var(--font-display);
   color: #fff;
   text-shadow:
     0 2px 0 #000,
@@ -1074,7 +1083,7 @@ i.ic-map {
   display: flex;
   align-items: center;
   gap: 6px;
-  font: 700 18px var(--fmc);
+  font: 700 18px var(--font-display);
   color: #fff;
   text-shadow: 0 2px 0 #000;
 }
@@ -1104,7 +1113,7 @@ i.ic-map {
   position: absolute;
   left: 4px;
   bottom: 2px;
-  font: 700 13px var(--fmc);
+  font: 700 14px var(--font-ui);
   color: #cfe8ff;
   text-shadow:
     0 2px 0 #000,
@@ -1132,7 +1141,7 @@ i.ic-map {
   display: flex;
   align-items: center;
   justify-content: center;
-  font: 700 12px var(--fmc);
+  font: 700 13px var(--font-ui);
   color: #1a1c20;
   background: linear-gradient(#f4f4f4, #c9cbd0);
   border-radius: 3px;
@@ -1161,7 +1170,7 @@ i.ic-map {
   height: 22px;
 }
 .hud .slots.passives .slot b {
-  font-size: 11px;
+  font-size: var(--fs-min);
   left: auto;
   right: 2px;
   bottom: 0;
@@ -1175,7 +1184,7 @@ i.ic-map {
   margin-top: 4px;
 }
 .xp-text {
-  font: 700 15px var(--fmc);
+  font: 700 16px var(--font-ui);
   color: #c58aff;
   text-shadow: 0 2px 0 #000;
   min-width: 26px;
@@ -1226,11 +1235,11 @@ i.ic-map {
   text-shadow: 0 2px 0 #000;
 }
 .hb-hex-inner small {
-  font: 700 11px var(--fmc);
+  font: 700 13px var(--font-ui);
   opacity: 0.85;
 }
 .hb-hex-num {
-  font: 700 24px var(--fmc);
+  font: 700 24px var(--font-display);
   line-height: 1;
 }
 /* --- top: timer and boss */
@@ -1245,7 +1254,7 @@ i.ic-map {
   gap: 8px;
 }
 .hud-time {
-  font: 700 26px var(--fmc);
+  font: 700 26px var(--font-display);
   color: #fff;
   letter-spacing: 1px;
   text-shadow:
@@ -1259,7 +1268,7 @@ i.ic-map {
   text-align: center;
 }
 .boss-name {
-  font: 700 18px var(--fmc);
+  font: 700 18px var(--font-display);
   margin-bottom: 4px;
   text-transform: uppercase;
   text-shadow:
@@ -1358,7 +1367,7 @@ i.ic-map {
   gap: 8px;
 }
 .wave-title {
-  font: 700 21px var(--fmc);
+  font: 700 21px var(--font-display);
   color: #fff;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -1385,7 +1394,7 @@ i.ic-map {
   transform: rotate(45deg);
 }
 .wave-sub {
-  font: 500 17px var(--fmc);
+  font: 500 17px var(--font-display);
   color: #f0f0f0;
   text-shadow: 0 2px 0 #000;
 }
@@ -1444,7 +1453,7 @@ i.ic-map {
   display: none;
 }
 .mod-chip {
-  font: 700 12px var(--fmc);
+  font: 700 13px var(--font-ui);
   padding: 3px 6px;
   color: #fff;
   background: color-mix(in srgb, var(--mc) 40%, #111);
@@ -1452,7 +1461,7 @@ i.ic-map {
   text-shadow: 0 1px 0 #000;
 }
 .wave-record {
-  font: 700 14px var(--fmc);
+  font: 700 15px var(--font-ui);
   color: #cfd6e4;
   text-shadow: 0 2px 0 #000;
 }
@@ -1476,7 +1485,7 @@ i.ic-map {
   align-items: flex-start;
 }
 .buff {
-  font: 700 14px var(--fmc);
+  font: 700 15px var(--font-ui);
   padding: 3px 8px;
   color: #fff;
   background: rgba(20, 22, 26, 0.75);
@@ -1503,7 +1512,7 @@ i.ic-map {
   color: #ffc0c0;
 }
 .fps {
-  font: 700 14px var(--fmc);
+  font: 700 15px var(--font-ui);
   color: #9cff6a;
   text-shadow: 0 2px 0 #000;
 }
@@ -1519,7 +1528,7 @@ i.ic-map {
   line-height: 1.3;
 }
 .banner-main {
-  font: 700 40px var(--fmc);
+  font: 700 40px var(--font-display);
   text-transform: uppercase;
   text-shadow:
     0 4px 0 #000,
@@ -1528,7 +1537,7 @@ i.ic-map {
     0 -3px 0 #000;
 }
 .banner-sub {
-  font: 500 20px var(--fmc);
+  font: 500 20px var(--font-display);
   color: #f0eaf8;
   text-shadow: 0 2px 0 #000;
   margin-top: 6px;
@@ -1576,13 +1585,13 @@ i.ic-map {
   animation: fadein 0.5s;
 }
 .hint-text {
-  font: 700 19px var(--fmc);
+  font: 700 19px var(--font-display);
   text-shadow: 0 2px 0 #000;
   line-height: 1.5;
   padding: 0 16px;
 }
 .hint-sub {
-  font: 500 17px var(--fmc);
+  font: 500 17px var(--font-display);
   color: var(--gold);
   margin-top: 6px;
   text-shadow: 0 2px 0 #000;
@@ -1625,9 +1634,8 @@ i.ic-map {
   text-align: center;
 }
 .modal h2 {
-  font-family: var(--px);
-  font-size-adjust: cap-height 0.95;
-  font-size: clamp(14px, 4vw, 22px);
+  font-family: var(--font-display);
+  font-size: clamp(19px, 4vw, 30px);
   margin: 4px 0 6px;
   text-shadow: 0 3px 0 #000;
 }
@@ -1714,9 +1722,8 @@ h2.glow {
   color: var(--rc);
 }
 .choice-tag {
-  font-family: var(--px);
-  font-size-adjust: cap-height 0.95;
-  font-size: 8px;
+  font-family: var(--font-display);
+  font-size: 13px;
   color: var(--gold);
   white-space: nowrap;
 }
@@ -1730,7 +1737,7 @@ h2.glow {
   line-height: 1.35;
 }
 .choice-hint {
-  font-size: 11px;
+  font-size: var(--fs-min);
   color: #ffb02e;
   margin-top: 3px;
 }
@@ -1741,7 +1748,7 @@ h2.glow {
 }
 .banish-hint {
   display: none;
-  font-size: 12px;
+  font-size: var(--fs-min);
   color: #ff8a8a;
   margin-top: 8px;
 }
@@ -1852,9 +1859,8 @@ h2.glow {
 }
 .reward.evo b {
   color: #ffb02e;
-  font-family: var(--px);
-  font-size-adjust: cap-height 0.95;
-  font-size: 10px;
+  font-family: var(--font-display);
+  font-size: 14px;
 }
 .reward .arrow {
   font-size: 20px;
@@ -1862,7 +1868,6 @@ h2.glow {
 }
 .chest-gold {
   font-family: var(--px);
-  font-size-adjust: cap-height 0.95;
   color: var(--gold);
   display: flex;
   gap: 8px;
@@ -1922,9 +1927,8 @@ h2.glow {
   display: inline-flex;
   gap: 6px;
   align-items: center;
-  font-family: var(--px);
-  font-size-adjust: cap-height 0.95;
-  font-size: 11px;
+  font-family: var(--font-display);
+  font-size: 15px;
 }
 .dmg-table {
   margin: 6px 0 10px;
@@ -1942,9 +1946,8 @@ h2.glow {
   flex: 1;
 }
 .dmg-row .l {
-  font-family: var(--px);
-  font-size-adjust: cap-height 0.95;
-  font-size: 8px;
+  font-family: var(--font-display);
+  font-size: 13px;
   color: var(--gold);
   width: 54px;
 }
@@ -1982,9 +1985,8 @@ h2.glow {
   pointer-events: none;
 }
 .toast {
-  font-family: var(--px);
-  font-size-adjust: cap-height 0.95;
-  font-size: 10px;
+  font-family: var(--font-display);
+  font-size: 14px;
   color: var(--tc);
   background: rgba(10, 8, 16, 0.85);
   padding: 10px 14px;
@@ -2026,19 +2028,19 @@ h2.glow {
   gap: 2px;
 }
 .set-label small {
-  font-size: 10px;
+  font-size: var(--fs-min);
   color: var(--dim);
   line-height: 1.35;
 }
 .set-note:not(:empty) {
-  font-size: 11px;
+  font-size: var(--fs-min);
   color: var(--gold);
   padding: 6px 8px;
   background: rgba(255, 210, 61, 0.08);
   border-radius: 4px;
 }
 .set-hint {
-  font-size: 11px;
+  font-size: var(--fs-min);
   color: var(--dim);
   padding: 10px 0;
   line-height: 1.4;
@@ -2055,7 +2057,7 @@ h2.glow {
 .settings .seg button {
   padding: 7px 9px;
   min-height: 32px;
-  font-size: 11px;
+  font-size: var(--fs-min);
 }
 .binds {
   display: flex;
@@ -2065,7 +2067,7 @@ h2.glow {
   min-width: 96px;
   min-height: 34px;
   padding: 6px 10px;
-  font-size: 12px;
+  font-size: var(--fs-min);
   background: #3a3f48;
   border-radius: 4px;
   box-shadow: 0 0 0 2px #08090b;
@@ -2149,23 +2151,20 @@ h2.glow {
 }
 .record b {
   color: var(--gold);
-  font-family: var(--px);
-  font-size-adjust: cap-height 0.95;
-  font-size: 10px;
+  font-family: var(--font-display);
+  font-size: 14px;
 }
 .record.none {
   color: var(--dim);
 }
 .wave-badge {
-  font-family: var(--px);
-  font-size-adjust: cap-height 0.95;
-  font-size: 9px;
+  font-family: var(--font-display);
+  font-size: 13px;
   color: var(--blue);
 }
 .record-line {
-  font-family: var(--px);
-  font-size-adjust: cap-height 0.95;
-  font-size: 10px;
+  font-family: var(--font-display);
+  font-size: 14px;
   color: var(--dim);
   margin: 6px 0;
 }
@@ -2211,7 +2210,7 @@ h2.glow {
   min-width: 24px;
   height: 24px;
   padding: 0 6px;
-  font: 700 13px var(--fmc);
+  font: 700 14px var(--font-ui);
   color: #1b1d21;
   background: linear-gradient(#f4f5f7, #c9ccd2);
   box-shadow:
@@ -2253,7 +2252,7 @@ h2.glow {
 .mtab {
   position: relative;
   padding: 10px 16px 16px;
-  font: 700 17px var(--fmc);
+  font: 700 17px var(--font-display);
   letter-spacing: 1px;
   text-transform: uppercase;
   color: #8d929b;
@@ -2277,7 +2276,7 @@ h2.glow {
 }
 .mframe .gold-chip,
 .mframe .count {
-  font: 700 18px var(--fmc);
+  font: 700 18px var(--font-display);
   background: none;
   box-shadow: none;
   padding: 4px 6px;
@@ -2309,7 +2308,7 @@ h2.glow {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font: 700 16px var(--fmc);
+  font: 700 16px var(--font-display);
   color: #e6e8eb;
 }
 .mhint:hover > span:first-child {
@@ -2399,7 +2398,7 @@ h2.glow {
   position: absolute;
   left: 4px;
   bottom: 3px;
-  font: 700 13px var(--fmc);
+  font: 700 14px var(--font-ui);
   color: #fff;
   text-shadow:
     0 1px 0 #000,
@@ -2407,7 +2406,7 @@ h2.glow {
     -1px 0 0 #000;
 }
 .mframe .hero-card .name {
-  font: 700 14px var(--fmc);
+  font: 700 15px var(--font-ui);
 }
 .mframe .map-card {
   border-radius: 0;
@@ -2418,7 +2417,7 @@ h2.glow {
   padding: 12px 14px;
 }
 .mframe .map-card .name {
-  font: 700 18px var(--fmc);
+  font: 700 18px var(--font-display);
 }
 
 /* the detail card */
@@ -2431,6 +2430,11 @@ h2.glow {
   padding: 22px 24px;
   font-size: 15px;
   backdrop-filter: none;
+  /* long cards (map lore) scroll inside the card instead of running under the footer */
+  max-height: calc(100vh - 150px - var(--sat, 0px) - var(--sab, 0px));
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #4a505a transparent;
 }
 .mframe .detail-title {
   flex-direction: column;
@@ -2449,7 +2453,7 @@ h2.glow {
 .pill {
   display: inline-block;
   padding: 3px 12px 4px;
-  font: 700 14px var(--fmc);
+  font: 700 15px var(--font-ui);
   letter-spacing: 1px;
   text-transform: uppercase;
   color: #0d0f12;
@@ -2510,7 +2514,7 @@ h2.glow {
   animation: mfloat 3s ease-in-out infinite;
 }
 .preview .q {
-  font: 700 120px var(--fmc);
+  font: 700 120px var(--font-display);
   color: #3a3f48;
 }
 
@@ -2519,7 +2523,7 @@ h2.glow {
   margin-bottom: 18px;
 }
 .mframe .tab {
-  font: 700 15px var(--fmc);
+  font: 700 16px var(--font-ui);
   font-size-adjust: none;
   text-transform: uppercase;
   border-radius: 0;
@@ -2544,7 +2548,7 @@ h2.glow {
 }
 .mframe .up-name,
 .mframe .ach-name {
-  font: 700 17px var(--fmc);
+  font: 700 17px var(--font-display);
 }
 
 /* buttons: chunky slate, green primary */
@@ -2647,14 +2651,14 @@ h2.glow {
   filter: grayscale(0.7) brightness(0.7);
 }
 .cv-card-name {
-  font: 700 12px var(--fmc);
+  font: 700 13px var(--font-ui);
   text-align: center;
 }
 .cv-lock {
   position: absolute;
   top: 4px;
   right: 4px;
-  font-size: 12px;
+  font-size: var(--fs-min);
 }
 .cv-center {
   display: flex;
@@ -2694,7 +2698,7 @@ h2.glow {
   transform: translateY(-50%);
   width: 40px;
   height: 64px;
-  font: 700 34px var(--fmc);
+  font: 700 34px var(--font-display);
   color: #e6e8eb;
   background: rgba(8, 9, 11, 0.45);
   border-radius: 4px;
@@ -2715,7 +2719,7 @@ h2.glow {
   right: 0;
   bottom: 8px;
   text-align: center;
-  font-size: 12px;
+  font-size: var(--fs-min);
   color: rgba(230, 232, 235, 0.6);
   pointer-events: none;
 }
@@ -2730,7 +2734,7 @@ h2.glow {
   align-items: center;
   gap: 6px;
   padding: 7px 10px 7px 7px;
-  font: 700 14px var(--fmc);
+  font: 700 15px var(--font-ui);
   text-transform: uppercase;
   background: #30353d;
   border-radius: 4px;
@@ -2766,7 +2770,7 @@ h2.glow {
 .cv-tool {
   min-height: 32px;
   padding: 6px 11px;
-  font: 700 13px var(--fmc);
+  font: 700 14px var(--font-ui);
   background: #3a3f48;
   border-radius: 4px;
   box-shadow: 0 0 0 2px #08090b;
@@ -2785,12 +2789,12 @@ h2.glow {
   box-shadow: 0 0 0 2px #08090b, inset 0 0 0 2px var(--edge);
 }
 .cv-name {
-  font: 700 26px var(--fmc);
+  font: 700 26px var(--font-display);
   letter-spacing: 1px;
   text-transform: uppercase;
 }
 .cv-title {
-  font: 700 15px var(--fmc);
+  font: 700 16px var(--font-ui);
   margin-bottom: 8px;
 }
 .cv-status {
@@ -2813,7 +2817,7 @@ h2.glow {
 }
 .cv-sec {
   margin: 14px 0 6px;
-  font: 700 13px var(--fmc);
+  font: 700 14px var(--font-ui);
   letter-spacing: 1px;
   text-transform: uppercase;
   color: var(--accent);
@@ -2868,7 +2872,7 @@ h2.glow {
   display: flex;
   gap: 6px;
   pointer-events: none;
-  font: 700 13px var(--fmc);
+  font: 700 14px var(--font-ui);
   letter-spacing: 1px;
 }
 .dev-badge.in-run {
@@ -2922,11 +2926,11 @@ h2.glow {
   gap: 8px;
   padding: 10px 12px;
   border-bottom: 2px solid #2a2e35;
-  font: 700 15px var(--fmc);
+  font: 700 16px var(--font-ui);
   letter-spacing: 1px;
 }
 .dev-test {
-  font-size: 11px;
+  font-size: var(--fs-min);
   padding: 2px 6px;
   border-radius: 3px;
   background: #c7354a;
@@ -2949,12 +2953,12 @@ h2.glow {
   padding: 5px 12px;
   border-top: 2px solid #2a2e35;
   color: var(--gold);
-  font-size: 12px;
+  font-size: var(--fs-min);
 }
 .dev-keys,
 .dev-note {
   color: var(--dim);
-  font-size: 11px;
+  font-size: var(--fs-min);
   margin: 4px 0;
 }
 .dev-sec {
@@ -2970,7 +2974,7 @@ h2.glow {
 .dev-sec summary {
   cursor: pointer;
   padding: 8px 2px;
-  font: 700 14px var(--fmc);
+  font: 700 15px var(--font-ui);
   letter-spacing: 1px;
   text-transform: uppercase;
   color: var(--accent);
@@ -2997,7 +3001,7 @@ h2.glow {
 .dev-btn {
   padding: 7px 8px;
   min-height: 32px;
-  font: 700 13px var(--fmc);
+  font: 700 14px var(--font-ui);
   background: #30353d;
   border-radius: 4px;
   box-shadow: 0 0 0 2px #08090b, inset 0 -3px 0 rgba(0, 0, 0, 0.3);
@@ -3030,7 +3034,7 @@ h2.glow {
   min-width: 30px;
   min-height: 26px;
   padding: 3px 6px;
-  font-size: 12px;
+  font-size: var(--fs-min);
 }
 .dev-tog {
   width: 100%;
@@ -3048,7 +3052,7 @@ h2.glow {
   padding: 2px 6px;
   border-radius: 3px;
   background: #3a3f48;
-  font: 700 12px var(--fmc);
+  font: 700 13px var(--font-ui);
 }
 .dev-tog.on b {
   background: var(--green);
@@ -3082,12 +3086,12 @@ h2.glow {
   gap: 6px;
 }
 .dev-sub {
-  font-size: 12px;
+  font-size: var(--fs-min);
   color: var(--dim);
   margin-top: 8px;
 }
 .dev-cur {
-  font: 700 13px var(--fmc);
+  font: 700 14px var(--font-ui);
 }
 .dev-item {
   display: flex;
@@ -3103,7 +3107,7 @@ h2.glow {
   white-space: nowrap;
 }
 .dev-lv {
-  font: 700 12px var(--fmc);
+  font: 700 13px var(--font-ui);
   color: var(--dim);
   min-width: 34px;
   text-align: right;
@@ -3122,7 +3126,7 @@ h2.glow {
   pointer-events: none;
 }
 .dev-info-head {
-  font: 700 12px var(--fmc);
+  font: 700 13px var(--font-ui);
   color: var(--accent);
   margin-bottom: 4px;
   letter-spacing: 1px;
@@ -3135,7 +3139,7 @@ h2.glow {
 .dev-enabled {
   margin: 8px 0;
   color: var(--green);
-  font: 700 15px var(--fmc);
+  font: 700 16px var(--font-ui);
 }
 .dev-set-btns {
   display: flex;
@@ -3145,7 +3149,7 @@ h2.glow {
 }
 .set-sub {
   margin: 14px 0 6px;
-  font: 700 14px var(--fmc);
+  font: 700 15px var(--font-ui);
   color: var(--accent);
   text-transform: uppercase;
   letter-spacing: 1px;

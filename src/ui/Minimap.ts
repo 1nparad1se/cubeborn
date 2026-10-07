@@ -215,7 +215,7 @@ export class Minimap {
           ctx.closePath();
         }, poi.used ? '#6a6670' : SHRINE_COLOR[poi.sub ?? 'heal'] ?? '#fff');
       } else if (poi.kind === 'secret' && poi.found) {
-        ctx.font = `700 ${Math.round(12 * u)}px "Pixelify Sans", sans-serif`;
+        ctx.font = `700 ${Math.round(12 * u)}px Rubik, sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.lineWidth = 3 * u;

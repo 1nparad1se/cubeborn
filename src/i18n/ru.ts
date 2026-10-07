@@ -87,7 +87,7 @@ export const RU: Record<string, string> = {
   q_high: 'Высокая',
   on: 'Вкл',
   off: 'Выкл',
-  credits: 'Cubeborn — оригинальная игра. Вся графика, модели, звуки и музыка созданы процедурно. Шрифты: Press Start 2P и Rubik (SIL OFL).',
+  credits: 'Cubeborn — оригинальная игра. Вся графика, модели, звуки и музыка созданы процедурно. Шрифты: Russo One, Rubik и Press Start 2P (SIL OFL).',
   hud_level: 'УР {n}',
   buff_fury: 'ЯРОСТЬ',
   buff_haste: 'СПЕШКА',
