@@ -793,6 +793,13 @@ namespace Cubeborn
             while ((run.state != RunState.Playing || modals.IsOpen) && Time.realtimeSinceStartup < guard) yield return null;
             TogglePause();
             Debug.Log($"[cbshots] paused={paused} state={run.state} modal={modals.IsOpen}");
+            yield return new WaitForSecondsRealtime(0.5f);
+            DumpUi(modals.root, 0);
+            yield return new WaitForEndOfFrame();
+            var tex = new Texture2D(Screen.width, Screen.height, TextureFormat.RGB24, false);
+            tex.ReadPixels(new Rect(0, 0, Screen.width, Screen.height), 0, 0);
+            tex.Apply();
+            File.WriteAllBytes(Path.Combine(shotsDir, "07b_pause_readpixels.png"), tex.EncodeToPNG());
             yield return new WaitForSecondsRealtime(1f);
             Shot("07_pause");
             yield return new WaitForSecondsRealtime(0.3f); // the capture happens at end of frame
@@ -808,6 +815,16 @@ namespace Cubeborn
             Shot("09_backdrop");
             yield return new WaitForSecondsRealtime(1f);
             Application.Quit(0);
+        }
+
+        void DumpUi(Transform t, int depth)
+        {
+            if (depth > 4) return;
+            var rt = t as RectTransform;
+            var g = t.GetComponent<Graphic>();
+            var cg = t.GetComponent<CanvasGroup>();
+            Debug.Log($"[cbui] {new string(' ', depth * 2)}{t.name} active={t.gameObject.activeInHierarchy} rect={(rt != null ? rt.rect.ToString() : "-")} pos={(rt != null ? rt.position.ToString() : "-")} scale={t.lossyScale} g={(g != null ? g.color.ToString() : "-")} cg={(cg != null ? cg.alpha.ToString() : "-")}");
+            for (int i = 0; i < t.childCount; i++) DumpUi(t.GetChild(i), depth + 1);
         }
 
         IEnumerator WaitRunTime(double t)
