@@ -407,6 +407,76 @@ const GLYPHS: Record<string, (d: Pen) => void> = {
     d.o(8, 8, 6, d.c, false);
     d.l(4, 4, 12, 12, d.c);
   },
+  crown: (d) => {
+    d.r(2, 6, 12, 6, d.c);
+    d.p(2, 3);
+    d.r(2, 4, 2, 2, d.c);
+    d.r(7, 2, 2, 4, d.c);
+    d.r(12, 4, 2, 2, d.c);
+    d.p(13, 3);
+    d.r(2, 11, 12, 2, d.dk);
+    d.p(5, 8, d.wh);
+    d.p(8, 8, '#ff5470');
+    d.p(11, 8, d.wh);
+    d.r(3, 7, 10, 1, d.lt);
+  },
+  chest: (d) => {
+    d.r(2, 5, 12, 9, d.wood);
+    d.r(2, 4, 12, 3, '#a8703e');
+    d.r(2, 8, 12, 1, d.c);
+    d.r(2, 4, 1, 10, d.c);
+    d.r(13, 4, 1, 10, d.c);
+    d.r(7, 7, 2, 3, d.c);
+    d.p(7, 8, d.wh);
+  },
+  trophy: (d) => {
+    d.r(4, 2, 8, 6, d.c);
+    d.r(5, 8, 6, 1, d.c);
+    d.r(7, 9, 2, 3, d.c);
+    d.r(5, 12, 6, 2, d.dk);
+    d.o(3, 5, 1, d.c, false);
+    d.o(12, 5, 1, d.c, false);
+    d.r(5, 3, 1, 4, d.lt);
+  },
+  compass: (d) => {
+    d.o(8, 8, 6, d.wood, true);
+    d.o(8, 8, 5, '#e8e0c8', true);
+    d.l(8, 4, 8, 8, '#ff5470');
+    d.l(8, 8, 8, 12, d.steel);
+    d.r(7, 7, 2, 2, d.c);
+  },
+  star: (d) => {
+    d.r(7, 1, 2, 4, d.c);
+    d.r(1, 6, 14, 2, d.c);
+    d.r(4, 5, 8, 5, d.c);
+    d.r(3, 10, 3, 3, d.c);
+    d.r(10, 10, 3, 3, d.c);
+    d.r(6, 9, 4, 2, d.c);
+    d.r(7, 3, 1, 4, d.lt);
+    d.r(5, 6, 2, 1, d.wh);
+  },
+  moon: (d) => {
+    d.o(8, 8, 6, d.c, true);
+    for (let y = 0; y < 16; y++) for (let x = 0; x < 16; x++) if (Math.hypot(x - 11, y - 6) < 5.2) d.p(x, y, 'clear');
+    d.p(4, 9, d.lt);
+    d.p(5, 12, d.lt);
+  },
+  sun: (d) => {
+    d.o(8, 8, 4, d.c, true);
+    d.o(7, 7, 2, d.lt, true);
+    d.r(7, 0, 2, 2, d.c);
+    d.r(7, 14, 2, 2, d.c);
+    d.r(0, 7, 2, 2, d.c);
+    d.r(14, 7, 2, 2, d.c);
+    d.p(2, 2);
+    d.p(13, 2);
+    d.p(2, 13);
+    d.p(13, 13);
+    d.p(3, 3);
+    d.p(12, 3);
+    d.p(3, 12);
+    d.p(12, 12);
+  },
   coin: (d) => {
     d.o(8, 8, 5, '#ffd23d', true);
     d.o(8, 8, 3, '#ffe88a', false);
@@ -428,6 +498,7 @@ export function iconUrl(id: string, color: number): string {
   const g = cv.getContext('2d')!;
   const fill = (x: number, y: number, c: string) => {
     if (x < 0 || y < 0 || x >= N || y >= N) return;
+    if (c === 'clear') return g.clearRect(x, y, 1, 1);
     g.fillStyle = c;
     g.fillRect(x, y, 1, 1);
   };

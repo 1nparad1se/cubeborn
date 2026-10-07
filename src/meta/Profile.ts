@@ -1,4 +1,5 @@
 import { ACHIEVEMENTS } from '../data/achievements';
+import type { RunRecord } from './runRecord';
 import { HEROES } from '../data/heroes';
 import { MAPS } from '../data/maps';
 import { PASSIVES } from '../data/passives';
@@ -94,31 +95,79 @@ export class Profile {
     if (v > this.stat(key)) this.data.stats[key] = v;
   }
 
-  /** Derived stats used by achievements. */
-  derivedStat(key: string): number {
-    if (key === 'evolutions') return this.data.discovered.weapons.filter((id) => WEAPONS.find((w) => w.id === id)?.evolved).length;
-    if (key === 'heroWins') return HEROES.filter((h) => this.stat('herowin_' + h.id) > 0).length;
-    if (key === 'mapsCleared') return MAPS.filter((m) => (this.data.mapClears[m.id] ?? -1) >= 0).length;
-    return this.stat(key);
+  /**
+   * Stats used by achievements: lifetime stats plus a few derived counts. With a run record the
+   * value is projected as if the run in progress had ended now (live unlocks during a run).
+   */
+  derivedStat(key: string, rec?: RunRecord): number {
+    const d = this.data;
+    switch (key) {
+      case 'evolutions':
+        return d.discovered.weapons.filter((id) => WEAPONS.find((w) => w.id === id)?.evolved).length;
+      case 'heroWins':
+        return HEROES.filter((h) => this.stat('herowin_' + h.id) > 0).length;
+      case 'mapsCleared':
+        return MAPS.filter((m) => (d.mapClears[m.id] ?? -1) >= 0).length;
+      case 'heroesPlayed':
+        return HEROES.filter((h) => this.stat('heroplay_' + h.id) + (rec?.add['heroplay_' + h.id] ?? 0) > 0).length;
+      case 'mapsPlayed':
+        return MAPS.filter((m) => this.stat('mapplay_' + m.id) + (rec?.add['mapplay_' + m.id] ?? 0) > 0).length;
+      case 'achievementsDone':
+        return d.achievements.length;
+      case 'enemiesSeen':
+        return d.discovered.enemies.length;
+      case 'weaponsFound':
+        return d.discovered.weapons.filter((id) => !WEAPONS.find((w) => w.id === id)?.evolved).length;
+      case 'relics':
+        return d.discovered.relics.length;
+      case 'permSpent':
+        return d.permSpent ?? 0;
+      case 'permLevels':
+        return Object.values(d.perm).reduce((a, b) => a + b, 0);
+    }
+    const v = this.stat(key);
+    if (!rec) return v;
+    if (key in rec.max) return Math.max(v, rec.max[key]);
+    return v + (rec.add[key] ?? 0);
   }
 
-  /** Returns newly completed achievements and applies their rewards. */
+  /** Returns newly completed achievements and applies their rewards (repeats so meta achievements chain). */
   checkAchievements(): AchievementDef[] {
     const done: AchievementDef[] = [];
-    for (const a of ACHIEVEMENTS) {
-      if (this.data.achievements.includes(a.id)) continue;
-      if (this.derivedStat(a.cond.stat) >= a.cond.value) {
-        this.data.achievements.push(a.id);
-        if (a.reward) this.unlock(a.reward);
-        if (a.gold) this.data.gold += a.gold;
-        done.push(a);
+    for (let pass = 0; pass < 3; pass++) {
+      let changed = false;
+      for (const a of ACHIEVEMENTS) {
+        if (this.data.achievements.includes(a.id)) continue;
+        if (this.derivedStat(a.cond.stat) >= a.cond.value) {
+          this.data.achievements.push(a.id);
+          if (a.reward) this.unlock(a.reward);
+          if (a.gold) this.data.gold += a.gold;
+          done.push(a);
+          changed = true;
+        }
       }
+      if (!changed) break;
     }
     return done;
   }
 
+  /** Achievements the run in progress has already earned (not yet saved; finishRun makes them real). */
+  liveAchievements(rec: RunRecord, shown: Set<string>): AchievementDef[] {
+    const out: AchievementDef[] = [];
+    for (const a of ACHIEVEMENTS) {
+      if (shown.has(a.id) || this.data.achievements.includes(a.id)) continue;
+      if (this.derivedStat(a.cond.stat, rec) >= a.cond.value) out.push(a);
+    }
+    return out;
+  }
+
   achievementProgress(a: AchievementDef): number {
     return Math.min(1, this.derivedStat(a.cond.stat) / a.cond.value);
+  }
+
+  /** Current value toward an achievement (for "350 / 1 000" progress labels). */
+  achievementValue(a: AchievementDef): number {
+    return Math.min(a.cond.value, Math.floor(this.derivedStat(a.cond.stat)));
   }
 
   // ---------------------------------------------------------------- permanent upgrades

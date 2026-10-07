@@ -300,6 +300,7 @@ export class BossController {
     if (!this.isClone) {
       run.pickups.spawnChest(e.x, e.z, 1);
       run.stats.bossesKilled.push(this.def.id);
+      if (this.nightBoss) run.stats.nightBossKills++;
       run.stats.gold += 4 * run.player.stats.greed;
       for (let i = 0; i < 4; i++) run.pickups.spawn('gold', e.x, e.z, 1, true);
       run.events.emit('bossDefeated', this);

@@ -257,6 +257,8 @@ export class Player {
     this.cues.hitZ = source ? this.z - source.z : 0;
     if (!ignoreInvuln) this.invulnT = BALANCE.hurtInvuln;
     run.stats.damageTaken += dmg;
+    run.stats.noHitBest = Math.max(run.stats.noHitBest, run.time - run.stats.lastHurt);
+    run.stats.lastHurt = run.time;
     run.fx.number(this.x, this.z, dmg, false, 0xff4040);
     run.fx.sound('hurt');
     run.fx.vibrate(25);

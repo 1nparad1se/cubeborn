@@ -28,8 +28,16 @@ export class RunStats {
   dayKills = 0;
   sleepersKilled = 0;
   direKilled = 0;
+  /** Achievements: critical hits, kills per skill element, the longest stretch without taking damage. */
+  crits = 0;
+  nightBossKills = 0;
+  elementKills: Record<string, number> = {};
+  lastHurt = 0;
+  noHitBest = 0;
+  totalDamage = 0;
 
   addDamage(id: string, v: number) {
     this.damageBy[id] = (this.damageBy[id] ?? 0) + v;
+    this.totalDamage += v;
   }
 }

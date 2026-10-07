@@ -15,8 +15,8 @@ import { BOSSES, RELICS, BOSS_BY_ID } from '../data/bosses';
 import { MAPS } from '../data/maps';
 import { DIFFICULTIES } from '../data/difficulty';
 import { PERM_UPGRADES } from '../data/upgrades';
-import { ACHIEVEMENTS } from '../data/achievements';
-import type { AchievementDef, UnlockRef, WeaponDef } from '../data/types';
+import { ACHIEVEMENTS, ACHIEVEMENT_CATEGORIES } from '../data/achievements';
+import type { AchievementCategory, AchievementDef, UnlockRef, WeaponDef } from '../data/types';
 import { settingsPanel } from './Settings';
 import { viewerScreen } from './ViewerScreen';
 
@@ -62,6 +62,8 @@ export class Menus {
   private selHero = 'bram';
   private selMap = 'blightwood';
   private selDiff = 'normal';
+  private achStatus: 'all' | 'done' | 'locked' = 'all';
+  private achCat: AchievementCategory | 'all' = 'all';
   /** Set by the Endless button: the map screen opens with Endless mode picked. */
   private presetMode: RunMode | null = null;
   /** Tear-down for the open screen (the character viewer owns a WebGL context). */
@@ -723,26 +725,65 @@ export class Menus {
   // ------------------------------------------------------------------ achievements
   private achievementScreen(): HTMLElement {
     const p = this.api.profile;
+    const all = ACHIEVEMENTS;
+    const doneSet = new Set(p.data.achievements);
+    const doneCount = all.filter((a) => doneSet.has(a.id)).length;
+    const pct = Math.round((doneCount / all.length) * 100);
+    const goldEarned = all.filter((a) => doneSet.has(a.id)).reduce((g, a) => g + (a.gold ?? 0), 0);
+    const rerender = () => this.render();
+    // filters: status and category
+    const statusSeg = h(
+      'div.seg.ach-filter',
+      ...(['all', 'done', 'locked'] as const).map((f) =>
+        h('button' + (this.achStatus === f ? '.sel' : ''), { onclick: () => ((this.achStatus = f), this.api.sfx('ui'), rerender()) }, t('ach_' + f) + ` · ${f === 'all' ? all.length : f === 'done' ? doneCount : all.length - doneCount}`),
+      ),
+    );
+    const catSeg = h(
+      'div.seg.ach-cats',
+      h('button' + (this.achCat === 'all' ? '.sel' : ''), { onclick: () => ((this.achCat = 'all'), this.api.sfx('ui'), rerender()) }, t('ach_all')),
+      ...ACHIEVEMENT_CATEGORIES.map((c) => {
+        const inCat = all.filter((a) => a.category === c);
+        const got = inCat.filter((a) => doneSet.has(a.id)).length;
+        return h('button' + (this.achCat === c ? '.sel' : ''), { onclick: () => ((this.achCat = c), this.api.sfx('ui'), rerender()) }, `${t('achcat_' + c)} ${got}/${inCat.length}`);
+      }),
+    );
+    const head = h(
+      'div.ach-head',
+      h('div.ach-total', h('span', t('ach_total', { n: doneCount, m: all.length })), h('span.ach-pct', pct + '%')),
+      h('div.prog.big', h('div', { style: `width:${pct}%` })),
+      h('div.ach-sub', t('ach_rewards', { g: goldEarned.toLocaleString('ru-RU') })),
+      statusSeg,
+      catSeg,
+    );
     const list = h('div.ach-list');
-    for (const a of ACHIEVEMENTS) {
-      const done = p.data.achievements.includes(a.id);
-      const prog = p.achievementProgress(a);
+    const shown = all
+      .filter((a) => (this.achCat === 'all' || a.category === this.achCat) && (this.achStatus === 'all' || (this.achStatus === 'done') === doneSet.has(a.id)))
+      // unlocked first, then the closest to completion
+      .map((a, i) => ({ a, i, done: doneSet.has(a.id), prog: p.achievementProgress(a) }))
+      .sort((x, y) => Number(y.done) - Number(x.done) || (x.done ? 0 : y.prog - x.prog) || x.i - y.i);
+    for (const { a, done, prog } of shown) {
       const hidden = a.hidden && !done;
+      const val = p.achievementValue(a);
+      const rc = RARITY_COLOR[a.rarity];
       list.append(
         h(
-          'div.ach' + (done ? '.done' : ''),
-          h('div.ach-icon', done ? '★' : '☆'),
+          'div.ach' + (done ? '.done' : '') + '.r-' + a.rarity,
+          { style: `--rc:${rc}` },
+          h('div.ach-icon', iconImg(hidden ? 'crystal' : a.icon, done ? a.color : 0x5a606a, 'icon')),
           h(
             'div.ach-body',
-            h('div.ach-name', hidden ? '???' : L(a.name)),
+            h('div.ach-top', h('div.ach-name', hidden ? '???' : L(a.name)), h('div.ach-rar', t('rarity_' + a.rarity))),
             h('div.ach-desc', hidden ? t('hidden_ach') : L(a.desc)),
-            done ? null : h('div.prog', h('div', { style: `width:${Math.round(prog * 100)}%` })),
+            done
+              ? null
+              : h('div.ach-progrow', h('div.prog', h('div', { style: `width:${Math.round(prog * 100)}%` })), h('span.ach-num', `${fmtNum(val)} / ${fmtNum(a.cond.value)}`)),
             a.reward || a.gold ? h('div.ach-reward', rewardText(a)) : null,
           ),
         ),
       );
     }
-    return this.frame(h('div.mcol', list), { extra: h('div.count', `${p.data.achievements.length}/${ACHIEVEMENTS.length}`) });
+    if (!shown.length) list.append(h('div.ach-empty', t('ach_empty')));
+    return this.frame(h('div.mcol.ach-screen', head, list), { extra: h('div.count', `${doneCount}/${all.length}`) });
   }
 }
 

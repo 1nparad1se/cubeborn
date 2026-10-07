@@ -60,10 +60,15 @@ export class Combat {
       e.burnDps = Math.max(e.burnDps, info.burn * st.might);
       e.burnT = Math.max(e.burnT, info.burnDur * st.duration);
     }
+    if (crit) run.stats.crits++;
     if (run.settings.damageNumbers) run.fx.number(e.x, e.z, dmg, crit);
     run.vfx.impact(e, info.weaponId, dmg, crit, dirX || e.x - run.player.x, dirZ || e.z - run.player.z);
     run.hitSoundBudget++;
-    if (e.hp <= 0) this.killEnemy(e);
+    if (e.hp <= 0) {
+      const el = run.vfx.elementOf(info.weaponId);
+      if (e.alive && e.def.category !== 'prop') run.stats.elementKills[el] = (run.stats.elementKills[el] ?? 0) + 1;
+      this.killEnemy(e);
+    }
     return dmg;
   }
 

@@ -1,3 +1,7 @@
+import { iconImg } from './ui/icons';
+import { RARITY_COLOR } from './data/achievements';
+import type { AchievementDef } from './data/types';
+import { runRecord, runGold } from './meta/runRecord';
 import { DAY_NIGHT } from './config/dayNight';
 import { dev } from './dev/DevMode';
 import { DevUi } from './dev/DevUi';
@@ -22,7 +26,7 @@ import { generateTerrain } from './game/mapgen/generators';
 import type { BossController } from './game/bosses/Boss';
 import { WAVE_TYPE_COLOR, MODIFIERS, type RunMode, type Wave } from './game/Waves';
 
-export const VERSION = 'v2.1.0';
+export const VERSION = 'v2.2.0';
 
 /** Discrete camera zoom steps for the mouse wheel (camera distance multipliers). */
 const ZOOM_STEPS = [0.75, 0.88, 1, 1.15, 1.35];
@@ -82,6 +86,9 @@ export class App implements MenuApi {
   private last = performance.now();
   private hintActive = false;
   private finished = false;
+  /** Achievements already announced during the current run (live unlock toasts). */
+  private liveAch = new Set<string>();
+  private achCheckT = 1;
 
   constructor(root: HTMLElement) {
     this.root = root;
@@ -323,6 +330,8 @@ export class App implements MenuApi {
     dev.applyRun(run);
     this.devUi?.setInRun(true);
     this.finished = false;
+    this.liveAch.clear();
+    this.achCheckT = 1;
     this.paused = false;
     this.hud.bestWave = mode === 'endless' ? (p.data.endless[mapId]?.wave ?? 0) : 0;
     this.hud.reset(run);
@@ -448,23 +457,11 @@ export class App implements MenuApi {
     const diff = run.diff;
     const goldEarned = Run.goldReward(s, diff.reward);
     p.data.gold += goldEarned;
-    p.addStat('gold', goldEarned);
-    p.addStat('kills', s.kills);
-    p.addStat('runs', 1);
-    p.addStat('elites', s.elites);
-    p.addStat('chests', s.chests);
-    p.addStat('treasureSprites', s.treasureSprites);
-    p.addStat('bossKills', s.bosses.length);
-    p.maxStat('bestRunKills', s.kills);
-    p.maxStat('bestLevel', s.level);
-    p.maxStat('bestTime', s.time);
-    p.maxStat('bestRunEvos', s.evolutions.length);
-    p.maxStat('bestWeaponCount', s.weaponCount);
-    p.maxStat('maxedWeapons', s.maxedWeapons);
-    for (const [id, n] of Object.entries(run.stats.killsBy)) p.addStat('kill_' + id, n);
+    const rec = runRecord(run, goldEarned);
+    for (const [k, v] of Object.entries(rec.add)) if (v) p.addStat(k, v);
+    for (const [k, v] of Object.entries(rec.max)) p.maxStat(k, v);
     let relic: string | null = null;
     for (const id of s.bosses) {
-      p.addStat('boss_' + id, 1);
       const def = BOSS_BY_ID[id];
       if (def && RELIC_BY_ID[def.relic] && p.discover('relics', def.relic)) relic = L(RELIC_BY_ID[def.relic].name);
     }
@@ -527,6 +524,33 @@ export class App implements MenuApi {
     this.toMenu();
   }
 
+  /**
+   * Live achievement unlocks: projects the run in progress onto the lifetime stats once a second.
+   * Developer-mode runs never count; finishRun saves the unlocks (and shows them in the results).
+   */
+  private checkLiveAchievements(run: Run) {
+    if (run.debug.tainted || this.profile.testBase) return;
+    const list = this.profile.liveAchievements(runRecord(run, runGold(run)), this.liveAch);
+    list.forEach((a, i) => {
+      this.liveAch.add(a.id);
+      setTimeout(() => this.achievementToast(a), i * 700);
+    });
+  }
+
+  private achievementToast(a: AchievementDef) {
+    const col = RARITY_COLOR[a.rarity];
+    const el = h(
+      'div.toast.ach-toast',
+      { style: `--tc:${col}` },
+      h('div.ach-toast-icon', iconImg(a.icon, a.color)),
+      h('div.ach-toast-body', h('div.ach-toast-head', t('ach_unlocked') + ' · ' + t('rarity_' + a.rarity)), h('div.ach-toast-name', L(a.name)), h('div.ach-toast-desc', L(a.desc))),
+    );
+    this.toasts.appendChild(el);
+    audio.play('achieve', 0.8);
+    setTimeout(() => el.classList.add('out'), 3800);
+    setTimeout(() => el.remove(), 4300);
+  }
+
   private toast(text: string, color = '#ffffff') {
     const el = h('div.toast', { style: `--tc:${color}` }, text);
     this.toasts.appendChild(el);
@@ -577,6 +601,11 @@ export class App implements MenuApi {
         // fixed-ish sub-steps keep collisions stable on slow frames (and at developer time scales)
         const steps = Math.max(1, Math.ceil(sdt / (1 / 40)));
         for (let i = 0; i < steps; i++) run.update(sdt / steps, ix, iz);
+        this.achCheckT -= sdt;
+        if (this.achCheckT <= 0) {
+          this.achCheckT = 1;
+          this.checkLiveAchievements(run);
+        }
       }
       const visDt = active || (run.ending && !devHold) ? sdt * (run.ending ? run.timeScale : 1) : 0;
       this.renderer.frame(visDt);

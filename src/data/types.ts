@@ -300,8 +300,16 @@ export interface PermUpgradeDef {
 
 export type UnlockRef = { kind: 'hero' | 'weapon' | 'passive' | 'map'; id: string };
 
+export type AchievementCategory = 'progress' | 'combat' | 'weapons' | 'exploration' | 'daynight' | 'economy' | 'survival' | 'endless';
+export type AchievementRarity = 'common' | 'rare' | 'epic' | 'legendary';
+
 export interface AchievementDef {
   id: string;
+  category: AchievementCategory;
+  rarity: AchievementRarity;
+  /** Icon glyph (ui/icons) and its colour. */
+  icon: string;
+  color: number;
   name: Loc;
   desc: Loc;
   /** Condition key evaluated against stats. */
