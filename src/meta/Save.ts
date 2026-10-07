@@ -61,6 +61,8 @@ export interface Settings {
   showFps: boolean;
   showEnemyCount: boolean;
   autoPause: boolean;
+  /** Day/night cycle length: 'off' | 'short' | 'normal' | 'long' (see DAY_NIGHT.lengths). */
+  dayNight: string;
   /** Camera distance multiplier (wheel zoom), 0.75 (close) .. 1.35 (far). */
   cameraZoom: number;
   lang: Lang;
@@ -128,6 +130,7 @@ export function defaultSettings(): Settings {
     showFps: false,
     showEnemyCount: false,
     autoPause: true,
+    dayNight: 'normal',
     cameraZoom: 1,
     lang,
     keybinds: defaultKeybinds(),

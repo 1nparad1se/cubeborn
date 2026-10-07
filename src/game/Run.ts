@@ -1,3 +1,5 @@
+import { DayNight } from './DayNight';
+import type { DayPeriod } from '../config/dayNight';
 import { BALANCE } from '../config/balance';
 import { EventBus } from '../core/EventBus';
 import { Rng } from '../core/Rng';
@@ -59,6 +61,7 @@ export interface RunEvents extends Record<string, unknown> {
   gameover: void;
   victory: void;
   banner: string;
+  dayPeriod: DayPeriod;
   pickup: string;
   evolution: string;
 }
@@ -71,7 +74,7 @@ export interface RunOptions {
   unlockedWeapons: Set<string>;
   unlockedPassives: Set<string>;
   fx: FxSink;
-  settings: { damageNumbers: boolean };
+  settings: { damageNumbers: boolean; dayLength?: number };
   tr: (key: string) => string;
   seed?: number;
   mode?: RunMode;
@@ -105,7 +108,8 @@ export class Run {
   readonly bosses: BossController[] = [];
   readonly unlockedWeapons: Set<string>;
   readonly unlockedPassives: Set<string>;
-  readonly settings: { damageNumbers: boolean };
+  readonly settings: { damageNumbers: boolean; dayLength?: number };
+  readonly dayNight: DayNight;
   readonly tr: (key: string) => string;
   readonly weather = { darkness: 0, blizzard: 0, surge: 0, storm: 0 };
   readonly mode: RunMode;
@@ -148,6 +152,7 @@ export class Run {
     this.unlockedWeapons.add(o.hero.startWeapon);
     this.mode = o.mode ?? 'campaign';
     this.waves = new WaveDirector(this, this.mode);
+    this.dayNight = new DayNight(this, o.settings.dayLength ?? 0);
     this.waveScale = this.waves.scale();
     this.terrain = generateTerrain(o.map, this.seed);
     this.nav = new NavField(this.terrain);
@@ -225,6 +230,7 @@ export class Run {
     const p = this.player;
     for (const k of ['darkness', 'blizzard', 'surge', 'storm'] as const) if (this.weather[k] > 0) this.weather[k] -= dt;
     if (!p.dead) p.update(dt, ix, iz);
+    this.dayNight.update(dt);
     this.nav.update(dt, p.x, p.z);
     this.surgeBuff();
     // timers

@@ -37,6 +37,29 @@ export class Spawner {
     return s;
   }
 
+  /** The wave's spawn pool (before day/night filtering). */
+  get currentPool(): [string, number][] {
+    return this.pool;
+  }
+
+  /** A roaming night boss: weaker than a wave boss, never ends the run. */
+  spawnNightBoss(id: string, hpMul: number): boolean {
+    const run = this.run;
+    const def = BOSS_BY_ID[id];
+    if (!def) return false;
+    const cur = waveScale(Math.max(1, run.waves.wave.n));
+    const ref = waveScale(15);
+    const pos = this.findSpawnPos(true, 13, 15) ?? { x: run.player.x + 12, z: run.player.z };
+    const b = BossController.spawn(run, id, pos.x, pos.z, false, Math.max(0.5, (cur.hp / ref.hp) * hpMul), false, Math.max(0.7, cur.damage / ref.damage));
+    if (!b) return false;
+    b.nightBoss = true;
+    run.stats.bossesSeen++;
+    run.events.emit('bossSpawn', b);
+    run.fx.sound('bossRoar');
+    run.fx.shake(0.5);
+    return true;
+  }
+
   get bossSpawnedFlag() {
     return this.finalSpawned;
   }
@@ -192,7 +215,7 @@ export class Spawner {
     const curse = run.player.stats.curse;
     // the very first seconds ramp in so the player has a moment to orient
     const intro = Math.min(1, 0.35 + run.time / 25);
-    const rate = (dens.rate / 60) * sc.rate * run.diff.spawn * curse * this.bossDamp() * intro;
+    const rate = (dens.rate / 60) * sc.rate * run.diff.spawn * curse * this.bossDamp() * intro * run.dayNight.spawnRate;
     const max = Math.min(BALANCE.hardCap, dens.max * sc.max * run.diff.spawn * curse * intro);
     this.acc += rate * dt;
     // catch up faster when the field is nearly empty
@@ -204,7 +227,7 @@ export class Spawner {
         this.acc = Math.min(this.acc, 1);
         break;
       }
-      const pick = run.rng.weighted(this.pool, (p) => p[1]);
+      const pick = run.rng.weighted(run.dayNight.poolFor(this.pool), (p) => p[1]);
       if (pick) this.spawnOne(pick[0]);
     }
     // scripted map events (they repeat every campaign length in Endless)

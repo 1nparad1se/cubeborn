@@ -1,3 +1,4 @@
+import type { DayPeriod } from '../config/dayNight';
 import { BALANCE } from '../config/balance';
 import { HEROES } from '../data/heroes';
 import { WEAPONS, WEAPON_BY_ID } from '../data/weapons';
@@ -446,6 +447,36 @@ export class DevMode {
     if (!run) return;
     run.spawner.devEliteWave();
     this.changed('Elite wave');
+  }
+
+  /** Day/night: jump to a period, force a blood moon, call the night events. */
+  setDayPeriod(p: DayPeriod) {
+    const run = this.need();
+    if (!run || !run.dayNight.enabled) return;
+    run.dayNight.devSet(p);
+    this.changed('Day period: ' + p);
+  }
+
+  bloodMoon() {
+    const run = this.need();
+    if (!run || !run.dayNight.enabled) return;
+    run.dayNight.bloodAhead = true;
+    run.dayNight.devSet('night');
+    this.changed('Blood moon');
+  }
+
+  nightPack() {
+    const run = this.need();
+    if (!run) return;
+    run.dayNight.elitePack();
+    this.changed('Night pack');
+  }
+
+  nightBoss() {
+    const run = this.need();
+    if (!run) return;
+    run.dayNight.nightBoss();
+    this.changed('Night boss');
   }
 
   /** Moves the clock: the wave that would be running at that time starts now. */

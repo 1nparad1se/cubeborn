@@ -3155,3 +3155,75 @@ h2.glow {
     top: calc(60px + var(--sat));
   }
 }
+
+/* --- day/night dial (v2.2) */
+.daynight {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 10px 4px 6px;
+  background: rgba(10, 12, 16, 0.55);
+  box-shadow: 0 0 0 2px rgba(10, 11, 13, 0.9), inset 0 0 0 1px rgba(200, 205, 214, 0.35);
+}
+.daynight.hidden {
+  display: none;
+}
+.dn-dial {
+  width: 42px;
+  height: 42px;
+  overflow: visible;
+}
+.dn-arc {
+  fill: none;
+  stroke-width: 4;
+}
+.dn-body {
+  fill: #ffe27a;
+  stroke: #1a1a1a;
+  stroke-width: 1.5;
+  transition: fill 0.4s;
+}
+.daynight[data-period='night'] .dn-body {
+  fill: #dfe6ff;
+}
+.daynight[data-period='blood'] .dn-body {
+  fill: #ff4a4a;
+}
+.daynight[data-period='dawn'] .dn-body,
+.daynight[data-period='dusk'] .dn-body {
+  fill: #ffae6a;
+}
+.dn-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.15;
+}
+.dn-name {
+  font: 700 var(--fs-body, 17px) var(--fmc);
+  color: #fff;
+  text-shadow: 0 2px 0 #000;
+}
+.daynight[data-period='night'] .dn-name {
+  color: #b8c8ff;
+}
+.daynight[data-period='blood'] .dn-name {
+  color: #ff6a6a;
+}
+.daynight[data-period='dawn'] .dn-name,
+.daynight[data-period='dusk'] .dn-name {
+  color: #ffc48a;
+}
+.dn-next {
+  font: 500 var(--fs-small, 14px) var(--fmc);
+  color: #d8dce4;
+  text-shadow: 0 1px 0 #000;
+}
+.daynight.warn {
+  animation: dn-warn 1s ease-in-out infinite;
+}
+@keyframes dn-warn {
+  50% {
+    box-shadow: 0 0 0 2px #ff3a3a, inset 0 0 12px rgba(255, 60, 60, 0.5);
+  }
+}

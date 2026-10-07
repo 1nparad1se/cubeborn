@@ -1,3 +1,4 @@
+import { DayNight } from './DayNight';
 import { SpatialGrid } from '../core/SpatialGrid';
 import { BALANCE } from '../config/balance';
 import { ELITE_MODS, ENEMY_BY_ID, type EliteId } from '../data/enemies';
@@ -75,6 +76,8 @@ export class EnemyManager {
     if (def.behavior === 'prop') e.speed = 0;
     if (opts.elite) this.makeElite(e, opts.elite);
     e.yaw = Math.atan2(r.player.x - x, r.player.z - z);
+    e.dayKind = r.dayNight.kindOf(def.id);
+    r.dayNight.apply(e);
     this.aliveCount++;
     r.stats.seen.add(def.id);
     return e;
@@ -236,6 +239,7 @@ export class EnemyManager {
       if (!e.active || e.dying > 0) continue;
       if (e.flash > 0) e.flash -= dt;
       if (e.touchCd > 0) e.touchCd -= dt;
+      if (e.awakeT > 0) e.awakeT -= dt;
 
       const frozen = e.freezeT > 0 || this.frozenAll > 0;
       if (e.boss) {
@@ -279,11 +283,11 @@ export class EnemyManager {
       const dzp = p.z - e.z;
       const d2 = dxp * dxp + dzp * dzp;
       // contact damage
-      if (e.damage > 0 && !frozen && e.touchCd <= 0) {
+      if (e.damage > 0 && !frozen && !e.asleep && e.touchCd <= 0) {
         const rr = e.radius + p.radius;
         if (d2 < rr * rr && (rr < 0.95 || run.terrain.los(e.x, e.z, p.x, p.z))) {
           e.touchCd = BALANCE.contactInterval;
-          const dealt = p.hurt(e.damage, e);
+          const dealt = p.hurt(DayNight.damageOf(e), e);
           if (dealt > 0 && e.hasElite('vampiric')) e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.05);
         }
       }
@@ -376,7 +380,12 @@ export class EnemyManager {
         }
       }
     }
-    let speed = e.speed * e.slowMul;
+    // day sleepers stand petrified until disturbed
+    if (e.asleep) {
+      e.vx = e.vz = 0;
+      return;
+    }
+    let speed = e.speed * e.slowMul * e.todSpd;
     if (!e.flying && !e.boss) speed *= run.features.moveMul(e.x, e.z, false);
     if (e.hasElite('frenzied') && e.hp < e.maxHp * 0.5) speed *= 1.5;
     const pp = e.def.p ?? {};
@@ -419,7 +428,7 @@ export class EnemyManager {
           const base = Math.atan2(dz, dx);
           for (let k = 0; k < count; k++) {
             const a = count === 1 ? base : base - spread / 2 + (spread * k) / (count - 1);
-            run.hazards.bullet(e.x, e.z, Math.cos(a) * ((pp.bulletSpeed as number) ?? 7), Math.sin(a) * ((pp.bulletSpeed as number) ?? 7), e.damage * 0.65, 0.28, 4, pp.slow ? 0x8ae8ff : 0xff3a6a, !!pp.slow);
+            run.hazards.bullet(e.x, e.z, Math.cos(a) * ((pp.bulletSpeed as number) ?? 7), Math.sin(a) * ((pp.bulletSpeed as number) ?? 7), DayNight.damageOf(e) * 0.65, 0.28, 4, pp.slow ? 0x8ae8ff : 0xff3a6a, !!pp.slow);
           }
           e.flash = 0.05;
         }
@@ -461,7 +470,7 @@ export class EnemyManager {
           e.stateT -= dt;
           e.flash = Math.sin(e.stateT * 40) > 0 ? 0.1 : 0;
           if (e.stateT <= 0) {
-            run.hazards.explode(e.x, e.z, (pp.blast as number) ?? 2, e.damage, 0xff7a2a);
+            run.hazards.explode(e.x, e.z, (pp.blast as number) ?? 2, DayNight.damageOf(e), 0xff7a2a);
             run.combat.killEnemy(e, true);
           }
         }

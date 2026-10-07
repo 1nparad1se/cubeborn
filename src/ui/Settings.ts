@@ -188,6 +188,12 @@ export function settingsPanel(api: MenuApi, rerender: () => void, inRun = false)
           toggle(t('set_fps'), () => s.showFps, (v) => (s.showFps = v)),
           toggle(t('set_enemy_count'), () => s.showEnemyCount, (v) => (s.showEnemyCount = v)),
           toggle(t('set_autopause'), () => s.autoPause, (v) => (s.autoPause = v)),
+          seg(t('set_daynight'), [
+            { id: 'off', name: t('off') },
+            { id: 'short', name: t('dn_len_short') },
+            { id: 'normal', name: t('dn_len_normal') },
+            { id: 'long', name: t('dn_len_long') },
+          ], () => s.dayNight ?? 'normal', (v) => (s.dayNight = v), inRun ? t('set_daynight_next') : t('set_daynight_hint')),
           slider(t('set_zoom'), () => s.cameraZoom, (v) => (s.cameraZoom = v), (v) => Math.round(v * 100) + '%', 75, 135),
           seg<Lang>(t('set_lang'), LANGS, () => s.lang, (v) => {
             s.lang = v;

@@ -1,3 +1,4 @@
+import { DAY_NIGHT } from '../config/dayNight';
 import { BALANCE } from '../config/balance';
 import { ENEMY_BY_ID } from '../data/enemies';
 import type { Enemy } from './Enemy';
@@ -21,6 +22,7 @@ export class Combat {
       if (Math.random() < 0.2) run.fx.burst(e.x, 1, e.z, 0xa0a0ff, 3, 2, 0.12, 0.3, 'glow');
       return 0;
     }
+    if (e.dayKind === 'sleeper') e.awakeT = DAY_NIGHT.sleeperDozeAfter;
     const critChance = info.critChance + st.critChance;
     const crit = Math.random() < critChance;
     let dmg = info.damage * st.might * run.player.damageMul * mult;
@@ -98,6 +100,10 @@ export class Combat {
     if (!silent) run.killSoundBudget++;
     run.stats.kills++;
     run.stats.killsBy[def.id] = (run.stats.killsBy[def.id] ?? 0) + 1;
+    if (run.dayNight.isNight) run.stats.nightKills++;
+    else if (run.dayNight.enabled) run.stats.dayKills++;
+    if (e.asleep) run.stats.sleepersKilled++;
+    if (e.dire > 0.5) run.stats.direKilled++;
     if (!e.noReward) {
       if (e.xp > 0) run.pickups.dropXp(e.x, e.z, e.xp);
       run.pickups.rollKillDrops(e);

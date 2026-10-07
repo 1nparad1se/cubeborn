@@ -1,3 +1,4 @@
+import { DAY_NIGHT } from './config/dayNight';
 import { dev } from './dev/DevMode';
 import { DevUi } from './dev/DevUi';
 import { Run } from './game/Run';
@@ -306,7 +307,7 @@ export class App implements MenuApi {
       unlockedWeapons: new Set(WEAPONS.filter((w) => p.isWeaponUnlocked(w.id)).map((w) => w.id)),
       unlockedPassives: new Set(PASSIVES.filter((x) => p.isPassiveUnlocked(x.id)).map((x) => x.id)),
       fx,
-      settings: { damageNumbers: p.data.settings.damageNumbers },
+      settings: { damageNumbers: p.data.settings.damageNumbers, dayLength: DAY_NIGHT.lengths[p.data.settings.dayNight] ?? DAY_NIGHT.lengths[DAY_NIGHT.defaultLength] },
       tr: (k) => t(k),
       mode,
     });
@@ -371,7 +372,9 @@ export class App implements MenuApi {
       this.hud.showBanner(t('boss_defeated', { name: L(b.def.name) }), '#ffd23d', 3);
       if (!b.isFinal) audio.playMusic(run.map.generator);
     });
-    run.events.on('banner', (key) => this.hud.showBanner(t(key), key === 'ev_treasure' ? '#ffd23d' : '#ff8a5a'));
+    const bannerColor = (key: string) =>
+      key === 'ev_treasure' ? '#ffd23d' : key.startsWith('dn_blood') || key === 'dn_nightboss' ? '#ff4a5a' : key === 'dn_dawn' ? '#ffd08a' : key.startsWith('dn_') ? '#9ab8ff' : '#ff8a5a';
+    run.events.on('banner', (key) => this.hud.showBanner(t(key), bannerColor(key)));
     run.events.on('wave', (w: Wave) => {
       if (w.n === 1) return;
       const title = run.mode === 'endless' ? t('hud_wave_endless', { n: w.n }) : t('hud_wave', { n: w.n, total: 30 });

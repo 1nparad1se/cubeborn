@@ -1,7 +1,7 @@
 /**
  * Headless balance simulator: plays runs with a simple kiting bot and prints per-checkpoint metrics.
  * Usage: npx tsx tools/sim.ts [mapId] [heroId] [diffId] [runs] [perm 0|1|2] [mode campaign|endless]
- * Env: GOD=1 (player cannot die; damage is still counted), MAXT=seconds, QUIET=1, DMG=1 (damage sources)
+ * Env: GOD=1 (player cannot die; damage is still counted), MAXT=seconds, QUIET=1, DMG=1 (damage sources), DAY=cycle seconds (0 = off, default 300)
  */
 import { Run } from '../src/game/Run';
 import { NullFx } from '../src/game/types';
@@ -120,7 +120,7 @@ for (let r = 0; r < Number(runsArg); r++) {
     map, diff, hero, permanent: perm, mode,
     unlockedWeapons: new Set(WEAPONS.map((w) => w.id)),
     unlockedPassives: new Set(PASSIVES.map((p) => p.id)),
-    fx: NullFx, settings: { damageNumbers: false }, tr: (k) => k, seed: 1000 + r,
+    fx: NullFx, settings: { damageNumbers: false, dayLength: Number(process.env.DAY ?? 300) }, tr: (k) => k, seed: 1000 + r,
   });
   run.debug.god = god;
   // --- instrumentation

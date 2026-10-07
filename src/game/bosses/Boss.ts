@@ -71,6 +71,8 @@ export class BossController {
   hpScale = 1;
   dmgScale = 1;
   enraged = false;
+  /** A roaming night boss (day/night cycle), not part of the wave plan. */
+  nightBoss = false;
 
   static spawn(run: Run, id: string, x: number, z: number, isFinal: boolean, hpMul = 1, isClone = false, dmgMul = 1): BossController | null {
     const def = BOSS_BY_ID[id];

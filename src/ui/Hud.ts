@@ -9,6 +9,7 @@ import { BALANCE } from '../config/balance';
 import { PASSIVE_BY_ID } from '../data/passives';
 import { WEAPON_BY_ID } from '../data/weapons';
 import { Minimap } from './Minimap';
+import { DAY_NIGHT } from '../config/dayNight';
 
 export interface HudOptions {
   minimap: boolean;
@@ -33,6 +34,12 @@ export class Hud {
   private slotsP: HTMLElement;
   private buffs: HTMLElement;
   private wavePanel: HTMLElement;
+  /** Day/night dial: phase ring, sun/moon marker, period name and time to the next change. */
+  private dnBox: HTMLElement;
+  private dnRing: SVGElement;
+  private dnMark: SVGElement;
+  private dnName: HTMLElement;
+  private dnNext: HTMLElement;
   private waveTitle: HTMLElement;
   private waveType: HTMLElement;
   private waveFill: HTMLElement;
@@ -90,6 +97,33 @@ export class Hud {
       this.mods,
       this.record,
     );
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '-20 -20 40 40');
+    svg.classList.add('dn-dial');
+    this.dnRing = document.createElementNS(NS, 'g');
+    let a0 = 0;
+    const PCOL: Record<string, string> = { dawn: '#f2a46a', day: '#ffd86a', dusk: '#c46a8a', night: '#3a4a9a' };
+    for (const [p, share] of DAY_NIGHT.phases) {
+      const a1 = a0 + share;
+      const arc = document.createElementNS(NS, 'path');
+      const pt = (f: number) => `${(Math.sin(f * Math.PI * 2) * 15).toFixed(2)} ${(-Math.cos(f * Math.PI * 2) * 15).toFixed(2)}`;
+      arc.setAttribute('d', `M ${pt(a0)} A 15 15 0 ${share > 0.5 ? 1 : 0} 1 ${pt(a1)}`);
+      arc.setAttribute('stroke', PCOL[p]);
+      arc.setAttribute('class', 'dn-arc');
+      this.dnRing.append(arc);
+      a0 = a1;
+    }
+    this.dnMark = document.createElementNS(NS, 'g');
+    const body = document.createElementNS(NS, 'circle');
+    body.setAttribute('r', '5');
+    body.setAttribute('cy', '-15');
+    body.setAttribute('class', 'dn-body');
+    this.dnMark.append(body);
+    svg.append(this.dnRing, this.dnMark);
+    this.dnName = h('div.dn-name');
+    this.dnNext = h('div.dn-next');
+    this.dnBox = h('div.daynight.hidden', svg as unknown as HTMLElement, h('div.dn-text', this.dnName, this.dnNext));
     this.bossName = h('div.boss-name');
     this.bossFill = h('div.boss-fill');
     this.bossPhase = h('div.boss-phase');
@@ -110,7 +144,7 @@ export class Hud {
       this.vignette,
       h('div.hud-tl', this.fps, this.buffs),
       h('div.hud-top', this.time, this.bossBox),
-      h('div.hud-tr', this.mapBox, this.wavePanel),
+      h('div.hud-tr', this.mapBox, this.dnBox, this.wavePanel),
       bannerBox,
       this.hint,
       h(
@@ -243,6 +277,20 @@ export class Hud {
           this.mods.append(h('span.mod-chip', { style: `--mc:${def.color}`, title: t('mod_' + m.id + '_desc') }, t('mod_' + m.id)));
         }
       });
+    }
+
+    // day / night
+    const dn = run.dayNight;
+    this.set('dnOn', dn.enabled ? 1 : 0, () => this.dnBox.classList.toggle('hidden', !dn.enabled));
+    if (dn.enabled) {
+      const per = dn.bloodMoon && dn.period === 'night' ? 'blood' : dn.period;
+      this.set('dnPer', per + (dn.bloodAhead ? '!' : ''), () => {
+        this.dnName.textContent = t('period_' + per);
+        this.dnBox.dataset.period = per;
+        this.dnBox.classList.toggle('warn', dn.bloodAhead);
+      });
+      this.set('dnNext', Math.ceil(dn.timeToNext), () => (this.dnNext.textContent = `${fmtTime(Math.ceil(dn.timeToNext))} ${t('period_next')}`));
+      this.set('dnDeg', Math.round(dn.cycleProgress * 360), () => this.dnMark.setAttribute('transform', `rotate(${(dn.cycleProgress * 360).toFixed(1)})`));
     }
 
     // build slots

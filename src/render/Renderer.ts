@@ -94,6 +94,9 @@ export class Renderer {
   private h = 1;
   private composer: EffectComposer | null = null;
   private bloom: UnrealBloomPass | null = null;
+  private grade: ShaderPass | null = null;
+  private cA = new THREE.Color();
+  private cB = new THREE.Color();
 
   constructor(private container: HTMLElement, settings: Settings) {
     this.s = settings;
@@ -189,7 +192,8 @@ export class Renderer {
     c.addPass(new RenderPass(this.scene, this.rig.camera));
     this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.42, 0.55, 0.82);
     c.addPass(this.bloom);
-    c.addPass(new ShaderPass(GradeShader));
+    this.grade = new ShaderPass(GradeShader);
+    c.addPass(this.grade);
     c.addPass(new OutputPass());
     this.composer = c;
   }
@@ -427,14 +431,24 @@ export class Renderer {
     // weather
     const pal = run.map.palette;
     const dark = run.weather.darkness;
-    this.hemi.intensity = pal.ambientIntensity * 3.0 * (1 - dark * 0.72);
-    this.sun.intensity = pal.sunIntensity * 2.4 * (1 - dark * 0.8);
+    // day/night: moonlight, colder palette and thicker fog after dark
+    const L = run.dayNight.light;
+    this.hemi.intensity = pal.ambientIntensity * 3.0 * (1 - dark * 0.72) * L.ambient;
+    this.sun.intensity = pal.sunIntensity * 2.4 * (1 - dark * 0.8) * L.sun;
+    this.hemi.color.setHex(pal.ambient).lerp(this.cA.setHex(L.ambientColor), L.tint);
+    this.sun.color.setHex(pal.sun).lerp(this.cA.setHex(L.sunColor), L.tint);
     const fog = this.scene.fog as THREE.Fog;
+    fog.color.setHex(pal.fog).lerp(this.cB.setHex(L.fogColor), L.fogTint);
+    if (this.scene.background instanceof THREE.Color) this.scene.background.copy(fog.color);
+    if (this.grade) {
+      this.grade.uniforms.uWarm.value = L.warm;
+      this.grade.uniforms.uSat.value = L.sat;
+    }
     const bl = run.weather.blizzard;
     const storm = Math.min(1, run.weather.storm);
     const vm = this.viewMul * Math.max(1, zoom);
-    fog.near = (pal.fogNear + 8) * vm * (1 - bl * 0.45) * (1 - dark * 0.3) * (1 - storm * 0.55);
-    fog.far = (pal.fogFar + 12) * vm * (1 - bl * 0.4) * (1 - dark * 0.3) * (1 - storm * 0.5);
+    fog.near = (pal.fogNear + 8) * vm * (1 - bl * 0.45) * (1 - dark * 0.3) * (1 - storm * 0.55) * L.fog;
+    fog.far = (pal.fogFar + 12) * vm * (1 - bl * 0.4) * (1 - dark * 0.3) * (1 - storm * 0.5) * (0.35 + 0.65 * L.fog);
     // shadow box grows with zoom so the whole view stays shadowed
     const ext = 20 * Math.max(1, zoom);
     const sc = this.sun.shadow.camera;
@@ -449,12 +463,16 @@ export class Renderer {
       this.world?.cull(t.x, t.z, fog.far + 6);
     }
     // sun follows the camera so the shadow map covers the view
-    this.sun.position.set(t.x + 3, 26, t.z - 12);
+    // the sun (and the moon at night) crosses the sky, so shadows sweep over the day
+    const arc = run.dayNight.sunArc;
+    this.sun.position.set(t.x + 3 + arc * 16, 26 - Math.abs(arc) * 6, t.z - 12 + arc * 4);
     this.sun.target.position.set(t.x, 0, t.z);
     this.world?.uniforms.uFocus.value.set(p.x, 0, p.z);
     this.world?.uniforms.uCamDir.value.set(this.rig.toCam.x, this.rig.toCam.z);
     // a warm light pool follows the hero on dark maps
-    if (pal.heroLight) this.lights.request(p.x, 2.6, p.z, pal.heroLight, 1.6 + dark * 0.8, 9, t.x, t.z);
+    const nightK = run.dayNight.night;
+    if (pal.heroLight) this.lights.request(p.x, 2.6, p.z, pal.heroLight, 1.6 + dark * 0.8 + nightK * 0.4, 9, t.x, t.z);
+    else if (nightK > 0.05) this.lights.request(p.x, 2.6, p.z, 0xffe2b0, 1.5 * nightK, 8.5, t.x, t.z);
     this.entities!.update(dt, t.x, t.z);
     this.particles!.update(dt, t.x, t.z, bl);
   }

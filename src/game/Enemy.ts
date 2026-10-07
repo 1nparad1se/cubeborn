@@ -1,4 +1,5 @@
 import type { EnemyDef } from '../data/types';
+import type { DayKind } from '../config/dayNight';
 import type { EliteId } from '../data/enemies';
 import { MAX_SOURCES } from './types';
 import type { BossController } from './bosses/Boss';
@@ -58,6 +59,17 @@ export class Enemy {
   lastHit = new Float32Array(MAX_SOURCES);
   /** Map-specific tint hook for frozen/poisoned visuals. */
   tint = 0;
+  /** Day/night: how this type reacts, the multipliers currently applied, sleep and dire-form state. */
+  dayKind: DayKind = 'neutral';
+  todHp = 1;
+  todDmg = 1;
+  todSpd = 1;
+  asleep = false;
+  awakeT = 0;
+  /** 0..1 dire (night) form of shifters. */
+  dire = 0;
+  /** Part of a night elite pack. */
+  nightPack = false;
 
   constructor(index: number) {
     this.index = index;
@@ -94,6 +106,12 @@ export class Enemy {
     this.kbResist = def.kbResist;
     this.flying = !!def.flying;
     this.tint = 0;
+    this.dayKind = 'neutral';
+    this.todHp = this.todDmg = this.todSpd = 1;
+    this.asleep = false;
+    this.awakeT = 0;
+    this.dire = 0;
+    this.nightPack = false;
   }
 
   get alive(): boolean {

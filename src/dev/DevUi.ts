@@ -180,6 +180,11 @@ export class DevUi {
         numRow('Set Wave', 'wave', () => dev.setWave(sel.wave), !run, 'Go'),
         h('div.dev-grid', btn('Spawn Boss', () => dev.spawnWaveBoss(), '', !run), btn('Elite Wave', () => dev.eliteWave(), '', !run)),
       ]),
+      sec('daynight', 'Day / Night', [
+        run ? h('div.dev-cur', run.dayNight.enabled ? `${run.dayNight.period}${run.dayNight.bloodMoon ? ' (blood moon)' : ''} · night ${run.dayNight.nights} · next in ${Math.ceil(run.dayNight.timeToNext)}s` : 'cycle off (Settings → Gameplay)') : noRun,
+        h('div.dev-grid', ...(['dawn', 'day', 'dusk', 'night'] as const).map((p) => btn(p[0].toUpperCase() + p.slice(1), () => dev.setDayPeriod(p), run?.dayNight.period === p ? '.on' : '', !run))),
+        h('div.dev-grid', btn('Blood Moon', () => dev.bloodMoon(), '.red', !run), btn('Night Pack', () => dev.nightPack(), '', !run), btn('Night Boss', () => dev.nightBoss(), '', !run)),
+      ]),
       sec('time', 'Time', [
         h('div.dev-grid', btn(dev.paused ? 'Resume' : 'Pause', () => dev.setPaused(!dev.paused), dev.paused ? '.on' : '', !run)),
         h('div.dev-seg', ...[0.5, 1, 2, 5].map((v) => btn('×' + v, () => dev.setTimeScale(v), dev.timeScale === v ? '.on' : ''))),

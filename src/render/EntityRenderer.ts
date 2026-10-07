@@ -1,3 +1,4 @@
+import { DAY_NIGHT } from '../config/dayNight';
 import { BALANCE } from '../config/balance';
 import * as THREE from 'three';
 import type { Run } from '../game/Run';
@@ -324,6 +325,27 @@ export class EntityRenderer {
         r *= 0.7;
         g *= 0.7;
         bl *= 1.3;
+      }
+      // day/night looks: petrified sleepers, dire night forms, night hunters with a faint aura
+      if (e.asleep) {
+        const gy = (r + g + bl) / 3;
+        r = gy * 0.66;
+        g = gy * 0.66;
+        bl = gy * 0.74;
+        sy *= 0.92;
+        if (Math.random() < 0.004) run.fx.burst(e.x, 1.2 * s, e.z, 0xc8d8ff, 1, 0.6, 0.12, 1.2, 'glow');
+      } else if (e.dire > 0.01) {
+        const k = e.dire;
+        const T = DAY_NIGHT.shifterTint;
+        r *= 1 + (T[0] - 1) * k;
+        g *= 1 + (T[1] - 1) * k;
+        bl *= 1 + (T[2] - 1) * k;
+        const sc = 1 + (DAY_NIGHT.shifterScale - 1) * k;
+        s *= sc;
+        sy *= sc;
+        if (k > 0.5 && e.dying === 0) this.glowDisc.push(e.x, 0.05, e.z, 0, e.radius * 3, 1, e.radius * 3, 0xff3a3a, 0, 0, 0, 0.3 * k);
+      } else if (run.dayNight.night > 0.5 && (e.dayKind === 'nocturnal' || e.dayKind === 'sleeper') && e.dying === 0) {
+        this.glowDisc.push(e.x, 0.05, e.z, 0, e.radius * 2.8, 1, e.radius * 2.8, run.dayNight.bloodMoon ? 0xff3a4a : 0x7a6aff, 0, 0, 0, 0.28 * run.dayNight.night);
       }
       if (mb) {
         const fi = frames > 1 && e.freezeT <= 0 ? Math.floor(e.anim * 1.2) & 1 : 0;
