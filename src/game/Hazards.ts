@@ -42,6 +42,8 @@ export class Laser {
   angle = 0;
   sweep = 0;
   len = 10;
+  /** Length after walls cut the beam (what is drawn and what hurts). */
+  reach = 10;
   width = 1;
   tele = 1;
   t = 0;
@@ -165,6 +167,7 @@ export class Hazards {
     l.angle = angle;
     l.sweep = opts.sweep;
     l.len = opts.len;
+    l.reach = opts.len;
     l.width = opts.width;
     l.tele = opts.tele;
     l.t = 0;
@@ -192,7 +195,7 @@ export class Hazards {
   explode(x: number, z: number, r: number, dmg: number, color: number) {
     const run = this.run;
     const p = run.player;
-    if ((p.x - x) ** 2 + (p.z - z) ** 2 < (r + p.radius) ** 2) p.hurt(dmg, null);
+    if ((p.x - x) ** 2 + (p.z - z) ** 2 < (r + p.radius) ** 2 && run.terrain.los(x, z, p.x, p.z)) p.hurt(dmg, null);
     run.fx.burst(x, 0.6, z, color, 26, 6, 0.2, 0.6, 'glow');
     run.fx.burst(x, 0.4, z, 0x333333, 10, 3, 0.25, 0.8, 'smoke');
     run.fx.light(x, z, color, 4, r * 3, 0.3);
@@ -218,11 +221,20 @@ export class Hazards {
     const t = run.terrain;
     for (const b of this.bullets) {
       if (!b.active) continue;
+      const ox = b.x;
+      const oz = b.z;
       b.x += b.vx * dt;
       b.z += b.vz * dt;
       b.life -= dt;
-      if (b.life <= 0 || t.blocksFlyer(Math.floor(b.x), Math.floor(b.z))) {
+      if (b.life <= 0) {
         b.active = false;
+        continue;
+      }
+      // enemy shots stop at walls like the player's (the shooter's own cell never blocks)
+      const hit = t.shotRay(ox, oz, b.x, b.z);
+      if (hit < 1) {
+        b.active = false;
+        run.fx.burst(ox + (b.x - ox) * hit, 0.8, oz + (b.z - oz) * hit, b.color, 4, 2, 0.1, 0.25, 'glow');
         continue;
       }
       const rr = b.r + p.radius;
@@ -242,7 +254,7 @@ export class Hazards {
             continue;
           }
           // detonate
-          const inside = (p.x - o.x) ** 2 + (p.z - o.z) ** 2 < (o.r + p.radius * 0.5) ** 2;
+          const inside = (p.x - o.x) ** 2 + (p.z - o.z) ** 2 < (o.r + p.radius * 0.5) ** 2 && t.los(o.x, o.z, p.x, p.z);
           if (inside) {
             p.hurt(o.dmg, null);
             if (o.freeze) p.slowT = 2;
@@ -257,7 +269,7 @@ export class Hazards {
         o.tick -= dt;
         if (o.tick <= 0) {
           o.tick = 0.5;
-          if ((p.x - o.x) ** 2 + (p.z - o.z) ** 2 < o.r * o.r) p.hurt(o.dmg * 0.35, null, true);
+          if ((p.x - o.x) ** 2 + (p.z - o.z) ** 2 < o.r * o.r && t.los(o.x, o.z, p.x, p.z)) p.hurt(o.dmg * 0.35, null, true);
         }
         if (o.poolT <= 0) o.active = false;
       }
@@ -273,11 +285,12 @@ export class Hazards {
         l.z = l.owner.z;
       }
       l.t += dt;
+      if (l.t > l.tele) l.angle += l.sweep * dt;
+      l.reach = l.len * t.shotRay(l.x, l.z, l.x + Math.cos(l.angle) * l.len, l.z + Math.sin(l.angle) * l.len);
       if (l.t > l.tele) {
-        l.angle += l.sweep * dt;
         l.tick -= dt;
-        const ex = l.x + Math.cos(l.angle) * l.len;
-        const ez = l.z + Math.sin(l.angle) * l.len;
+        const ex = l.x + Math.cos(l.angle) * l.reach;
+        const ez = l.z + Math.sin(l.angle) * l.reach;
         if (l.tick <= 0 && segDist2(p.x, p.z, l.x, l.z, ex, ez) < (l.width / 2 + p.radius) ** 2) {
           l.tick = 0.25;
           p.hurt(l.dmg, null);
@@ -289,7 +302,7 @@ export class Hazards {
       if (!s.active) continue;
       s.r += s.speed * dt;
       const d = Math.hypot(p.x - s.x, p.z - s.z);
-      if (!s.hit && Math.abs(d - s.r) < s.width / 2 + p.radius) {
+      if (!s.hit && Math.abs(d - s.r) < s.width / 2 + p.radius && t.los(s.x, s.z, p.x, p.z)) {
         s.hit = true;
         p.hurt(s.dmg, null);
       }

@@ -1,3 +1,4 @@
+import { WALLS } from '../../config/walls';
 import type { WeaponDef, WeaponStats } from '../../data/types';
 import { WEAPON_BY_ID, WEAPON_MAX_LEVEL } from '../../data/weapons';
 import type { Enemy } from '../Enemy';
@@ -17,6 +18,8 @@ export interface WeaponBehavior {
   projectileUpdate?(w: WeaponInstance, run: Run, p: Projectile, dt: number): boolean;
   projectileHit?(w: WeaponInstance, run: Run, p: Projectile, e: Enemy): void;
   projectileExpire?(w: WeaponInstance, run: Run, p: Projectile): void;
+  /** A projectile ran into a wall at (x,z). Return true to keep it alive (bounce/return). */
+  projectileWall?(w: WeaponInstance, run: Run, p: Projectile, x: number, z: number): boolean;
 }
 
 const REGISTRY: Record<string, WeaponBehavior> = {};
@@ -45,9 +48,12 @@ export class WeaponInstance {
   aimX = 0;
   aimZ = 1;
   aimAt = -1;
+  /** Hits ignore walls (WeaponDef.passWalls, else WALLS.passBehaviors). */
+  readonly passWalls: boolean;
 
   constructor(public def: WeaponDef, public source: number) {
     this.behavior = getBehavior(def.behavior);
+    this.passWalls = def.passWalls ?? WALLS.passBehaviors.includes(def.behavior);
     this.stats = { ...def.base };
     this.refreshDamage();
   }

@@ -1,5 +1,5 @@
 import { registerBehavior } from '../Weapon';
-import { hitCircle, hitLine, aim } from './util';
+import { hitCircle, hitLine, aim, reaches, clipShot } from './util';
 import { TAU } from '../../../core/math';
 
 // Rune Blade / Soulreaver: arc slashes around the hero.
@@ -27,6 +27,7 @@ registerBehavior('slash', {
             d = Math.atan2(Math.sin(d), Math.cos(d));
             if (Math.abs(d) > arc / 2 + 0.2) return false;
           }
+          if (!reaches(run, w, p.x, p.z, e)) return false;
           run.combat.hit(e, w.dmg, 1, e.x - p.x, e.z - p.z);
           return false;
         });
@@ -56,7 +57,7 @@ registerBehavior('fists', {
     const range = w.p('range', 2.4) * Math.sqrt(w.area(run));
     for (let i = 0; i < n; i++) {
       run.later(i * w.p('interval', 0.09), () => {
-        const t = run.enemies.nearest(p.x, p.z, range + 1);
+        const t = run.enemies.nearest(p.x, p.z, range + 1, undefined, !w.passWalls);
         let dx = p.fx;
         let dz = p.fz;
         if (t) {
@@ -65,7 +66,8 @@ registerBehavior('fists', {
           dz = (t.z - p.z) / d;
         }
         const side = i % 2 ? 0.35 : -0.35;
-        const reach = Math.min(range, t ? Math.hypot(t.x - p.x, t.z - p.z) : 1.3);
+        let reach = Math.min(range, t ? Math.hypot(t.x - p.x, t.z - p.z) : 1.3);
+        reach *= clipShot(run, w, p.x, p.z, p.x + dx * reach, p.z + dz * reach);
         const hx = p.x + dx * reach - dz * side;
         const hz = p.z + dz * reach + dx * side;
         hitCircle(run, w, hx, hz, 0.9 * w.area(run));
@@ -101,18 +103,19 @@ registerBehavior('lance', {
       run.later(w.evo ? 0 : i * 0.12, () => {
         const dx = Math.cos(a);
         const dz = Math.sin(a);
-        hitLine(run, w, p.x, p.z, p.x + dx * len, p.z + dz * len, width);
+        const reach = len * clipShot(run, w, p.x, p.z, p.x + dx * len, p.z + dz * len);
+        hitLine(run, w, p.x, p.z, p.x + dx * reach, p.z + dz * reach, width);
         const ef = run.effects.add('lance', p.x, p.z, 0.25, w.def.color);
         ef.angle = a;
-        ef.r = len;
+        ef.r = reach;
         ef.w = width;
         ef.follow = true;
         p.attackPulse = 0.2;
         run.fx.sound('thrust', 0.6);
         if (w.evo) {
           for (let k = 1; k <= 4; k++) {
-            const fx = p.x + dx * (len * k) / 4.5;
-            const fz = p.z + dz * (len * k) / 4.5;
+            const fx = p.x + dx * (reach * k) / 4.5;
+            const fz = p.z + dz * (reach * k) / 4.5;
             const pr = run.projectiles.spawn(w, fx, fz, 0, 0, 2, 'firepatch', 0xff6a1a);
             pr.hitEvery = 0.4;
             pr.pierce = -1;

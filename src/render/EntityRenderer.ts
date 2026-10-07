@@ -479,17 +479,17 @@ export class EntityRenderer {
     for (const l of hz.lasers) {
       if (!l.active) continue;
       const yaw = Math.PI / 2 - l.angle;
-      const cx = l.x + Math.cos(l.angle) * l.len * 0.5;
-      const cz = l.z + Math.sin(l.angle) * l.len * 0.5;
+      const cx = l.x + Math.cos(l.angle) * l.reach * 0.5;
+      const cz = l.z + Math.sin(l.angle) * l.reach * 0.5;
       if (l.t < l.tele) {
         const k = l.t / l.tele;
-        this.glowPlane.push(cx, 0.08, cz, yaw, l.width * (0.2 + k * 0.3), 1, l.len, l.color, 0, 0, 0, 0.4 + k * 0.5 * blink);
+        this.glowPlane.push(cx, 0.08, cz, yaw, l.width * (0.2 + k * 0.3), 1, l.reach, l.color, 0, 0, 0, 0.4 + k * 0.5 * blink);
       } else {
         const fade = Math.min(1, (l.tele + l.dur - l.t) * 4);
-        this.glowBoxTop.push(cx, 0.9, cz, yaw, l.width * fade, l.width * 0.8 * fade, l.len, l.color, 0, 0, 0, 1);
-        this.glowBox.push(cx, 0.9, cz, yaw, l.width * 0.35 * fade, l.width * 0.35, l.len, 0xffffff, 0, 0, 0, 1);
-        this.glowPlane.push(cx, 0.06, cz, yaw, l.width * 2.4, 1, l.len, l.color, 0, 0, 0, 0.5);
-        this.lights.request(cx, 1.2, cz, l.color, 1.6, l.len * 0.8, this.run.player.x, this.run.player.z);
+        this.glowBoxTop.push(cx, 0.9, cz, yaw, l.width * fade, l.width * 0.8 * fade, l.reach, l.color, 0, 0, 0, 1);
+        this.glowBox.push(cx, 0.9, cz, yaw, l.width * 0.35 * fade, l.width * 0.35, l.reach, 0xffffff, 0, 0, 0, 1);
+        this.glowPlane.push(cx, 0.06, cz, yaw, l.width * 2.4, 1, l.reach, l.color, 0, 0, 0, 0.5);
+        this.lights.request(cx, 1.2, cz, l.color, 1.6, l.reach * 0.8, this.run.player.x, this.run.player.z);
       }
     }
     for (const s of hz.shocks) {

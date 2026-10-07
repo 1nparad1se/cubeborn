@@ -3,7 +3,7 @@ import type { Run } from '../../Run';
 import type { Enemy } from '../../Enemy';
 import type { Projectile } from '../../Projectiles';
 import type { Effect } from '../../Effects';
-import { explosionFx, hitCircle, hitLine } from './util';
+import { clipShot, explosionFx, hitCircle, hitLine } from './util';
 import { TAU } from '../../../core/math';
 
 function strikeAt(w: WeaponInstance, run: Run, x: number, z: number) {
@@ -78,7 +78,8 @@ registerBehavior('chain', {
       run.later(i * 0.12, () => {
         visited.clear();
         let from = { x: pl.x, z: pl.z };
-        let cur: Enemy | null = run.enemies.nearest(pl.x, pl.z, 9, visited);
+        const los = !w.passWalls;
+        let cur: Enemy | null = run.enemies.nearest(pl.x, pl.z, 9, visited, los);
         let left = hops;
         while (cur && left-- > 0) {
           visited.add(cur.uid);
@@ -90,7 +91,7 @@ registerBehavior('chain', {
           run.combat.hit(cur, w.dmg, 1, cur.x - from.x, cur.z - from.z);
           run.fx.burst(cur.x, 0.9, cur.z, w.def.color, 4, 3, 0.1, 0.25, 'glow');
           if (w.evo) {
-            const fork = run.enemies.nearest(cur.x, cur.z, range, visited);
+            const fork = run.enemies.nearest(cur.x, cur.z, range, visited, los);
             if (fork) {
               visited.add(fork.uid);
               const ef2 = run.effects.add('bolt', cur.x, cur.z, 0.2, 0xffffff);
@@ -102,7 +103,7 @@ registerBehavior('chain', {
             }
           }
           from = { x: cur.x, z: cur.z };
-          cur = run.enemies.nearest(cur.x, cur.z, range, visited);
+          cur = run.enemies.nearest(cur.x, cur.z, range, visited, los);
         }
         run.fx.light(pl.x, pl.z, w.def.color, 1.5, 6, 0.15);
         run.fx.sound('zap', 0.4);
@@ -124,7 +125,7 @@ registerBehavior('beam', {
     const n = w.amount(run);
     const beams: BeamState[] = (w.state.beams ??= []);
     const dur = w.duration(run);
-    const t0 = run.enemies.nearest(pl.x, pl.z, 12);
+    const t0 = run.enemies.nearest(pl.x, pl.z, 12, undefined, !w.passWalls);
     const base = t0 ? Math.atan2(t0.z - pl.z, t0.x - pl.x) : Math.atan2(pl.fz, pl.fx);
     for (let i = 0; i < n; i++) {
       const ef = run.effects.add('beam', pl.x, pl.z, dur, w.def.color);
@@ -150,7 +151,7 @@ registerBehavior('beam', {
       }
       if (w.evo) b.angle += 1.1 * dt;
       else {
-        const t = run.enemies.nearest(pl.x, pl.z, len);
+        const t = run.enemies.nearest(pl.x, pl.z, len, undefined, !w.passWalls);
         if (t) {
           const want = Math.atan2(t.z - pl.z, t.x - pl.x);
           let d = want - b.angle;
@@ -158,8 +159,9 @@ registerBehavior('beam', {
           b.angle += d * Math.min(1, 4 * dt) + (b.idx ? 0.25 * b.idx * dt : 0);
         }
       }
-      const ex = pl.x + Math.cos(b.angle) * len;
-      const ez = pl.z + Math.sin(b.angle) * len;
+      const reach = len * clipShot(run, w, pl.x, pl.z, pl.x + Math.cos(b.angle) * len, pl.z + Math.sin(b.angle) * len);
+      const ex = pl.x + Math.cos(b.angle) * reach;
+      const ez = pl.z + Math.sin(b.angle) * reach;
       b.ef.x = pl.x;
       b.ef.z = pl.z;
       b.ef.x2 = ex;

@@ -1,7 +1,7 @@
 import { registerBehavior, type WeaponInstance } from '../Weapon';
 import type { Run } from '../../Run';
 import type { Projectile } from '../../Projectiles';
-import { aim, explosionFx, hitCircle } from './util';
+import { aim, clipShot, explosionFx, hitCircle } from './util';
 import { TAU } from '../../../core/math';
 
 function shoot(w: WeaponInstance, run: Run, x: number, z: number, ang: number, speed: number, life: number, vis: string): Projectile {
@@ -220,6 +220,14 @@ registerBehavior('boomerang', {
       });
     }
   },
+  projectileWall(w, run, p) {
+    // outgoing glaives turn back at a wall; returning and spiralling ones are recalled through it
+    if (!w.evo && p.e === 0) {
+      p.e = 1;
+      p.hitIds.length = 0;
+    }
+    return true;
+  },
   projectileUpdate(w, run, p, dt) {
     const pl = run.player;
     if (w.evo) {
@@ -278,14 +286,15 @@ registerBehavior('wisp', {
   fire(w, run) {
     const range = w.p('range', 9);
     for (const wp of (w.state.wisps ?? []) as Projectile[]) {
-      const t = run.enemies.nearest(wp.x, wp.z, range);
+      const t = run.enemies.nearest(wp.x, wp.z, range, undefined, !w.passWalls);
       if (!t) continue;
       const dx = t.x - wp.x;
       const dz = t.z - wp.z;
       const d = Math.hypot(dx, dz) || 1;
       if (w.evo) {
-        const ex = wp.x + (dx / d) * range;
-        const ez = wp.z + (dz / d) * range;
+        const reach = range * clipShot(run, w, wp.x, wp.z, wp.x + (dx / d) * range, wp.z + (dz / d) * range);
+        const ex = wp.x + (dx / d) * reach;
+        const ez = wp.z + (dz / d) * reach;
         const ef = run.effects.add('beam', wp.x, wp.z, 0.2, w.def.color);
         ef.x2 = ex;
         ef.z2 = ez;
@@ -293,7 +302,7 @@ registerBehavior('wisp', {
         ef.y = 1.2;
         run.enemies.forEachInRadius((wp.x + ex) / 2, (wp.z + ez) / 2, range / 2 + 0.5, (e) => {
           const t2 = ((e.x - wp.x) * dx + (e.z - wp.z) * dz) / d;
-          if (t2 < 0 || t2 > range) return false;
+          if (t2 < 0 || t2 > reach) return false;
           const px = wp.x + (dx / d) * t2 - e.x;
           const pz = wp.z + (dz / d) * t2 - e.z;
           if (px * px + pz * pz < (0.4 + e.radius) ** 2) run.combat.hit(e, w.dmg, 1, dx, dz);

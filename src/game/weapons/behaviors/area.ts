@@ -2,7 +2,7 @@ import { registerBehavior, type WeaponInstance } from '../Weapon';
 import type { Run } from '../../Run';
 import type { Projectile } from '../../Projectiles';
 import type { Effect } from '../../Effects';
-import { explosionFx, groundTarget, hitCircle } from './util';
+import { explosionFx, groundTarget, hitCircle, reaches } from './util';
 import { TAU } from '../../../core/math';
 
 // Whirling Saws / Maelstrom Saws: blades orbiting the hero.
@@ -61,6 +61,7 @@ registerBehavior('aura', {
     const pl = run.player;
     const r = w.p('radius', 2.2) * w.area(run);
     run.enemies.forEachInRadius(pl.x, pl.z, r, (e) => {
+      if (!reaches(run, w, pl.x, pl.z, e)) return false;
       run.combat.hit(e, w.dmg, 1, e.x - pl.x, e.z - pl.z);
       if (w.evo && e.alive) {
         e.slowMul = Math.min(e.slowMul, w.p('slow', 0.6));
@@ -115,6 +116,7 @@ registerBehavior('nova', {
       run.enemies.forEachInRadius(wv.x, wv.z, r1, (e) => {
         const d = Math.hypot(e.x - wv.x, e.z - wv.z);
         if (d + e.radius < r0) return false;
+        if (!reaches(run, w, wv.x, wv.z, e)) return false;
         run.combat.hit(e, w.dmg, 1, e.x - wv.x, e.z - wv.z);
         return false;
       });
@@ -192,6 +194,11 @@ registerBehavior('tornado', {
       return false;
     });
     return p.life > 0;
+  },
+  projectileWall(w, run, p) {
+    // tornadoes veer off walls instead of dissolving
+    p.a += Math.PI * (0.75 + run.rng.next() * 0.5);
+    return true;
   },
 });
 

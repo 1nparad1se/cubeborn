@@ -17,15 +17,16 @@ export function aim(w: WeaponInstance, run: Run, range = 14): Aim {
   tmp.target = null;
   w.aimAt = run.time;
   let t: Enemy | null = null;
+  const los = !w.passWalls;
   switch (w.def.targeting) {
     case 'nearest':
-      t = run.enemies.nearest(p.x, p.z, range);
+      t = run.enemies.nearest(p.x, p.z, range, undefined, los);
       break;
     case 'random':
-      t = run.enemies.randomInRadius(p.x, p.z, range);
+      t = run.enemies.randomInRadius(p.x, p.z, range, los);
       break;
     case 'strongest':
-      t = run.enemies.strongest(p.x, p.z, range);
+      t = run.enemies.strongest(p.x, p.z, range, los);
       break;
     default:
       break;
@@ -64,11 +65,24 @@ export function groundTarget(run: Run, range = 12): { x: number; z: number } {
   return { x: p.x + Math.cos(a) * r, z: p.z + Math.sin(a) * r };
 }
 
-/** Damages enemies in a circle. Returns number hit. */
+/** Whether the weapon's hit from (x,z) reaches the enemy: walls block unless the weapon passes them. */
+export function reaches(run: Run, w: WeaponInstance, x: number, z: number, e: Enemy): boolean {
+  return w.passWalls || run.terrain.los(x, z, e.x, e.z);
+}
+
+/** Fraction (0..1) of the segment a straight attack travels before a wall stops it. */
+export function clipShot(run: Run, w: WeaponInstance, x0: number, z0: number, x1: number, z1: number): number {
+  if (w.passWalls) return 1;
+  const t = run.terrain.shotRay(x0, z0, x1, z1);
+  return t >= 1 ? 1 : Math.max(0, t - 0.02);
+}
+
+/** Damages enemies in a circle (walls shield enemies from the centre). Returns number hit. */
 export function hitCircle(run: Run, w: WeaponInstance, x: number, z: number, r: number, mult = 1, rehit = 0): number {
   let n = 0;
   const time = run.time;
   run.enemies.forEachInRadius(x, z, r, (e) => {
+    if (r > 0.5 && !reaches(run, w, x, z, e)) return false;
     if (rehit > 0) {
       if (time - e.lastHit[w.source] < rehit) return false;
       e.lastHit[w.source] = time;
@@ -80,9 +94,14 @@ export function hitCircle(run: Run, w: WeaponInstance, x: number, z: number, r: 
   return n;
 }
 
-/** Damages enemies along a segment. */
+/** Damages enemies along a segment, cut short at the first wall. */
 export function hitLine(run: Run, w: WeaponInstance, x0: number, z0: number, x1: number, z1: number, width: number, mult = 1, rehit = 0): number {
   let n = 0;
+  const k = clipShot(run, w, x0, z0, x1, z1);
+  if (k < 1) {
+    x1 = x0 + (x1 - x0) * k;
+    z1 = z0 + (z1 - z0) * k;
+  }
   const cx = (x0 + x1) / 2;
   const cz = (z0 + z1) / 2;
   const half = Math.hypot(x1 - x0, z1 - z0) / 2;

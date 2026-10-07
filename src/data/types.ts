@@ -97,6 +97,8 @@ export interface WeaponDef {
   tags?: string[];
   /** Hit sound id. */
   sfx?: string;
+  /** Hits ignore walls (default from WALLS.passBehaviors). */
+  passWalls?: boolean;
 }
 
 // ---------------------------------------------------------------- passives

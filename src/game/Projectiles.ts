@@ -1,3 +1,4 @@
+import { WALLS } from '../config/walls';
 import type { Enemy } from './Enemy';
 import type { Run } from './Run';
 import { makeDamage, type DamageInfo } from './types';
@@ -22,6 +23,8 @@ export class Projectile {
   /** >0: can re-hit the same enemy after this many seconds (uses enemy.lastHit). */
   hitEvery = 0;
   collide = true;
+  /** Flies through walls (lobbed/arcing projectiles). Weapons with passWalls never stop either. */
+  passWalls = false;
   custom = false;
   homing = 0;
   target: Enemy | null = null;
@@ -68,6 +71,7 @@ export class Projectiles {
     p.hitIds.length = 0;
     p.hitEvery = 0;
     p.collide = true;
+    p.passWalls = false;
     p.custom = false;
     p.homing = 0;
     p.target = null;
@@ -120,6 +124,8 @@ export class Projectiles {
       }
       p.age += dt;
       p.life -= dt;
+      const ox = p.x;
+      const oz = p.z;
       if (p.custom && p.owner?.behavior.projectileUpdate) {
         if (!p.owner.behavior.projectileUpdate(p.owner, run, p, dt)) this.kill(p);
       } else {
@@ -132,6 +138,10 @@ export class Projectiles {
         }
       }
       p.yaw += p.spin * dt;
+      if (p.active && p.collide && !p.passWalls && (p.x !== ox || p.z !== oz) && !(p.owner?.passWalls ?? false)) {
+        const t = run.terrain.shotRay(ox, oz, p.x, p.z);
+        if (t < 1) this.hitWall(p, ox, oz, Math.max(0, t - 0.03));
+      }
       if (p.active && p.life <= 0) this.kill(p);
       if (p.active && p.collide) this.collide(p);
       if (p.active) list[w++] = p;
@@ -140,10 +150,23 @@ export class Projectiles {
     list.length = w;
   }
 
+  /** Stops a projectile at a wall: impact sparks, then the behaviour may keep it (bounce/return). */
+  private hitWall(p: Projectile, ox: number, oz: number, t: number) {
+    const run = this.run;
+    const hx = ox + (p.x - ox) * t;
+    const hz = oz + (p.z - oz) * t;
+    if (p.owner?.behavior.projectileWall?.(p.owner, run, p, hx, hz)) return;
+    p.x = hx;
+    p.z = hz;
+    run.fx.burst(hx, Math.max(0.4, p.y), hz, p.color, WALLS.impactParticles, 2.5, 0.1, 0.25, 'glow');
+    run.fx.burst(hx, Math.max(0.4, p.y), hz, 0x8a8478, 3, 2, 0.14, 0.4, 'debris');
+    this.kill(p);
+  }
+
   private steer(p: Projectile, dt: number) {
     const run = this.run;
     if (!p.target || !p.target.alive || p.target.uid !== p.targetUid) {
-      p.target = run.enemies.nearest(p.x, p.z, 10);
+      p.target = run.enemies.nearest(p.x, p.z, 10, undefined, !(p.owner?.passWalls ?? false));
       p.targetUid = p.target?.uid ?? 0;
     }
     const t = p.target;
@@ -165,7 +188,10 @@ export class Projectiles {
     const run = this.run;
     const time = run.time;
     const beh = p.owner?.behavior;
+    const wallsBlock = p.radius > 0.6 && !p.passWalls && !(p.owner?.passWalls ?? false);
     run.enemies.forEachInRadius(p.x, p.z, p.radius, (e) => {
+      // big area projectiles (pools, tornadoes, crescents) don't reach behind walls
+      if (wallsBlock && !run.terrain.los(p.x, p.z, e.x, e.z)) return false;
       if (p.hitEvery > 0) {
         const src = p.dmg.source;
         if (time - e.lastHit[src] < p.hitEvery) return false;

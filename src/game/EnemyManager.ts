@@ -130,9 +130,11 @@ export class EnemyManager {
     });
   }
 
-  nearest(x: number, z: number, maxR = 30, exclude?: Set<number>): Enemy | null {
+  /** Nearest targetable enemy. `los`: only enemies with a clear shot from (x,z) (see Terrain.los). */
+  nearest(x: number, z: number, maxR = 30, exclude?: Set<number>, los = false): Enemy | null {
     let best: Enemy | null = null;
     let bd = maxR * maxR;
+    const t = this.run.terrain;
     // expanding search keeps it cheap in dense crowds
     for (let r = 4; r <= maxR + 4; r *= 2) {
       this.grid.query(x, z, Math.min(r, maxR), (i) => {
@@ -140,7 +142,7 @@ export class EnemyManager {
         if (!e.alive || this.isProp(e)) return;
         if (exclude && exclude.has(e.uid)) return;
         const d = (e.x - x) ** 2 + (e.z - z) ** 2;
-        if (d < bd) {
+        if (d < bd && (!los || t.los(x, z, e.x, e.z))) {
           bd = d;
           best = e;
         }
@@ -156,12 +158,14 @@ export class EnemyManager {
   }
 
   /** Random targetable enemy within radius of point (used for strikes/random targeting). */
-  randomInRadius(x: number, z: number, r: number): Enemy | null {
+  randomInRadius(x: number, z: number, r: number, los = false): Enemy | null {
     let count = 0;
     let pick: Enemy | null = null;
     const rng = this.run.rng;
+    const t = this.run.terrain;
     this.forEachInRadius(x, z, r, (e) => {
       if (this.isProp(e)) return;
+      if (los && !t.los(x, z, e.x, e.z)) return;
       count++;
       if (rng.next() * count < 1) pick = e;
     });
@@ -188,11 +192,14 @@ export class EnemyManager {
     return b ? { x: b.x, z: b.z } : null;
   }
 
-  strongest(x: number, z: number, r: number): Enemy | null {
+  strongest(x: number, z: number, r: number, los = false): Enemy | null {
     let best: Enemy | null = null;
+    const t = this.run.terrain;
     this.forEachInRadius(x, z, r, (e) => {
       if (this.isProp(e)) return;
-      if (!best || e.hp > best.hp) best = e;
+      if (best && e.hp <= best.hp) return;
+      if (los && !t.los(x, z, e.x, e.z)) return;
+      best = e;
     });
     return best;
   }
@@ -274,7 +281,7 @@ export class EnemyManager {
       // contact damage
       if (e.damage > 0 && !frozen && e.touchCd <= 0) {
         const rr = e.radius + p.radius;
-        if (d2 < rr * rr) {
+        if (d2 < rr * rr && (rr < 0.95 || run.terrain.los(e.x, e.z, p.x, p.z))) {
           e.touchCd = BALANCE.contactInterval;
           const dealt = p.hurt(e.damage, e);
           if (dealt > 0 && e.hasElite('vampiric')) e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.05);
@@ -399,7 +406,13 @@ export class EnemyManager {
           e.vz += ux * speed * 0.4 * s;
         }
         e.cd -= dt;
-        if (e.cd <= 0 && dist < range + 3) {
+        const sees = dist < range + 3 && run.terrain.los(e.x, e.z, p.x, p.z);
+        if (!sees && dist < range) {
+          // no clear shot: close in along the flow field instead of shooting the wall
+          e.vx = ux * speed;
+          e.vz = uz * speed;
+        }
+        if (e.cd <= 0 && sees) {
           e.cd = ((pp.fireCd as number) ?? 2.5) * (0.85 + Math.random() * 0.3);
           const count = (pp.bullets as number) ?? 1;
           const spread = (((pp.spread as number) ?? 20) * Math.PI) / 180;

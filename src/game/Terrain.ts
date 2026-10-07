@@ -1,3 +1,4 @@
+import { WALLS } from '../config/walls';
 /** Replaces an array's contents in place (spread arguments overflow the stack on big maps). */
 export function replaceAll<T>(arr: T[], items: T[]) {
   arr.length = items.length;
@@ -87,6 +88,61 @@ export class Terrain {
     if (!this.inBounds(cx, cz)) return true;
     return this.cell[cz * this.size + cx] === CELL.wall;
   }
+  /** Cells that stop shots and sight lines (see WALLS): the border and tall solid obstacles. */
+  blocksShot(cx: number, cz: number): boolean {
+    if (!this.inBounds(cx, cz)) return true;
+    const i = cz * this.size + cx;
+    const c = this.cell[i];
+    if (c === CELL.wall) return true;
+    if (c !== CELL.solid) return false;
+    const h = this.height[i];
+    return h === 0 || h >= WALLS.minHeight;
+  }
+
+  /**
+   * Walks the grid from (x0,z0) to (x1,z1) and returns the fraction of the segment travelled
+   * before entering the first shot-blocking cell (1 = clear). The start cell never blocks, so
+   * shooters standing or hovering in an obstacle cell can still fire out of it.
+   */
+  shotRay(x0: number, z0: number, x1: number, z1: number, ignoreEnd = false): number {
+    let cx = Math.floor(x0);
+    let cz = Math.floor(z0);
+    const ex = Math.floor(x1);
+    const ez = Math.floor(z1);
+    if (cx === ex && cz === ez) return 1;
+    const dx = x1 - x0;
+    const dz = z1 - z0;
+    const stepX = dx > 0 ? 1 : -1;
+    const stepZ = dz > 0 ? 1 : -1;
+    const tdx = dx !== 0 ? Math.abs(1 / dx) : Infinity;
+    const tdz = dz !== 0 ? Math.abs(1 / dz) : Infinity;
+    let tmx = dx !== 0 ? (dx > 0 ? cx + 1 - x0 : x0 - cx) * tdx : Infinity;
+    let tmz = dz !== 0 ? (dz > 0 ? cz + 1 - z0 : z0 - cz) * tdz : Infinity;
+    for (let n = 0; n < 512; n++) {
+      let t: number;
+      if (tmx < tmz) {
+        t = tmx;
+        tmx += tdx;
+        cx += stepX;
+      } else {
+        t = tmz;
+        tmz += tdz;
+        cz += stepZ;
+      }
+      if (t > 1) return 1;
+      const end = cx === ex && cz === ez;
+      if (end && ignoreEnd) return 1;
+      if (this.blocksShot(cx, cz)) return t;
+      if (end) return 1;
+    }
+    return 1;
+  }
+
+  /** True when nothing blocks a shot between the points; the target's own cell is ignored. */
+  los(x0: number, z0: number, x1: number, z1: number): boolean {
+    return this.shotRay(x0, z0, x1, z1, true) >= 1;
+  }
+
   walkableAt(x: number, z: number): boolean {
     return !this.blocksWalker(Math.floor(x), Math.floor(z));
   }
