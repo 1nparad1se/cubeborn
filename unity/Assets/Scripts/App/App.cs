@@ -148,7 +148,11 @@ namespace Cubeborn
             lastH = Screen.height;
             ApplySafeArea();
             Phase("ready");
-            if (shotsDir != null) StartCoroutine(Shots());
+            if (shotsDir != null)
+            {
+                StartCoroutine(FrameProbe());
+                StartCoroutine(Shots());
+            }
         }
 
         // CI diagnostics: a watchdog thread reports where the main thread is if it stalls.
@@ -628,7 +632,7 @@ namespace Cubeborn
         void Update()
         {
             frameNo++;
-            if (shotsDir != null && frameNo <= 3) Phase("frame" + frameNo);
+            if (frameNo <= 3) Phase("frame" + frameNo);
             Timers.Tick();
             if (Screen.width != lastW || Screen.height != lastH || Screen.safeArea != lastSafe)
             {
@@ -647,7 +651,9 @@ namespace Cubeborn
 
             double realDt = Math.Min(0.1, Math.Max(0, Time.unscaledDeltaTime));
             double dt = Math.Min(realDt, 1.0 / 20);
+            if (frameNo <= 3) Phase("input" + frameNo);
             input.Update();
+            if (frameNo <= 3) Phase("view" + frameNo);
             var r = run;
             if (r != null && mode != Mode.Menu)
             {
@@ -678,6 +684,16 @@ namespace Cubeborn
                 r.hitSoundBudget = r.killSoundBudget = r.xpSoundBudget = 0;
             }
             else view.Frame(realDt);
+            if (frameNo <= 3) Phase("updated" + frameNo);
+        }
+
+        IEnumerator FrameProbe()
+        {
+            for (int i = 0; i < 3; i++)
+            {
+                yield return new WaitForEndOfFrame();
+                Phase("endframe" + (i + 1));
+            }
         }
 
         void OnApplicationPause(bool pause)

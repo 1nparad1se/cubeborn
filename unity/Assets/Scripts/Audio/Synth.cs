@@ -313,7 +313,7 @@ namespace Cubeborn.Sound
 
         void Begin(Voice v, long at)
         {
-            double sr = sampleRate;
+            double sr = sampleRate > 0 ? sampleRate : 48000;
             v.start = at;
             long n = Math.Max(1, (long)(v.dur * sr));
             long na = Math.Max(1, Math.Min(n - 1, (long)(v.attack * sr)));
@@ -375,7 +375,7 @@ namespace Cubeborn.Sound
             if (sfxBuf.Length < frames) { sfxBuf = new float[frames]; musBuf = new float[frames]; }
             Array.Clear(sfxBuf, 0, frames);
             Array.Clear(musBuf, 0, frames);
-            double sr = sampleRate;
+            double sr = sampleRate > 0 ? sampleRate : 48000;
             long latency = (long)(0.02 * sr);
             lock (gate)
             {
@@ -407,7 +407,7 @@ namespace Cubeborn.Sound
                     int bar = (step / 16) % playing.prog.Length;
                     long t = nextStep + (st % 2 == 1 ? (long)(playing.swing * stepDur * sr) : 0);
                     MusicStep(playing, t, st, bar, stepDur);
-                    nextStep += (long)(stepDur * sr);
+                    nextStep += Math.Max(1, (long)(stepDur * sr));
                     step++;
                 }
                 double target = playing.bright * (0.8 + intensity * 0.5);
