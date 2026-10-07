@@ -114,7 +114,7 @@ export class Run {
   /** Multipliers for enemies spawned in the current wave. */
   waveScale: WaveScale;
   /** Developer-mode switches (all off in normal play). */
-  readonly debug = { god: false, infHp: false, xpMul: 1, freeze: false, enemyHp: 1, enemyDmg: 1 };
+  readonly debug = { god: false, infHp: false, xpMul: 1, freeze: false, enemyHp: 1, enemyDmg: 1, tainted: false };
   readonly reviveBlast = makeDamage();
   readonly nukeBlast = makeDamage();
 

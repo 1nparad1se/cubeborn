@@ -369,7 +369,7 @@ export class HeroAnimator {
       let tz = 0;
       if (d.kind === 'cape') {
         const lower = s.bone === 'capeB';
-        tx += Math.min(75, Math.max(0, fwd) * (lower ? 6 : 10)) + Math.max(0, -this.accelF) * 0.6;
+        tx += Math.min(lower ? 48 : 58, Math.max(0, fwd) * (lower ? 6 : 10)) + Math.max(0, -this.accelF) * 0.6;
         tx += Math.sin(t * 9 + (lower ? 1.4 : 0)) * Math.min(1, fwd / 4) * (lower ? 7 : 3);
         tx += this.bobVel * 2.2 + 3 + Math.sin(t * 1.3) * 1.5;
         tz = -this.turn * 10 + this.side * 5;

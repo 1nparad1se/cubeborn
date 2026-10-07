@@ -74,7 +74,7 @@ export class DevUi {
     this.badge.classList.toggle('in-run', this.inRun);
     if (on) {
       clear(this.badge);
-      this.badge.append(h('span.dev-badge-main', 'DEVELOPER MODE · TEST'));
+      this.badge.append(h('span.dev-badge-main', { onclick: () => this.setPanel(!dev.panelOpen), title: 'Developer Tools' }, 'DEVELOPER MODE · TEST'));
       if (dev.toggles.god) this.badge.append(h('span.dev-badge-god', 'GOD MODE ON'));
       if (dev.paused) this.badge.append(h('span.dev-badge-god', 'PAUSED'));
       else if (dev.timeScale !== 1) this.badge.append(h('span.dev-badge-time', '×' + dev.timeScale));

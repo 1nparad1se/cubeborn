@@ -2881,6 +2881,8 @@ h2.glow {
   box-shadow: 0 0 0 2px #08090b;
 }
 .dev-badge-main {
+  pointer-events: auto;
+  cursor: pointer;
   background: #c7354a;
   color: #fff;
 }

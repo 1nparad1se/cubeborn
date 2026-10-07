@@ -21,7 +21,7 @@ import { generateTerrain } from './game/mapgen/generators';
 import type { BossController } from './game/bosses/Boss';
 import { WAVE_TYPE_COLOR, MODIFIERS, type RunMode, type Wave } from './game/Waves';
 
-export const VERSION = 'v2.0.0';
+export const VERSION = 'v2.1.0';
 
 /** Discrete camera zoom steps for the mouse wheel (camera distance multipliers). */
 const ZOOM_STEPS = [0.75, 0.88, 1, 1.15, 1.35];
@@ -140,6 +140,8 @@ export class App implements MenuApi {
   private initDev() {
     dev.attach(this.profile);
     if (!dev.available) return;
+    // console access for automated tests: window.cubebornDev
+    (window as unknown as { cubebornDev: typeof dev }).cubebornDev = dev;
     const kb = () => this.profile.data.settings.keybinds;
     this.devUi = new DevUi(this.root, () => ({ panel: kb().devPanel[0] ?? '', debug: kb().devDebug[0] ?? '', god: kb().devGod[0] ?? '' }));
     dev.onProfileChange = () => {
@@ -422,6 +424,14 @@ export class App implements MenuApi {
     this.finished = true;
     this.input.setEnabled(false);
     const p = this.profile;
+    // results of a run played with developer tools go to a throwaway copy of the save
+    const sandbox = run.debug.tainted && !p.testBase;
+    if (sandbox) {
+      const settings = p.data.settings;
+      p.testBase = p.data;
+      p.data = JSON.parse(JSON.stringify(p.data));
+      p.data.settings = settings;
+    }
     const s = run.summary();
     const diff = run.diff;
     const goldEarned = Run.goldReward(s, diff.reward);
@@ -471,6 +481,10 @@ export class App implements MenuApi {
     const achievements = p.checkAchievements();
     p.data.seenIntro = true;
     p.save();
+    if (sandbox) {
+      p.data = p.testBase!;
+      p.testBase = null;
+    }
     if (silent) return;
     this.mode = 'results';
     audio.playMusic(victory ? 'victory' : 'menu');

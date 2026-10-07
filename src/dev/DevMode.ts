@@ -88,8 +88,11 @@ export class DevMode {
     if (!this.available || !this.profile || on === this.enabled) return;
     const p = this.profile;
     if (on) {
+      // the settings object is shared by reference across the app, so it stays the same object
+      const settings = p.data.settings;
       p.testBase = clone(p.data);
       p.data = clone(p.data);
+      p.data.settings = settings;
       this.enabled = true;
     } else {
       this.restoreSave();
@@ -134,6 +137,8 @@ export class DevMode {
     this.run = run;
     const on = this.enabled;
     const d = run.debug;
+    // a run touched by developer mode never pays out into the normal save
+    if (on) d.tainted = true;
     d.god = on && this.toggles.god;
     d.infHp = on && this.toggles.infHp;
     d.xpMul = on && this.toggles.infXp ? INF_XP_MUL : 1;

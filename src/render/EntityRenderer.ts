@@ -74,7 +74,7 @@ export class EntityRenderer {
     const rigDef = heroRig(run.hero.model) ?? heroRig(run.hero.id);
     if (rigDef) {
       this.heroTex = makeHeroTexture();
-      this.rig = new HeroRig(rigDef, this.heroTex, { shadows: quality !== 'low', rim: 0.45 });
+      this.rig = new HeroRig(rigDef, this.heroTex, { shadows: quality !== 'low', rim: 0.28 });
       this.anim = new HeroAnimator(this.rig);
       this.anim.onEvent = (ev) => this.onHeroEvent(ev);
       this.group.add(this.rig.root);
@@ -187,7 +187,8 @@ export class EntityRenderer {
     const rig = this.rig!;
     const a = this.anim!;
     // animation runs on real time slowed a touch when the game is slowed, never frozen by hit-stop
-    const adt = run.state === 'playing' || run.state === 'dead' || run.state === 'victory' ? dt : 0;
+    // the hero keeps near real-time pace through the slow-motion ending so death and victory read
+    const adt = run.ending ? (dt / Math.max(0.2, run.timeScale)) * 0.8 : dt;
     rig.root.position.set(p.x, 0, p.z);
     const yaw = Math.atan2(p.fx, p.fz);
     const dy = angleDelta(this.heroYaw, yaw) * Math.min(1, adt * 14);
@@ -209,7 +210,7 @@ export class EntityRenderer {
         a.reset();
         this.cues.revive++;
       }
-      if (run.state === 'victory' && !this.victoryPlayed) {
+      if ((run.state === 'victory' || run.ending) && !this.victoryPlayed) {
         this.victoryPlayed = true;
         a.play('victory', { force: true });
       }
