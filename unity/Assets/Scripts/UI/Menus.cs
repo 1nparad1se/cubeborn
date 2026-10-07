@@ -170,6 +170,11 @@ namespace Cubeborn.UI
             Btn(grid.transform, I18n.T("menu_achievements") + " " + p.data.achievements.Count + "/" + Content.Achievements.Count, () => Open(Screen.Achievements), Kit.BtnStyle.Normal, 9);
             Btn(grid.transform, I18n.T("menu_settings"), () => Open(Screen.Settings), Kit.BtnStyle.Normal, 9);
 
+            if (!Application.isMobilePlatform)
+            {
+                var quit = Btn(current, I18n.T("btn_quit_game"), () => W.Confirm(api, I18n.T("btn_quit_game") + "?", Application.Quit), Kit.BtnStyle.Ghost, 9);
+                Kit.Place((RectTransform)quit.transform, 0, 0, 110, 36, 8, 8, 0, 0);
+            }
             var foot = Kit.HBox(current, 12, 0, TextAnchor.LowerRight, "foot");
             Kit.Place((RectTransform)foot.transform, 1, 0, 500, 40, -4, 4);
             W.GoldChip(foot.transform, p.data.gold);

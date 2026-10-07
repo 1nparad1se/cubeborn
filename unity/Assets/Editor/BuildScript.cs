@@ -162,4 +162,25 @@ public static class BuildScript
             options = BuildOptions.None,
         });
     }
+
+    public static void BuildWindows()
+    {
+        Prepare();
+        PlayerSettings.fullScreenMode = FullScreenMode.FullScreenWindow;
+        PlayerSettings.defaultScreenWidth = 1600;
+        PlayerSettings.defaultScreenHeight = 900;
+        PlayerSettings.resizableWindow = true;
+        PlayerSettings.runInBackground = false;
+        PlayerSettings.SetScriptingBackend(NamedBuildTarget.Standalone, ScriptingImplementation.Mono2x);
+        PlayerSettings.SetUseDefaultGraphicsAPIs(BuildTarget.StandaloneWindows64, true);
+        var path = OutputPath("build/StandaloneWindows64/Cubeborn.exe");
+        if (!path.EndsWith(".exe")) path += ".exe";
+        Run(new BuildPlayerOptions
+        {
+            scenes = new[] { ScenePath },
+            locationPathName = path,
+            target = BuildTarget.StandaloneWindows64,
+            options = BuildOptions.None,
+        });
+    }
 }

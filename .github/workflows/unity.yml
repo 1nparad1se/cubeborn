@@ -1,4 +1,4 @@
-name: Unity build (Android APK + iOS IPA)
+name: Unity build (Windows)
 
 on:
   push:
@@ -26,10 +26,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: Android
-            method: BuildScript.BuildAndroid
-          - platform: iOS
-            method: BuildScript.BuildIOS
+          - platform: StandaloneWindows64
+            method: BuildScript.BuildWindows
           - platform: StandaloneLinux64
             method: BuildScript.BuildLinux
     steps:
@@ -61,17 +59,16 @@ jobs:
         run: |
           sudo chown -R "$(id -u)" build || true
           ls -la build/${{ matrix.platform }} || true
-          if [ "${{ matrix.platform }}" = "iOS" ]; then tar -czf xcode.tgz -C build/iOS .; fi
+          if [ "${{ matrix.platform }}" = "StandaloneWindows64" ]; then
+            rm -rf build/StandaloneWindows64/*_BurstDebugInformation_DoNotShip
+            (cd build/StandaloneWindows64 && zip -qr "$GITHUB_WORKSPACE/Cubeborn-Windows.zip" .)
+            ls -la Cubeborn-Windows.zip
+          fi
       - uses: actions/upload-artifact@v4
-        if: matrix.platform == 'Android'
+        if: matrix.platform == 'StandaloneWindows64'
         with:
-          name: Cubeborn-apk
-          path: build/Android/*.apk
-      - uses: actions/upload-artifact@v4
-        if: matrix.platform == 'iOS'
-        with:
-          name: Cubeborn-xcode
-          path: xcode.tgz
+          name: Cubeborn-windows
+          path: Cubeborn-Windows.zip
       - uses: actions/upload-artifact@v4
         if: matrix.platform == 'StandaloneLinux64'
         with:
@@ -130,49 +127,19 @@ jobs:
             gh release create unity-shots --repo "${{ github.repository }}" --prerelease --title "Unity CI screenshots" --notes "Latest CI screenshots"
           ls shots/* > /dev/null 2>&1 && gh release upload unity-shots shots/* --clobber --repo "${{ github.repository }}"
 
-  ipa:
-    needs: build
-    if: ${{ !cancelled() }}
-    runs-on: macos-15
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: Cubeborn-xcode
-      - name: Build unsigned IPA
-        run: |
-          mkdir xcode && tar -xzf xcode.tgz -C xcode
-          cd xcode
-          PROJ=$(find . -maxdepth 2 -name "Unity-iPhone.xcodeproj" | head -1)
-          cd "$(dirname "$PROJ")"
-          xcodebuild -project Unity-iPhone.xcodeproj -scheme Unity-iPhone -configuration Release \
-            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/dd" \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" DEVELOPMENT_TEAM="" \
-            build | tail -50
-          APP=$(find "$RUNNER_TEMP/dd/Build/Products" -name "*.app" -maxdepth 2 | head -1)
-          mkdir -p "$RUNNER_TEMP/ipa/Payload"
-          cp -R "$APP" "$RUNNER_TEMP/ipa/Payload/"
-          cd "$RUNNER_TEMP/ipa" && zip -qr "$GITHUB_WORKSPACE/Cubeborn-Unity.ipa" Payload
-          ls -la "$GITHUB_WORKSPACE/Cubeborn-Unity.ipa"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: Cubeborn-ipa
-          path: Cubeborn-Unity.ipa
-
   release:
-    needs: [build, ipa]
-    if: ${{ !cancelled() && needs.ipa.result == 'success' }}
+    needs: build
+    if: ${{ !cancelled() && !contains(github.event.head_commit.message, '[shots-only]') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
-          path: out
+          name: Cubeborn-windows
       - name: Publish release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          APK=$(find out/Cubeborn-apk -name "*.apk" | head -1)
-          cp "$APK" Cubeborn-Unity.apk
-          gh release create "unity-${{ github.run_number }}" Cubeborn-Unity.apk out/Cubeborn-ipa/Cubeborn-Unity.ipa \
+          gh release create "unity-${{ github.run_number }}" Cubeborn-Windows.zip \
             --repo "${{ github.repository }}" --target "${{ github.sha }}" --prerelease \
-            --title "Cubeborn Unity ${{ github.run_number }}" \
-            --notes "Unity build from ${{ github.ref_name }} (${{ github.sha }}). APK for Android, unsigned IPA for Sideloadly."
+            --title "Cubeborn Unity ${{ github.run_number }} (Windows)" \
+            --notes "Unity build for Windows from ${{ github.ref_name }} (${{ github.sha }}). Unzip and run Cubeborn.exe."
