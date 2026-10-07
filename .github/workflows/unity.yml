@@ -1,0 +1,115 @@
+name: Unity build (Android APK + iOS IPA)
+
+on:
+  push:
+    branches: [main, 'claude/**']
+    paths: ['unity/**', '.github/workflows/unity.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: unity-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+  UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+  UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+
+jobs:
+  build:
+    name: Unity ${{ matrix.platform }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: Android
+            method: BuildScript.BuildAndroid
+          - platform: iOS
+            method: BuildScript.BuildIOS
+    steps:
+      - uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: false
+          tool-cache: false
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: unity/Library
+          key: Library-${{ matrix.platform }}-${{ hashFiles('unity/Packages/manifest.json', 'unity/ProjectSettings/ProjectVersion.txt') }}
+          restore-keys: Library-${{ matrix.platform }}-
+      - uses: game-ci/unity-builder@v4
+        with:
+          projectPath: unity
+          targetPlatform: ${{ matrix.platform }}
+          buildMethod: ${{ matrix.method }}
+          buildName: Cubeborn
+          versioning: Custom
+          version: 1.0.${{ github.run_number }}
+          androidVersionCode: ${{ github.run_number }}
+      - name: Pack output
+        run: |
+          sudo chown -R "$(id -u)" build || true
+          ls -la build/${{ matrix.platform }} || true
+          if [ "${{ matrix.platform }}" = "iOS" ]; then tar -czf xcode.tgz -C build/iOS .; fi
+      - uses: actions/upload-artifact@v4
+        if: matrix.platform == 'Android'
+        with:
+          name: Cubeborn-apk
+          path: build/Android/*.apk
+      - uses: actions/upload-artifact@v4
+        if: matrix.platform == 'iOS'
+        with:
+          name: Cubeborn-xcode
+          path: xcode.tgz
+
+  ipa:
+    needs: build
+    runs-on: macos-15
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: Cubeborn-xcode
+      - name: Build unsigned IPA
+        run: |
+          mkdir xcode && tar -xzf xcode.tgz -C xcode
+          cd xcode
+          PROJ=$(find . -maxdepth 2 -name "Unity-iPhone.xcodeproj" | head -1)
+          cd "$(dirname "$PROJ")"
+          xcodebuild -project Unity-iPhone.xcodeproj -scheme Unity-iPhone -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath "$RUNNER_TEMP/dd" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" DEVELOPMENT_TEAM="" \
+            build | tail -50
+          APP=$(find "$RUNNER_TEMP/dd/Build/Products" -name "*.app" -maxdepth 2 | head -1)
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/ipa/Payload/"
+          cd "$RUNNER_TEMP/ipa" && zip -qr "$GITHUB_WORKSPACE/Cubeborn-Unity.ipa" Payload
+          ls -la "$GITHUB_WORKSPACE/Cubeborn-Unity.ipa"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Cubeborn-ipa
+          path: Cubeborn-Unity.ipa
+
+  release:
+    needs: [build, ipa]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: out
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          APK=$(find out/Cubeborn-apk -name "*.apk" | head -1)
+          cp "$APK" Cubeborn-Unity.apk
+          gh release create "unity-${{ github.run_number }}" Cubeborn-Unity.apk out/Cubeborn-ipa/Cubeborn-Unity.ipa \
+            --repo "${{ github.repository }}" --target "${{ github.sha }}" --prerelease \
+            --title "Cubeborn Unity ${{ github.run_number }}" \
+            --notes "Unity build from ${{ github.ref_name }} (${{ github.sha }}). APK for Android, unsigned IPA for Sideloadly."

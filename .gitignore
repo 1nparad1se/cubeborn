@@ -2,3 +2,10 @@ node_modules
 dist
 *.zip
 build
+unity/Library/
+unity/Temp/
+unity/Logs/
+unity/obj/
+unity/UserSettings/
+unity/Build/
+unity/build/
