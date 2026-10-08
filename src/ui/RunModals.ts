@@ -9,6 +9,7 @@ import { PASSIVE_BY_ID } from '../data/passives';
 import type { AchievementDef } from '../data/types';
 import { rewardText, settingsPanel, type MenuApi } from './Menus';
 import { BALANCE } from '../config/balance';
+import { MOD_BY_ID, STAT_UPS, SKILL_MAX, type SkillDef, type SkillUp } from '../game/arpg/kits';
 
 const RARITY_COLOR: Record<string, string> = { common: '#c8ccd8', uncommon: '#6aff8a', rare: '#5ab4ff', epic: '#c77dff', legendary: '#ffb02e' };
 
@@ -52,6 +53,29 @@ export class RunModals {
   // ------------------------------------------------------------------ level up
   levelUp(run: Run, choices: Choice[], done: () => void) {
     this.banishMode = false;
+    if (choices.length === 2 && choices[0].kind === 'ult_learn' && choices[1].kind === 'ult_decline') {
+      // level 6: the Ultimate is a choice, not a given
+      const u = run.skills.kit.ult;
+      const pick = (c: Choice) => {
+        this.api.sfx(c.kind === 'ult_learn' ? 'select' : 'uiBack');
+        run.choose(c);
+        done();
+      };
+      this.open(
+        h(
+          'div.modal-back',
+          h(
+            'div.modal.levelup.ult-prompt',
+            h('h2.glow', t('arpg_ult_q')),
+            h('div.sub', t('hud_level', { n: run.player.level + 1 - run.player.pendingLevels })),
+            h('div.ult-card', h('div.choice-icon', iconImg(u.icon, u.color, 'icon lg')), h('div', h('div.choice-name', L(u.name)), h('div.choice-line', L(u.desc)), h('div.choice-line.dim', skillStatLine(run, 3, 1)))),
+            h('div.ult-hint', t('arpg_ult_hint')),
+            h('div.row.actions', h('button.btn.primary', { onclick: () => pick(choices[0]) }, t('arpg_yes')), h('button.btn', { onclick: () => pick(choices[1]) }, t('arpg_no'))),
+          ),
+        ),
+      );
+      return;
+    }
     const cards = h('div.choices');
     const actions = h('div.row.actions');
     const render = (list: Choice[]) => {
@@ -61,7 +85,7 @@ export class RunModals {
         card.style.animationDelay = i * 0.06 + 's';
         card.addEventListener('click', () => {
           if (this.banishMode) {
-            if (c.kind === 'gold' || c.kind === 'heal') return;
+            if (c.kind === 'gold' || c.kind === 'heal' || c.kind === 'skill_up' || c.kind === 'ult_learn') return;
             const next = run.banish(c.id);
             this.api.sfx('uiBack');
             this.banishMode = false;
@@ -272,6 +296,40 @@ function choiceCard(run: Run, c: Choice): HTMLElement {
     lines = c.kind === 'passive_new' ? [L(p.desc)] : statModLines(p.perLevel);
     const evo = Object.values(WEAPON_BY_ID).find((w) => w.evolution?.passive === p.id && run.weapons.has(w.id));
     if (evo) hint = '✓ ' + t('evo_for', { name: L(evo.name) });
+  } else if (c.kind === 'skill_up') {
+    const slot = +c.id;
+    const def = run.skills.skill(slot);
+    icon = iconImg(def.icon, def.color, 'icon lg');
+    name = L(def.name);
+    tag = (c.level >= SKILL_MAX ? 'MAX' : t('lvl_short', { n: c.level })) + ' · ' + ['Q', 'W', 'E'][slot];
+    lines = [upText(def.ups[c.level - 2]), skillStatLine(run, slot, c.level)];
+    color = hex(def.color);
+  } else if (c.kind === 'ult_learn') {
+    const def = run.skills.kit.ult;
+    icon = iconImg(def.icon, def.color, 'icon lg');
+    name = L(def.name);
+    tag = t('arpg_ult');
+    lines = [L(def.desc)];
+    color = '#ffd060';
+  } else if (c.kind === 'stat') {
+    const su = STAT_UPS.find((x) => x.id === c.id)!;
+    icon = iconImg(su.icon, 0xc8d0dc, 'icon lg');
+    name = L(su.name);
+    tag = t('arpg_stat');
+    lines = [t('arpg_stat_desc')];
+  } else if (c.kind === 'dodge_up') {
+    icon = iconImg('boots', 0xd8f0ff, 'icon lg');
+    name = t('arpg_dodge');
+    tag = t('lvl_short', { n: c.level + 1 });
+    lines = [t('arpg_dodge_up')];
+  } else if (c.kind === 'mod') {
+    const m = MOD_BY_ID[c.id];
+    icon = iconImg(m.icon, m.color, 'icon lg');
+    name = L(m.name);
+    tag = t('arpg_mod');
+    lines = [L(m.desc)];
+    color = hex(m.color);
+    hint = t('arpg_build_' + m.tag);
   } else if (c.kind === 'gold') {
     icon = iconImg('coin', 0xffd23d, 'icon lg');
     name = t('choice_gold');
@@ -291,6 +349,49 @@ function choiceCard(run: Run, c: Choice): HTMLElement {
     h('div.choice-icon', icon),
     h('div.choice-body', h('div.choice-head', h('span.choice-name', name), tag ? h('span.choice-tag', tag) : null), ...lines.map((l) => h('div.choice-line', l)), hint ? h('div.choice-hint', hint) : null),
   );
+}
+
+/** One-line description of a skill upgrade. */
+function upText(u: SkillUp | undefined): string {
+  if (!u) return '';
+  const pct = Math.round(u.v * 100);
+  switch (u.t) {
+    case 'dmg':
+      return t('up_dmg', { n: pct });
+    case 'cd':
+      return t('up_cd', { n: pct });
+    case 'area':
+      return t('up_area', { n: pct });
+    case 'count':
+      return t('up_count', { n: u.v });
+    case 'dur':
+      return t('up_dur', { n: pct });
+    case 'cost':
+      return t('up_cost', { n: pct });
+    case 'status':
+      return t('up_status', { st: t('st_' + u.st) });
+    case 'special':
+      return t('sp_' + u.sp);
+  }
+}
+
+/** Damage / cooldown / cost summary for a skill at a level. */
+function skillStatLine(run: Run, slot: number, level: number): string {
+  const sk = run.skills;
+  const def: SkillDef = sk.skill(slot);
+  let dmg = 1;
+  let cd = 1;
+  for (let i = 0; i < level - 1 && i < def.ups.length; i++) {
+    const u = def.ups[i];
+    if (u.t === 'dmg') dmg += u.v;
+    if (u.t === 'cd') cd -= u.v;
+  }
+  const base = def.acts.reduce((a, x) => Math.max(a, x.dmg ?? 0), 0);
+  const parts: string[] = [];
+  if (base > 0) parts.push(t('arpg_dmg', { n: Math.round(base * dmg * (1 + (run.player.level - 1) * 0.06) * run.player.stats.might) }));
+  parts.push(t('arpg_cd', { n: (def.cd * cd * run.player.stats.cooldown).toFixed(1) }));
+  if (def.cost) parts.push((sk.kit.res.id === 'heat' ? (def.cost > 0 ? '+' : '') : '') + Math.round(def.cost) + ' ' + L(sk.kit.res.name));
+  return parts.join(' · ');
 }
 
 function rewardRow(_run: Run, r: ChestReward): HTMLElement {

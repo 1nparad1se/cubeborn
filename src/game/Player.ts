@@ -3,6 +3,8 @@ import { clamp } from '../core/math';
 import type { Enemy } from './Enemy';
 import type { Run } from './Run';
 import { CELL } from './Terrain';
+import type { DamageInfo } from './types';
+import { clearLine, findPath } from './arpg/Path';
 import type { PlayerStats } from './Stats';
 
 export interface Buffs {
@@ -54,6 +56,22 @@ export class Player {
   /** Extra speed burst (wind way perk). */
   burstT = 0;
   regenAcc = 0;
+  // ---------------------------------------------------------------- action-RPG movement
+  /** Click-to-move waypoints [x0, z0, x1, z1, ...] and the next index. */
+  path: number[] = [];
+  pathI = 0;
+  private repathT = 0;
+  /** Current walking direction (unit or zero) — dodge goes this way. */
+  moveDirX = 0;
+  moveDirZ = 0;
+  /** Dash / dodge in progress. */
+  dashT = 0;
+  private dashVX = 0;
+  private dashVZ = 0;
+  private dashR = 0;
+  private dashInfo: DamageInfo | null = null;
+  private dashColor = 0xffffff;
+  private dashHit = new Set<number>();
 
   constructor(private run: Run, x: number, z: number) {
     this.x = x;
@@ -139,7 +157,7 @@ export class Player {
   }
 
   get moveSpeed(): number {
-    let s = this.run.hero.baseSpeed * this.stats.moveSpeed;
+    let s = this.run.hero.baseSpeed * this.stats.moveSpeed * this.run.skills.speedMul;
     if (this.buffs.haste > 0) s *= 1.4;
     if (this.burstT > 0) s *= 1.35;
     if (this.airborne) s *= BALANCE.jump.airSpeed;
@@ -164,16 +182,35 @@ export class Player {
     this.damageMul = (this.buffs.fury > 0 ? 1.5 : 1) * run.perks.damageMul();
     this.updateJump(dt);
 
+    if (this.dashT > 0) {
+      this.updateDash(dt);
+      this.moving = true;
+      this.anim += dt * 12;
+      this.afterMove(dt);
+      return;
+    }
+    [ix, iz] = this.steer(dt, ix, iz);
     const len = Math.hypot(ix, iz);
     if (len > 1) {
       ix /= len;
       iz /= len;
     }
     this.moving = len > 0.08;
-    if (this.moving) {
-      const l = Math.hypot(ix, iz);
-      this.fx = ix / l;
-      this.fz = iz / l;
+    this.moveDirX = this.moving ? ix / Math.max(len, 1e-6) : 0;
+    this.moveDirZ = this.moving ? iz / Math.max(len, 1e-6) : 0;
+    // the hero faces the cursor (or the locked cast direction) while walking any way
+    const sk = run.skills;
+    if (sk.lockT > 0) {
+      this.fx = sk.lockX;
+      this.fz = sk.lockZ;
+    } else {
+      const ax = run.ctl.aimX - this.x;
+      const az = run.ctl.aimZ - this.z;
+      const al = Math.hypot(ax, az);
+      if (al > 0.2) {
+        this.fx = ax / al;
+        this.fz = az / al;
+      }
     }
     const speed = this.moveSpeed;
     const onIce = t.cellAt(this.x, this.z) === CELL.ice && !this.airborne;
@@ -190,6 +227,12 @@ export class Player {
     this.moveWithTerrain(mx, mz);
     if (this.moving || Math.hypot(this.vx, this.vz) > 0.3) this.anim += dt * speed * 2.2;
     else this.anim += dt;
+    this.afterMove(dt);
+  }
+
+  private afterMove(dt: number) {
+    const run = this.run;
+    const t = run.terrain;
 
     // hazard tiles
     const cell = t.cellAt(this.x, this.z);
@@ -230,6 +273,115 @@ export class Player {
     this.z = clamp(this.z, 1, t.size - 1);
   }
 
+  clearPath() {
+    this.path.length = 0;
+    this.pathI = 0;
+  }
+
+  /** Dash: fast slide with optional damage to everything touched on the way. */
+  dash(dx: number, dz: number, dist: number, time: number, r: number, info: DamageInfo | null, color: number) {
+    this.dashT = time;
+    this.dashVX = (dx * dist) / time;
+    this.dashVZ = (dz * dist) / time;
+    this.dashR = r;
+    this.dashInfo = info;
+    this.dashColor = color;
+    this.dashHit.clear();
+    this.fx = dx;
+    this.fz = dz;
+    this.cancelJump();
+    this.clearPath();
+    this.cues.ability++;
+  }
+
+  /** Teleport to a point (or the nearest walkable spot toward it). */
+  blinkTo(x: number, z: number, color: number) {
+    const run = this.run;
+    const t = run.terrain;
+    // walk back along the line until the spot is free
+    const sx = this.x;
+    const sz = this.z;
+    let tx = x;
+    let tz = z;
+    for (let i = 0; i < 20 && t.blocksWalker(Math.floor(tx), Math.floor(tz)); i++) {
+      tx += (sx - tx) * 0.15;
+      tz += (sz - tz) * 0.15;
+    }
+    if (t.blocksWalker(Math.floor(tx), Math.floor(tz))) return;
+    run.fx.burst(this.x, 1, this.z, color, 18, 4, 0.16, 0.5, 'glow');
+    this.x = tx;
+    this.z = tz;
+    this.vx = this.vz = 0;
+    this.clearPath();
+    this.invulnT = Math.max(this.invulnT, 0.25);
+    run.fx.burst(tx, 1, tz, color, 22, 4, 0.16, 0.5, 'glow');
+    const ring = run.effects.add('ring', tx, tz, 0.35, color);
+    ring.r = 1.6;
+  }
+
+  private updateDash(dt: number) {
+    const run = this.run;
+    this.dashT -= dt;
+    const ox = this.x;
+    const oz = this.z;
+    this.moveWithTerrain(this.dashVX * dt, this.dashVZ * dt);
+    this.vx = this.dashVX * 0.3;
+    this.vz = this.dashVZ * 0.3;
+    // trail
+    run.fx.burst(this.x, 0.8, this.z, this.dashColor, 3, 1, 0.14, 0.35, 'glow');
+    if (Math.hypot(this.x - ox, this.z - oz) < 0.001) this.dashT = 0;
+    const info = this.dashInfo;
+    if (info && this.dashR > 0) {
+      run.enemies.forEachInRadius(this.x, this.z, this.dashR, (e) => {
+        if (this.dashHit.has(e.uid)) return;
+        this.dashHit.add(e.uid);
+        run.combat.hit(e, info, 1, this.dashVX, this.dashVZ);
+      });
+    }
+    if (this.dashT <= 0) {
+      this.vx *= 0.3;
+      this.vz *= 0.3;
+    }
+  }
+
+  /** Click-to-move: steering toward the next waypoint; returns the input direction. */
+  private steer(dt: number, ix: number, iz: number): [number, number] {
+    const run = this.run;
+    const c = run.ctl;
+    if (Math.hypot(ix, iz) > 0.08) {
+      this.clearPath();
+      return [ix, iz];
+    }
+    if (c.stop) this.clearPath();
+    this.repathT -= dt;
+    if (c.click || (c.move && this.repathT <= 0)) {
+      this.repathT = 0.15;
+      const t = run.terrain;
+      if (Math.hypot(c.aimX - this.x, c.aimZ - this.z) < 0.3) this.clearPath();
+      else {
+        this.path = clearLine(t, this.x, this.z, c.aimX, c.aimZ) ? [c.aimX, c.aimZ] : findPath(t, this.x, this.z, c.aimX, c.aimZ);
+        this.pathI = 0;
+      }
+    }
+    while (this.pathI < this.path.length) {
+      const tx = this.path[this.pathI];
+      const tz = this.path[this.pathI + 1];
+      const dx = tx - this.x;
+      const dz = tz - this.z;
+      const d = Math.hypot(dx, dz);
+      const last = this.pathI + 2 >= this.path.length;
+      if (d < (last ? 0.12 : 0.35)) {
+        this.pathI += 2;
+        continue;
+      }
+      // ease in on the last metre so the hero does not overshoot the click
+      const k = last ? Math.min(1, d / 0.6 + 0.25) : 1;
+      return [(dx / d) * k, (dz / d) * k];
+    }
+    if (this.path.length) this.clearPath();
+    return [0, 0];
+  }
+
   /** Applies incoming damage. Returns damage actually taken. */
   hurt(raw: number, source: Enemy | null, ignoreInvuln = false): number {
     const run = this.run;
@@ -249,7 +401,11 @@ export class Player {
       this.invulnT = 0.4;
       return 0;
     }
-    const dmg = Math.max(BALANCE.armorMin, raw - this.stats.armor);
+    const armor = this.stats.armor + run.skills.armorBonus;
+    // armor: flat reduction for small hits plus a percentage for big ones
+    const dmg = Math.max(BALANCE.armorMin, raw * (1 - Math.min(0.6, armor * 0.015)) - armor * 0.5);
+    run.skills.onHurt(dmg);
+    if (source && run.skills.buff.thorns > 0) run.combat.applyRaw(source, raw * run.skills.buff.thorns, 0xc0c8d8, 'thorns');
     this.hp -= dmg;
     this.hurtT = 0.25;
     this.cues.hit++;
@@ -304,13 +460,20 @@ export class Player {
   }
 
   addXp(v: number) {
-    v *= this.run.debug.xpMul;
+    // fewer, tougher foes: each is worth more experience
+    v *= this.run.debug.xpMul * 1.35;
     this.xp += v * this.stats.growth;
     this.run.stats.xpGained += v * this.stats.growth;
     while (this.xp >= this.xpNext) {
       this.xp -= this.xpNext;
+      if (this.level >= this.run.skills.maxLevel) {
+        // past the cap: every extra bar restores the hero instead of levelling
+        this.run.skills.onOverflow();
+        continue;
+      }
       this.level++;
       this.pendingLevels++;
+      this.run.skills.onLevel(this.level);
       this.xpNext = BALANCE.xpForLevel(this.level);
     }
   }

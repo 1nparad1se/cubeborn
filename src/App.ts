@@ -6,6 +6,7 @@ import { DAY_NIGHT } from './config/dayNight';
 import { dev } from './dev/DevMode';
 import { DevUi } from './dev/DevUi';
 import { Run } from './game/Run';
+import type { Enemy } from './game/Enemy';
 import { NullFx, type FxSink } from './game/types';
 import { Renderer } from './render/Renderer';
 import { Input, keyName } from './input/Input';
@@ -200,6 +201,7 @@ export class App implements MenuApi {
     this.hud.setOptions({ minimap: s.showMinimap, waves: s.showWaveCounter, fps: s.showFps, enemies: s.showEnemyCount });
     this.postVignette.classList.toggle('hidden', !s.postProcessing);
     this.input.binds = s.keybinds;
+    this.hud.arpg.binds = s.keybinds;
     if (this.run) this.run.settings.damageNumbers = s.damageNumbers;
     this.applyDisplayMode();
   }
@@ -580,6 +582,73 @@ export class App implements MenuApi {
     this.channel.port2.postMessage(0);
   }
 
+  /** Mouse/keyboard to action-RPG controls: cursor ground point, click-to-move, attack, skills. */
+  private lmbMode: 'move' | 'attack' = 'move';
+  private readMouse(run: Run, active: boolean) {
+    const inp = this.input;
+    const c = run.ctl;
+    const rig = this.renderer.rig;
+    const w = this.view.clientWidth || 1;
+    const hgt = this.view.clientHeight || 1;
+    if (inp.mx >= 0) {
+      const g = rig.groundPoint(inp.mx, inp.my, w, hgt, 0);
+      if (g) {
+        c.aimX = g[0];
+        c.aimZ = g[1];
+      }
+    }
+    // enemy under the cursor: test at body height so tall foes are easy to pick
+    let hover: Enemy | null = null;
+    if (inp.mx >= 0) {
+      const g = rig.groundPoint(inp.mx, inp.my, w, hgt, 0.7);
+      if (g) {
+        let best = 1e9;
+        run.enemies.forEachInRadius(g[0], g[1], 2.5, (e) => {
+          if (!e.alive || e.def.category === 'prop' || e.isAlly) return;
+          const d = Math.hypot(e.x - g[0], e.z - g[1]) - e.radius * e.scale;
+          if (d < 0.6 && d < best) {
+            best = d;
+            hover = e;
+          }
+        });
+      }
+    }
+    this.hud.setHover(hover);
+    if (!active) {
+      inp.lmbPressed = false;
+      inp.casts.length = 0;
+      inp.dodgeQueued = false;
+      return;
+    }
+    const here = inp.held('attackHere');
+    if (inp.lmbPressed) {
+      inp.lmbPressed = false;
+      this.lmbMode = hover || here ? 'attack' : 'move';
+      if (this.lmbMode === 'move') {
+        c.click = true;
+        const ring = run.effects.add('ring', c.aimX, c.aimZ, 0.35, 0x9affc0);
+        ring.r = 0.6;
+      }
+    }
+    c.attack = inp.rmb || (inp.lmb && (this.lmbMode === 'attack' || here));
+    c.move = inp.lmb && this.lmbMode === 'move' && !here;
+    c.stop = inp.held('stop');
+    if (inp.casts.length) {
+      c.casts.push(...inp.casts);
+      inp.casts.length = 0;
+    }
+    if (inp.dodgeQueued) {
+      c.dodge = true;
+      inp.dodgeQueued = false;
+    }
+    // big fights pull the camera back a little
+    let near = 0;
+    run.enemies.forEachInRadius(run.player.x, run.player.z, 12, () => {
+      near++;
+    }, false);
+    rig.autoTarget = 1 + Math.min(0.22, near / 160) + (run.bosses.some((b) => b.e.alive) ? 0.12 : 0);
+  }
+
   private loop = (now: number) => {
     this.schedule();
     const limit = this.profile.data.settings.fpsLimit;
@@ -599,6 +668,7 @@ export class App implements MenuApi {
       const [ix, iz] = this.renderer.rig.screenToWorld(sx, sz);
       const devHold = dev.enabled && dev.paused;
       const active = !this.paused && !this.modals.isOpen && run.state === 'playing' && !devHold;
+      this.readMouse(run, active);
       const sdt = dev.enabled ? dt * dev.timeScale : dt;
       if (active || (run.ending && !devHold)) {
         // fixed-ish sub-steps keep collisions stable on slow frames (and at developer time scales)

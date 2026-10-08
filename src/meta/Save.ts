@@ -10,16 +10,25 @@ export type DisplayMode = 'windowed' | 'fullscreen' | 'borderless';
 export type HealthBars = 'off' | 'elites' | 'all';
 
 /** Rebindable actions; each holds up to two KeyboardEvent.code values. */
-export type BindAction = 'up' | 'down' | 'left' | 'right' | 'jump' | 'pause' | 'zoomIn' | 'zoomOut' | 'map' | 'devPanel' | 'devDebug' | 'devGod';
+export type BindAction = 'up' | 'down' | 'left' | 'right' | 'jump' | 'skillQ' | 'skillW' | 'skillE' | 'skillR' | 'dodge' | 'attackHere' | 'stop' | 'potion' | 'inventory' | 'pause' | 'zoomIn' | 'zoomOut' | 'map' | 'devPanel' | 'devDebug' | 'devGod';
 export type Keybinds = Record<BindAction, string[]>;
 
 export function defaultKeybinds(): Keybinds {
   return {
-    up: ['KeyW', 'ArrowUp'],
-    down: ['KeyS', 'ArrowDown'],
-    left: ['KeyA', 'ArrowLeft'],
-    right: ['KeyD', 'ArrowRight'],
-    jump: ['Space'],
+    up: ['ArrowUp'],
+    down: ['ArrowDown'],
+    left: ['ArrowLeft'],
+    right: ['ArrowRight'],
+    jump: [],
+    skillQ: ['KeyQ'],
+    skillW: ['KeyW'],
+    skillE: ['KeyE'],
+    skillR: ['KeyR'],
+    dodge: ['Space'],
+    attackHere: ['ShiftLeft'],
+    stop: ['KeyS'],
+    potion: ['Digit1'],
+    inventory: ['KeyI', 'KeyC'],
     pause: ['Escape', 'KeyP'],
     zoomIn: ['Equal', 'NumpadAdd'],
     zoomOut: ['Minus', 'NumpadSubtract'],
@@ -107,7 +116,7 @@ export interface SaveData {
 }
 
 const KEY = 'cubeborn.save.v1';
-const VERSION = 3;
+const VERSION = 4;
 
 export function defaultSettings(): Settings {
   const lang: Lang = (navigator.language || 'ru').toLowerCase().startsWith('ru') ? 'ru' : 'en';
@@ -170,6 +179,16 @@ export function migrate(raw: any): SaveData {
     Object.assign(rs, { quality: q }, QUALITY_PRESETS[q as 'low' | 'medium' | 'high']);
     if (typeof rs.screenShake === 'boolean') rs.screenShake = rs.screenShake ? 1 : 0;
     delete rs.vibration;
+  }
+  if (oldVersion < 4 && rs.keybinds) {
+    // v4 action-RPG controls: Q/W/E/R are skills, Space dodges, the mouse moves the hero.
+    // Old WASD/Space bindings would collide, so only the remaining custom keys survive.
+    const taken = new Set(['KeyQ', 'KeyW', 'KeyE', 'KeyR', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'KeyI', 'KeyC', 'Digit1']);
+    const kb: Record<string, string[]> = {};
+    for (const [k, v] of Object.entries(rs.keybinds as Record<string, string[]>)) if (Array.isArray(v)) kb[k] = v.filter((c) => !taken.has(c));
+    delete kb.jump;
+    for (const k of ['up', 'down', 'left', 'right']) if (kb[k] && !kb[k].length) delete kb[k];
+    rs.keybinds = kb;
   }
   const settings: Settings = { ...d.settings, ...rs, keybinds: { ...defaultKeybinds(), ...(rs.keybinds || {}) } };
   for (const k of Object.keys(settings.keybinds) as BindAction[]) if (!Array.isArray(settings.keybinds[k])) settings.keybinds[k] = defaultKeybinds()[k];

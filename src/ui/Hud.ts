@@ -10,6 +10,8 @@ import { PASSIVE_BY_ID } from '../data/passives';
 import { WEAPON_BY_ID } from '../data/weapons';
 import { Minimap } from './Minimap';
 import { DAY_NIGHT } from '../config/dayNight';
+import { ArpgHud } from './ArpgHud';
+import type { Enemy } from '../game/Enemy';
 
 export interface HudOptions {
   minimap: boolean;
@@ -67,6 +69,8 @@ export class Hud {
   /** Endless best wave on this map, for the record line. */
   bestWave = 0;
   onPause: () => void = () => {};
+  readonly arpg = new ArpgHud();
+  private bossFx: HTMLElement;
 
   constructor(parent: HTMLElement) {
     this.xpFill = h('div.xp-fill');
@@ -127,7 +131,8 @@ export class Hud {
     this.bossName = h('div.boss-name');
     this.bossFill = h('div.boss-fill');
     this.bossPhase = h('div.boss-phase');
-    this.bossBox = h('div.boss-bar.hidden', this.bossName, h('div.boss-track', this.bossFill), this.bossPhase);
+    this.bossFx = h('div.boss-fx');
+    this.bossBox = h('div.boss-bar.hidden', this.bossName, h('div.boss-track', this.bossFill), this.bossPhase, this.bossFx);
     this.banner = h('div.banner-main');
     this.bannerSub = h('div.banner-sub');
     const bannerBox = h('div.banner', this.banner, this.bannerSub);
@@ -143,12 +148,13 @@ export class Hud {
       'div.hud',
       this.vignette,
       h('div.hud-tl', this.fps, this.buffs),
-      h('div.hud-top', this.time, this.bossBox),
+      h('div.hud-top', this.time, this.bossBox, this.arpg.hoverBox),
       h('div.hud-tr', this.mapBox, this.dnBox, this.wavePanel),
       bannerBox,
       this.hint,
+      this.arpg.root,
       h(
-        'div.hotbar',
+        'div.hotbar.legacy',
         h('div.hb-wing.left', h('div.hb-item', h('i.ic-coin'), this.gold), pause, mapKey),
         h('div.heart-frame', heart),
         h(
@@ -175,6 +181,7 @@ export class Hud {
     this.bannerBox.classList.remove('show');
     this.vignette.style.opacity = '0';
     this.minimap.setRun(run);
+    this.arpg.reset(run);
     this.minimap.setBig(false);
     clear(this.waveStrip);
     if (run && run.waves.mode === 'campaign') {
@@ -228,12 +235,17 @@ export class Hud {
     }
   }
 
+  setHover(e: Enemy | null) {
+    this.arpg.setHover(e);
+  }
+
   toggleMap() {
     this.minimap.setBig(!this.minimap.big);
   }
 
   update(run: Run, dt: number, realDt: number) {
     const p = run.player;
+    this.arpg.update(run);
     const xpk = p.xpNext > 0 ? Math.min(1, p.xp / p.xpNext) : 0;
     this.set('xp', Math.round(xpk * 400), () => (this.xpFill.style.transform = `scaleX(${xpk})`));
     this.set('xpt', p.level, () => (this.xpText.textContent = String(p.level)));
@@ -345,10 +357,7 @@ export class Hud {
         const k = Math.max(0, e.hp / e.maxHp);
         this.set('bossHp', Math.round(k * 500), () => (this.bossFill.style.transform = `scaleX(${k})`));
         this.set('bossInv', e.invuln ? 1 : 0, () => this.bossBox.classList.toggle('invuln', e.invuln));
-        this.set('bossPhase', boss.phase, () => {
-          clear(this.bossPhase);
-          for (let i = 0; i < boss.def.phases.length; i++) this.bossPhase.append(h('i' + (i <= boss.phase ? '.on' : '')));
-        });
+        this.arpg.bossExtras(boss, this.bossPhase, this.bossFx);
       }
     }
 

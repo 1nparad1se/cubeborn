@@ -31,6 +31,7 @@ import { WaveDirector, type RunMode, type Wave, type WaveScale } from './Waves';
 import { MapFeatures } from './MapFeatures';
 import { RARITIES, type Rarity } from '../data/types';
 import './weapons/behaviors';
+import { SkillSystem, makeControls } from './arpg/Skills';
 
 export type RunState = 'playing' | 'levelup' | 'chest' | 'dead' | 'victory';
 
@@ -107,6 +108,9 @@ export class Run {
   readonly leveling: Leveling;
   readonly spawner: Spawner;
   readonly perks: Perks;
+  /** Action-RPG hero abilities and the frame's mouse/keyboard controls. */
+  readonly skills: SkillSystem;
+  readonly ctl = makeControls();
   readonly bosses: BossController[] = [];
   readonly unlockedWeapons: Set<string>;
   readonly unlockedPassives: Set<string>;
@@ -120,7 +124,7 @@ export class Run {
   /** Multipliers for enemies spawned in the current wave. */
   waveScale: WaveScale;
   /** Developer-mode switches (all off in normal play). */
-  readonly debug = { god: false, infHp: false, xpMul: 1, freeze: false, enemyHp: 1, enemyDmg: 1, tainted: false };
+  readonly debug = { god: false, infHp: false, xpMul: 1, freeze: false, enemyHp: 1, enemyDmg: 1, tainted: false, infRes: false };
   readonly reviveBlast = makeDamage();
   readonly nukeBlast = makeDamage();
 
@@ -161,10 +165,10 @@ export class Run {
     this.nav = new NavField(this.terrain);
     const c = Math.floor(o.map.size / 2) + 0.5;
     this.player = new Player(this, c, c);
+    this.skills = new SkillSystem(this);
     this.recomputeStats();
     this.player.hp = this.player.stats.maxHp;
     this.player.revivals = this.player.stats.revival;
-    this.player.shield = o.hero.perk === 'bastion';
     this.enemies = new EnemyManager(this);
     this.projectiles = new Projectiles(this);
     this.pickups = new Pickups(this);
@@ -175,10 +179,9 @@ export class Run {
     this.leveling = new Leveling(this);
     this.leveling.initCounters();
     this.spawner = new Spawner(this);
-    this.perks = new Perks(this, o.hero.perk);
+    // class mechanics replace the old auto-battler perks
+    this.perks = new Perks(this, 'none');
     this.features = new MapFeatures(this);
-    this.weapons.add(o.hero.startWeapon);
-    this.stats.discovered.add(o.hero.startWeapon);
     this.nav.update(0, this.player.x, this.player.z, true);
     this.reviveBlast.damage = 200;
     this.reviveBlast.knockback = 4;
@@ -192,7 +195,7 @@ export class Run {
   recomputeStats() {
     const p = this.player;
     const oldMax = p.stats?.maxHp ?? 0;
-    const mods = sumMods(this.hero.stats, this.permanent, this.passives.mods());
+    const mods = sumMods(this.hero.stats, this.permanent, this.passives.mods(), this.skills.statMods());
     p.stats = resolveStats(this.hero.baseHp, mods);
     if (oldMax > 0 && p.stats.maxHp > oldMax) p.hp += p.stats.maxHp - oldMax;
     const newRev = p.stats.revival;
@@ -233,6 +236,11 @@ export class Run {
     const p = this.player;
     for (const k of ['darkness', 'blizzard', 'surge', 'storm'] as const) if (this.weather[k] > 0) this.weather[k] -= dt;
     if (!p.dead) p.update(dt, ix, iz);
+    this.skills.update(dt, this.ctl);
+    // one-shot inputs are consumed by the first sub-step
+    this.ctl.casts.length = 0;
+    this.ctl.click = false;
+    this.ctl.dodge = false;
     this.dayNight.update(dt);
     this.nav.update(dt, p.x, p.z);
     this.surgeBuff();
@@ -277,7 +285,7 @@ export class Run {
   // ---------------------------------------------------------------- level up
   private beginLevelUp() {
     this.state = 'levelup';
-    this.pendingChoices = this.leveling.roll();
+    this.pendingChoices = this.skills.rollChoices();
     this.fx.sound('levelup');
     this.fx.burst(this.player.x, 1, this.player.z, 0x8affff, 30, 4, 0.16, 0.8, 'glow');
     this.events.emit('levelup', this.pendingChoices);
@@ -285,7 +293,13 @@ export class Run {
 
   choose(c: Choice | null) {
     if (this.state !== 'levelup') return;
-    if (c) this.leveling.apply(c);
+    if (c && !this.skills.apply(c)) {
+      // declining the Ultimate keeps the level: offer the regular choices
+      this.pendingChoices = this.skills.rollChoices();
+      this.events.emit('levelup', this.pendingChoices);
+      return;
+    }
+    if (c) this.stats.discovered.add(c.id);
     this.player.pendingLevels--;
     this.pendingChoices = null;
     this.state = 'playing';
@@ -295,7 +309,7 @@ export class Run {
   reroll(): Choice[] | null {
     if (this.leveling.rerolls <= 0 || this.state !== 'levelup') return null;
     this.leveling.rerolls--;
-    this.pendingChoices = this.leveling.roll();
+    this.pendingChoices = this.skills.rollChoices();
     return this.pendingChoices;
   }
 
@@ -310,7 +324,7 @@ export class Run {
     if (this.leveling.banishes <= 0 || this.state !== 'levelup') return null;
     this.leveling.banishes--;
     this.leveling.banished.add(id);
-    this.pendingChoices = this.leveling.roll();
+    this.pendingChoices = this.skills.rollChoices();
     return this.pendingChoices;
   }
 

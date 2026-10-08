@@ -16,12 +16,21 @@ export interface DamageInfo {
   poisonDur: number;
   burn: number;
   burnDur: number;
+  /** Damage type (action-RPG combat); '' = untyped legacy weapon damage. */
+  el: DmgType | '';
+  stun: number;
+  bleed: number;
+  bleedDur: number;
+  curse: number;
+  weaken: number;
 }
+
+export type DmgType = 'phys' | 'fire' | 'ice' | 'lightning' | 'poison' | 'dark' | 'magic';
 
 export const MAX_SOURCES = 24;
 
 export function makeDamage(): DamageInfo {
-  return { damage: 0, critChance: 0, critDamage: 1.5, knockback: 1, source: 0, weaponId: '', slow: 0, slowDur: 0, freeze: 0, freezeDur: 0, poison: 0, poisonDur: 0, burn: 0, burnDur: 0 };
+  return { damage: 0, critChance: 0, critDamage: 1.5, knockback: 1, source: 0, weaponId: '', slow: 0, slowDur: 0, freeze: 0, freezeDur: 0, poison: 0, poisonDur: 0, burn: 0, burnDur: 0, el: '', stun: 0, bleed: 0, bleedDur: 0, curse: 0, weaken: 0 };
 }
 
 export function copyDamage(dst: DamageInfo, src: DamageInfo): DamageInfo {
@@ -39,6 +48,12 @@ export function copyDamage(dst: DamageInfo, src: DamageInfo): DamageInfo {
   dst.poisonDur = src.poisonDur;
   dst.burn = src.burn;
   dst.burnDur = src.burnDur;
+  dst.el = src.el;
+  dst.stun = src.stun;
+  dst.bleed = src.bleed;
+  dst.bleedDur = src.bleedDur;
+  dst.curse = src.curse;
+  dst.weaken = src.weaken;
   return dst;
 }
 

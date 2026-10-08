@@ -3480,3 +3480,96 @@ img.icon.hi.sm,
   filter: none;
   opacity: 0.85;
 }
+
+/* ------------------------------------------------------------------ action-RPG HUD (v3) */
+.hotbar.legacy { display: none; }
+.arpg-hud {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: auto;
+  --res: #3a8aff;
+}
+.ah-main {
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  padding: 10px 14px;
+  background: linear-gradient(#20242bee, #15181dee);
+  border: 2px solid #4a505a;
+  border-radius: 10px;
+  box-shadow: 0 6px 18px #0008, inset 0 1px 0 #ffffff14;
+}
+.ah-bars { display: flex; flex-direction: column; gap: 8px; width: 210px; }
+.ah-bar { position: relative; }
+.ah-label { font: 12px var(--font-ui); color: var(--dim); margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.04em; }
+.ah-track { height: 18px; background: #0c0e12; border: 1px solid #3a3f48; border-radius: 4px; overflow: hidden; }
+.ah-fill { height: 100%; transform-origin: left; transition: transform 0.12s linear; }
+.ah-bar.hp .ah-fill { background: linear-gradient(#ff6a6a, #b8202e); }
+.ah-bar.res .ah-fill { background: linear-gradient(color-mix(in srgb, var(--res) 70%, white), var(--res)); }
+.ah-text { position: absolute; right: 6px; bottom: 1px; font: 600 12px var(--font-ui); color: #fff; text-shadow: 0 1px 2px #000; }
+.ah-slots { display: flex; gap: 8px; align-items: flex-end; }
+.sk-gap { width: 6px; }
+.sk {
+  position: relative;
+  width: 58px;
+  height: 58px;
+  border-radius: 8px;
+  background: #0f1216;
+  border: 2px solid #5c636f;
+  box-shadow: inset 0 0 0 1px #000;
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.08s;
+}
+.sk.ult { width: 66px; height: 66px; border-color: #c89a3a; }
+.sk.dodge { width: 50px; height: 50px; }
+.sk.ready { border-color: #9ad0ff; box-shadow: 0 0 10px #5ab4ff55, inset 0 0 0 1px #000; }
+.sk.ult.ready { border-color: #ffd060; box-shadow: 0 0 14px #ffc04088, inset 0 0 0 1px #000; }
+.sk.flash { transform: scale(1.08); }
+.sk.denied { border-color: #ff4a5a !important; }
+.sk-icon { position: absolute; inset: 6px; display: grid; place-items: center; }
+.sk-icon .icon { width: 100%; height: 100%; image-rendering: pixelated; }
+.sk.locked .sk-icon { filter: grayscale(1) brightness(0.35); }
+.sk.nores .sk-icon { filter: saturate(0.4) brightness(0.6) hue-rotate(200deg); }
+.sk-cd { position: absolute; inset: 0; border-radius: 6px; }
+.sk-timer { position: absolute; inset: 0; display: grid; place-items: center; font: 700 18px var(--font-display); color: #fff; text-shadow: 0 2px 3px #000; }
+.sk-key {
+  position: absolute; left: -5px; top: -7px; min-width: 18px; padding: 0 4px; height: 18px;
+  background: #2a2e35; border: 1px solid #6b7078; border-radius: 4px;
+  font: 700 11px/16px var(--font-display); color: #fff; text-align: center;
+}
+.sk-cost { position: absolute; right: 2px; top: 1px; font: 600 10px var(--font-ui); color: var(--res); text-shadow: 0 1px 2px #000; }
+.sk-pips { position: absolute; left: 0; right: 0; bottom: -9px; display: flex; justify-content: center; gap: 2px; }
+.sk-pips i { width: 6px; height: 6px; border-radius: 1px; background: #2a2e35; border: 1px solid #000; }
+.sk-pips i.on { background: #ffd23d; }
+.sk-lock { font: 600 9px var(--font-ui); color: #ffd060; background: #000a; padding: 0 3px; border-radius: 3px; white-space: nowrap; }
+.ah-gold { display: flex; align-items: center; gap: 6px; font: 700 15px var(--font-display); color: var(--gold); align-self: center; }
+.ah-xp { position: relative; width: 100%; }
+.ah-xp-track { height: 9px; background: #0c0e12; border: 1px solid #3a3f48; border-radius: 4px; overflow: hidden; }
+.ah-xp-fill { height: 100%; transform-origin: left; background: linear-gradient(#a6f0ff, #3a9ad8); transition: transform 0.15s; }
+.ah-xp-text { text-align: center; font: 600 12px var(--font-ui); color: #cfe8ff; margin-top: 2px; text-shadow: 0 1px 2px #000; }
+.ah-build { display: flex; gap: 4px; flex-wrap: wrap; justify-content: center; max-width: 560px; }
+.ah-chip { position: relative; width: 28px; height: 28px; background: #15181dcc; border: 1px solid #4a505a; border-radius: 5px; display: grid; place-items: center; }
+.ah-chip .icon { width: 22px; height: 22px; }
+.ah-chip b { position: absolute; right: 1px; bottom: -2px; font: 700 10px var(--font-display); color: #fff; text-shadow: 0 1px 2px #000; }
+.hover-info {
+  min-width: 240px; padding: 6px 12px 8px; text-align: center;
+  background: #12151acc; border: 1px solid #4a505a; border-radius: 8px;
+}
+.hv-name { font: 700 16px var(--font-display); }
+.hv-meta { font: 12px var(--font-ui); color: var(--dim); margin: 1px 0 4px; }
+.hv-track { position: relative; height: 14px; background: #0c0e12; border: 1px solid #3a3f48; border-radius: 3px; overflow: hidden; }
+.hv-fill { height: 100%; background: linear-gradient(#ff6a6a, #a01a26); transform-origin: left; }
+.hv-hp { position: absolute; inset: 0; font: 600 11px/13px var(--font-ui); color: #fff; text-shadow: 0 1px 2px #000; }
+.hv-fx, .boss-fx { display: flex; gap: 4px; justify-content: center; flex-wrap: wrap; margin-top: 4px; }
+.fx-chip { font: 600 11px var(--font-ui); padding: 1px 6px; border-radius: 9px; color: #111; background: var(--fc); }
+.boss-phase-t { font: 600 12px var(--font-ui); color: #ffd0a0; margin-right: 6px; }
+.ult-prompt { max-width: 560px; }
+.ult-card { display: flex; gap: 14px; align-items: center; text-align: left; padding: 14px; margin: 12px 0; border: 2px solid #ffd060; border-radius: 10px; background: #2a2414; }
+.ult-card .choice-name { font: 700 20px var(--font-display); color: #ffd060; }
+.ult-card .dim { color: var(--dim); }
+.ult-hint { font: 13px var(--font-ui); color: var(--dim); margin-bottom: 12px; }

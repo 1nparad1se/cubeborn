@@ -51,8 +51,6 @@ export class EntityRenderer {
   private lastAttack = -9;
   private heroYaw = 0;
   /** While > 0 the hero faces its attack direction instead of its travel direction. */
-  private aimHold = 0;
-  private aimYaw = 0;
   private victoryPlayed = false;
   private creatureTex: THREE.Texture;
   private bossModels = new Map<string, ArticulatedModel>();
@@ -212,14 +210,9 @@ export class EntityRenderer {
     a.air = p.jumpPhase === 'air' && !p.dead;
     a.airV = Math.max(-1, Math.min(1, p.jumpV / ((4 * J.height) / J.airTime)));
     a.crouch = p.dead ? 0 : p.jumpPhase === 'windup' ? Math.min(1, p.jumpT / J.windup) : p.jumpPhase === 'land' ? Math.max(0, 1 - p.jumpT / (J.landLag * 1.6)) : 0;
-    // facing: toward the attack while it plays (plus a short hold), else toward travel
     const c = p.cues;
-    if (c.attack !== this.cues.attack && c.aim && !p.dead) {
-      this.aimYaw = Math.atan2(c.aimX, c.aimZ);
-      this.aimHold = 0.8;
-    }
-    this.aimHold = Math.max(0, this.aimHold - adt);
-    const yaw = this.aimHold > 0 ? this.aimYaw : Math.atan2(p.fx, p.fz);
+    // action-RPG: the hero always faces the cursor (or a skill's locked direction)
+    const yaw = Math.atan2(p.fx, p.fz);
     // eased, rate-limited turn so auto-targeting never snaps the model around
     const maxTurn = 11 * adt;
     const dy = Math.max(-maxTurn, Math.min(maxTurn, angleDelta(this.heroYaw, yaw) * Math.min(1, adt * 16)));
@@ -254,7 +247,7 @@ export class EntityRenderer {
         this.cues.level = p.level;
         a.play('levelup');
       } else if (c.ability !== this.cues.ability) a.play('ability');
-      else if (c.attack !== this.cues.attack && time - this.lastAttack > 0.55) {
+      else if (c.attack !== this.cues.attack && time - this.lastAttack > 0.28) {
         this.lastAttack = time;
         a.play('attack');
       }

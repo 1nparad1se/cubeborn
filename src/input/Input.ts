@@ -22,6 +22,16 @@ export class Input {
   onFirstMove: (() => void) | null = null;
   /** While set, the next key press is captured for rebinding instead of played. */
   capture: ((code: string) => void) | null = null;
+  /** Mouse: position in the game view (px), buttons, and one-shot presses consumed by the client. */
+  mx = -1;
+  my = -1;
+  lmb = false;
+  rmb = false;
+  lmbPressed = false;
+  readonly casts: number[] = [];
+  dodgeQueued = false;
+  onInventory: (() => void) | null = null;
+  onPotion: (() => void) | null = null;
   private padPause = false;
   private padJump = false;
 
@@ -59,11 +69,22 @@ export class Input {
           e.preventDefault();
           this.onJump?.();
         }
+        const slots: BindAction[] = ['skillQ', 'skillW', 'skillE', 'skillR'];
+        for (let i = 0; i < 4; i++) if (this.is(slots[i], e.code)) this.casts.push(i);
+        if (this.is('dodge', e.code)) {
+          e.preventDefault();
+          this.dodgeQueued = true;
+        }
+        if (this.is('inventory', e.code)) this.onInventory?.();
+        if (this.is('potion', e.code)) this.onPotion?.();
       }
       this.keys.add(e.code);
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
-    window.addEventListener('blur', () => this.keys.clear());
+    window.addEventListener('blur', () => {
+      this.keys.clear();
+      this.lmb = this.rmb = false;
+    });
     area.addEventListener(
       'wheel',
       (e) => {
@@ -75,13 +96,34 @@ export class Input {
     );
     // no context menu over the game view
     area.addEventListener('contextmenu', (e) => e.preventDefault());
+    const pos = (e: PointerEvent) => {
+      const r = area.getBoundingClientRect();
+      this.mx = e.clientX - r.left;
+      this.my = e.clientY - r.top;
+    };
+    area.addEventListener('pointermove', pos);
+    area.addEventListener('pointerdown', (e) => {
+      pos(e);
+      if (!this.enabled) return;
+      if (e.button === 0) {
+        this.lmb = true;
+        this.lmbPressed = true;
+      } else if (e.button === 2) this.rmb = true;
+      area.setPointerCapture?.(e.pointerId);
+    });
+    const up = (e: PointerEvent) => {
+      if (e.button === 0) this.lmb = false;
+      else if (e.button === 2) this.rmb = false;
+    };
+    area.addEventListener('pointerup', up);
+    area.addEventListener('pointercancel', () => (this.lmb = this.rmb = false));
   }
 
   private is(action: BindAction, code: string): boolean {
     return this.binds[action]?.includes(code) ?? false;
   }
 
-  private held(action: BindAction): boolean {
+  held(action: BindAction): boolean {
     for (const c of this.binds[action] ?? []) if (this.keys.has(c)) return true;
     return false;
   }
@@ -130,7 +172,11 @@ export class Input {
 
   setEnabled(on: boolean) {
     this.enabled = on;
-    if (!on) this.keys.clear();
+    if (!on) {
+      this.keys.clear();
+      this.lmb = this.rmb = this.lmbPressed = this.dodgeQueued = false;
+      this.casts.length = 0;
+    }
   }
 }
 

@@ -34,7 +34,7 @@ export class Passives {
   }
 }
 
-export type ChoiceKind = 'weapon_new' | 'weapon_up' | 'passive_new' | 'passive_up' | 'gold' | 'heal';
+export type ChoiceKind = 'weapon_new' | 'weapon_up' | 'passive_new' | 'passive_up' | 'gold' | 'heal' | 'skill_up' | 'ult_learn' | 'ult_decline' | 'stat' | 'dodge_up' | 'mod';
 
 export interface Choice {
   kind: ChoiceKind;

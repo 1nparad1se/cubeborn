@@ -147,6 +147,7 @@ export const ELEMENT_FX: Record<Element, ElementFx> = {
 
 /** Weapon id → element. Unlisted weapons use their tags (fire, ice, lightning, poison, holy, magic → arcane), else physical. */
 export const WEAPON_ELEMENT: Record<string, Element> = {
+  el_physical: 'physical', el_fire: 'fire', el_ice: 'ice', el_lightning: 'lightning', el_poison: 'poison', el_dark: 'dark', el_arcane: 'arcane', el_holy: 'holy',
   rune_blade: 'physical', spirit_fists: 'physical', sky_lance: 'physical', twin_daggers: 'physical', longbow: 'physical',
   bolt_thrower: 'physical', moon_glaive: 'physical', whirling_saws: 'physical', cyclone_fan: 'physical', hurricane_eye: 'physical',
   hundred_palms: 'physical', thousand_edges: 'physical',

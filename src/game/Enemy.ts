@@ -46,6 +46,13 @@ export class Enemy {
   poisonDps = 0;
   burnT = 0;
   burnDps = 0;
+  /** Action-RPG statuses: stun (no actions), bleed (physical DoT), curse (+damage taken), weaken (−damage dealt), mark (hunter). */
+  stunT = 0;
+  bleedT = 0;
+  bleedDps = 0;
+  curseT = 0;
+  weakenT = 0;
+  markT = 0;
   dotTick = 0;
   invuln = false;
   shieldT = 0;
@@ -95,6 +102,7 @@ export class Enemy {
     this.slowT = this.freezeT = this.poisonT = this.burnT = 0;
     this.slowMul = 1;
     this.poisonDps = this.burnDps = 0;
+    this.stunT = this.bleedT = this.bleedDps = this.curseT = this.weakenT = this.markT = 0;
     this.dotTick = 0;
     this.invuln = false;
     this.shieldT = 0;

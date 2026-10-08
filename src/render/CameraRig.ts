@@ -15,6 +15,13 @@ export class CameraRig {
   /** Screen shake strength 0..1 from settings. */
   shake = 1;
   zoom = 1;
+  /** Automatic pull-back for big fights (multiplies zoom), eased toward autoTarget. */
+  autoZoom = 1;
+  autoTarget = 1;
+  private ray = new THREE.Raycaster();
+  private ndc = new THREE.Vector2();
+  private plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+  private hit = new THREE.Vector3();
 
   constructor(aspect: number) {
     this.camera = new THREE.PerspectiveCamera(36, aspect, 0.5, 200);
@@ -50,8 +57,9 @@ export class CameraRig {
     const s = this.trauma * this.trauma * 0.6;
     const ox = (Math.random() * 2 - 1) * s;
     const oz = (Math.random() * 2 - 1) * s;
-    const h = this.height * this.zoom;
-    const b = this.back * this.zoom;
+    this.autoZoom += (this.autoTarget - this.autoZoom) * (1 - Math.exp(-1.5 * dt));
+    const h = this.height * this.zoom * this.autoZoom;
+    const b = this.back * this.zoom * this.autoZoom;
     this.camera.position.set(this.tx + this.toCam.x * b + ox, h, this.tz + this.toCam.z * b + oz);
     this.camera.lookAt(this.tx + ox * 0.5, 0, this.tz + oz * 0.5);
   }
@@ -61,6 +69,15 @@ export class CameraRig {
     const c = Math.cos(this.yaw);
     const s = Math.sin(this.yaw);
     return [ix * c + iz * s, -ix * s + iz * c];
+  }
+
+  /** World point on the ground plane (height y) under a screen pixel. */
+  groundPoint(px: number, py: number, w: number, h: number, y = 0): [number, number] | null {
+    this.ndc.set((px / w) * 2 - 1, -(py / h) * 2 + 1);
+    this.ray.setFromCamera(this.ndc, this.camera);
+    this.plane.constant = -y;
+    const p = this.ray.ray.intersectPlane(this.plane, this.hit);
+    return p ? [p.x, p.z] : null;
   }
 
   get target(): { x: number; z: number } {

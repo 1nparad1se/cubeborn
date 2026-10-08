@@ -1,7 +1,7 @@
 import { WALLS } from '../config/walls';
 import type { Enemy } from './Enemy';
 import type { Run } from './Run';
-import { makeDamage, type DamageInfo } from './types';
+import { copyDamage, makeDamage, type DamageInfo } from './types';
 import type { WeaponInstance } from './weapons/Weapon';
 
 /** Player-side projectile. Behaviours may take over movement with `custom`. */
@@ -46,6 +46,8 @@ export class Projectile {
   glow = 0;
   /** Unique per spawn (pooled objects get a new one), so renderers can tell shots apart. */
   serial = 0;
+  /** Owner-less (skill) projectiles: optional hit/expire callbacks. */
+  hook: { hit?: (p: Projectile, e: Enemy) => void; expire?: (p: Projectile) => void } | null = null;
 }
 
 let nextSerial = 1;
@@ -89,24 +91,8 @@ export class Projectiles {
     p.spin = 0;
     p.a = p.b = p.c = p.d = p.e = 0;
     p.glow = 0;
-    if (owner) {
-      const src = owner.dmg;
-      const d = p.dmg;
-      d.damage = src.damage;
-      d.critChance = src.critChance;
-      d.critDamage = src.critDamage;
-      d.knockback = src.knockback;
-      d.source = src.source;
-      d.weaponId = src.weaponId;
-      d.slow = src.slow;
-      d.slowDur = src.slowDur;
-      d.freeze = src.freeze;
-      d.freezeDur = src.freezeDur;
-      d.poison = src.poison;
-      d.poisonDur = src.poisonDur;
-      d.burn = src.burn;
-      d.burnDur = src.burnDur;
-    }
+    p.hook = null;
+    if (owner) copyDamage(p.dmg, owner.dmg);
     this.list.push(p);
     return p;
   }
@@ -115,6 +101,7 @@ export class Projectiles {
     if (!p.active) return;
     p.active = false;
     p.owner?.behavior.projectileExpire?.(p.owner, this.run, p);
+    p.hook?.expire?.(p);
   }
 
   update(dt: number) {
@@ -208,6 +195,7 @@ export class Projectiles {
       const len = Math.hypot(p.vx, p.vz);
       run.combat.hit(e, p.dmg, 1, len > 0.1 ? p.vx : e.x - p.x, len > 0.1 ? p.vz : e.z - p.z);
       if (p.owner && beh?.projectileHit) beh.projectileHit(p.owner, run, p, e);
+      p.hook?.hit?.(p, e);
       if (p.pierce >= 0) {
         p.pierce--;
         if (p.pierce < 0) {

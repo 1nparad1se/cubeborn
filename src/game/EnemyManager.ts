@@ -242,7 +242,7 @@ export class EnemyManager {
       if (e.touchCd > 0) e.touchCd -= dt;
       if (e.awakeT > 0) e.awakeT -= dt;
 
-      const frozen = e.freezeT > 0 || this.frozenAll > 0;
+      const frozen = e.freezeT > 0 || e.stunT > 0 || this.frozenAll > 0;
       if (e.boss) {
         if (!frozen) e.boss.update(dt);
       } else if (!frozen) this.think(e, dt);
@@ -288,7 +288,7 @@ export class EnemyManager {
         const rr = e.radius + p.radius;
         if (d2 < rr * rr && (rr < 0.95 || run.terrain.los(e.x, e.z, p.x, p.z))) {
           e.touchCd = BALANCE.contactInterval;
-          const dealt = p.hurt(DayNight.damageOf(e), e);
+          const dealt = p.hurt(DayNight.damageOf(e) * (e.weakenT > 0 ? 0.7 : 1), e);
           if (dealt > 0 && e.hasElite('vampiric')) e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.05);
         }
       }
@@ -331,8 +331,12 @@ export class EnemyManager {
       if (e.slowT <= 0) e.slowMul = 1;
     }
     if (e.freezeT > 0) e.freezeT -= dt;
+    if (e.stunT > 0) e.stunT -= dt;
+    if (e.curseT > 0) e.curseT -= dt;
+    if (e.weakenT > 0) e.weakenT -= dt;
+    if (e.markT > 0) e.markT -= dt;
     if (e.shieldT > 0) e.shieldT -= dt;
-    if (e.poisonT > 0 || e.burnT > 0) {
+    if (e.poisonT > 0 || e.burnT > 0 || e.bleedT > 0) {
       e.dotTick -= dt;
       if (e.dotTick <= 0) {
         e.dotTick = 0.5;
@@ -345,7 +349,11 @@ export class EnemyManager {
           dmg += e.burnDps * 0.5;
           e.burnT -= 0.5;
         }
-        if (dmg > 0) this.run.combat.applyRaw(e, dmg, e.poisonT > 0 ? 0x9cff4f : 0xff8a3a, 'dot');
+        if (e.bleedT > 0) {
+          dmg += e.bleedDps * 0.5 * (Math.abs(e.vx) + Math.abs(e.vz) > 0.5 ? 1.5 : 1);
+          e.bleedT -= 0.5;
+        }
+        if (dmg > 0) this.run.combat.applyRaw(e, dmg, e.poisonT > 0 ? 0x9cff4f : e.burnT > 0 ? 0xff8a3a : 0xd0303a, 'dot');
       }
     }
     // warded elites pulse a protective shield

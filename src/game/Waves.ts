@@ -95,6 +95,9 @@ export function waveDensity(n: number): { rate: number; max: number } {
   return { rate: B.rateBase + B.rateLin * s + B.rateQuad * s * s, max: B.maxBase + B.maxLin * s + B.maxQuad * s * s };
 }
 
+/** Action-RPG multipliers on top of the wave curve. */
+export const ARPG_WAVE = { hp: 2.4, damage: 1.15, rate: 0.42, max: 0.4, elite: 1.6 };
+
 const TYPE_MUL: Record<WaveType, { hp: number; damage: number; speed: number; rate: number; max: number; elite: number }> = {
   normal: { hp: 1, damage: 1, speed: 1, rate: 1, max: 1, elite: 1 },
   horde: { hp: 0.55, damage: 0.9, speed: 1, rate: 2.1, max: 1.55, elite: 0.5 },
@@ -187,7 +190,9 @@ export class WaveDirector {
     const w = this.wave;
     const base = waveScale(w.n);
     const t = TYPE_MUL[w.type];
-    const s: WaveScale = { hp: base.hp * t.hp, damage: base.damage * t.damage, speed: base.speed * t.speed, rate: base.count * t.rate, max: base.count * t.max, elite: base.elite * t.elite };
+    // action-RPG pacing: fewer, tougher foes than the old bullet-heaven swarms
+    const A = ARPG_WAVE;
+    const s: WaveScale = { hp: base.hp * t.hp * A.hp, damage: base.damage * t.damage * A.damage, speed: base.speed * t.speed, rate: base.count * t.rate * A.rate, max: base.count * t.max * A.max, elite: base.elite * t.elite * A.elite };
     if (this.mode === 'endless') {
       if (this.hasModifier('blood_moon')) s.damage *= 1.3;
       if (this.hasModifier('swarm')) {
