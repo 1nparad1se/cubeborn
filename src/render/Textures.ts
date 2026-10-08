@@ -239,16 +239,29 @@ export function makeBlockAtlas(): THREE.DataTexture {
       if ((y & 3) === 3) pv *= 0.62;
       if (x === ((row * 7 + 3) & 15)) pv *= 0.7;
       set(3, x, y, pv);
-      // 4 stone (Minecraft smooth stone): grey with blocky lighter and darker streaks, no seams
-      const sRow = y >> 1;
-      const sOff = Math.floor(hash2(sRow, 0, 76) * 4);
-      const sSeg = Math.floor((x + sOff) / (2 + Math.floor(hash2(sRow, 1, 77) * 3)));
-      const sh = hash2(sSeg, sRow, 71);
-      let cv = 0.8;
-      if (sh > 0.72) cv = 0.94;
-      else if (sh < 0.22) cv = 0.66;
-      else if (sh < 0.32) cv = 0.6;
-      set(4, x, y, cv + 0.12);
+      // 4 natural stone: rounded, irregular rocks with soft dark gaps (tiles seamlessly)
+      {
+        let best = 9;
+        let second = 9;
+        let id = 0;
+        for (let j = -1; j <= 1; j++)
+          for (let i = -1; i <= 1; i++) {
+            const gx = ((x >> 3) + i + 2) % 2;
+            const gy = ((y >> 3) + j + 2) % 2;
+            const px2 = ((x >> 3) + i) * 8 + 1 + hash2(gx, gy, 78) * 6;
+            const py2 = ((y >> 3) + j) * 8 + 1 + hash2(gx, gy, 79) * 6;
+            const dd = Math.hypot(x + 0.5 - px2, (y + 0.5 - py2) * 1.15);
+            if (dd < best) {
+              second = best;
+              best = dd;
+              id = gx * 2 + gy;
+            } else if (dd < second) second = dd;
+          }
+        const gap = second - best;
+        let cv = 0.82 + hash2(id, 3, 71) * 0.12 + n * 0.05 - best * 0.012;
+        if (gap < 1.1) cv = 0.6 + n * 0.05;
+        set(4, x, y, cv);
+      }
       // 5 brick
       const br = y >> 2;
       const bx = (x + (br & 1) * 4) & 7;

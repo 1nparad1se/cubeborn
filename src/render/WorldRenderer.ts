@@ -126,7 +126,10 @@ export class WorldRenderer {
       data[i * 4] = t.tile[i];
       data[i * 4 + 1] = Math.floor(hash2(x, z, 5) * ATLAS_VARIANTS);
       data[i * 4 + 2] = level[i] < 0 ? 40 * Math.max(1, shore[i] || 5) : 0;
-      data[i * 4 + 3] = 255;
+      // a few flat paving stones set into the grass (alpha 254 marks a slab cell)
+      const tn = t.tileNames[t.tile[i]] ?? '';
+      const slab = /grass/.test(tn) && t.cell[i] !== CELL.liquid && hash2(x >> 2, z >> 2, 91) < 0.18 && hash2(x, z, 92) < 0.45;
+      data[i * 4 + 3] = slab ? 254 : 255;
     }
     const cells = new THREE.DataTexture(data, n, n, THREE.RGBAFormat);
     cells.magFilter = cells.minFilter = THREE.NearestFilter;
@@ -230,8 +233,23 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
     vec3 topc = atlasAt(tile, variant, vec2(fract(along), 0.4));
     float band = (2.0 + floor(h21(vec2(sp.x, cell.x * 3.0 + cell.y)) * 3.0)) / 16.0;
     float nz = h21(sp + cell * 7.0);
-    vec3 soilc = uSoil * (0.8 + nz * 0.25) * (mod(sp.y, 5.0) < 1.0 ? 0.88 : 1.0);
-    if (h21(sp * 0.5 + 3.0) > 0.94) soilc *= 1.25;
+    vec3 soilc = uSoil * (0.8 + nz * 0.25);
+    // rounded stones packed in the earth, like the reference cliff
+    vec2 sg = vec2(along, d) * 2.2;
+    vec2 si = floor(sg);
+    vec2 sf = fract(sg);
+    float best = 9.0;
+    vec2 bid = si;
+    for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+      vec2 o = vec2(float(i), float(j));
+      vec2 pt = o + vec2(h21(si + o), h21(si + o + 9.1)) * 0.8 + 0.1;
+      float dd = length((sf - pt) * vec2(1.0, 1.3));
+      if (dd < best) { best = dd; bid = si + o; }
+    }
+    if (best < 0.36 && d > 0.25) {
+      float sv = 0.62 + h21(bid) * 0.22;
+      soilc = mix(vec3(sv * 1.02, sv * 0.96, sv * 0.88), uSoil * 1.3, 0.25) * (best > 0.3 ? 0.75 : 1.0);
+    }
     col = d < band && d >= 0.0 ? topc * 0.95 : soilc;
     col *= mix(1.0, 0.35, clamp(d / 6.0, 0.0, 1.0));
     if (anim == 4.0) col = mix(col, vec3(0.12, 0.06, 0.25), clamp(d / 4.0, 0.0, 1.0));
@@ -285,6 +303,18 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
     // large painted patches of lighter and darker ground
     float m = vnoise(xz * 0.08) * 0.6 + vnoise(xz * 0.27) * 0.4;
     col *= 0.86 + m * 0.26;
+    if (cd.a < 0.997) {
+      // flat stone slab, slightly smaller than the cell and nudged off-grid
+      vec2 lc = fract(xz) - 0.5 - (vec2(h21(cell + 3.1), h21(cell + 7.7)) - 0.5) * 0.12;
+      vec2 hs = vec2(0.36 + h21(cell) * 0.08, 0.34 + h21(cell + 1.3) * 0.08);
+      vec2 q = abs(lc) - hs + 0.06;
+      float sd = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - 0.06;
+      if (sd < 0.0) {
+        float g = 0.4 + vnoise(xz * 9.0) * 0.07 + h21(floor(xz * 16.0)) * 0.03;
+        col = vec3(g * 0.98, g, g * 1.03);
+        if (sd > -0.04) col *= 1.1;
+      } else if (sd < 0.03) col *= 0.7;
+    }
     col *= texture2D(uAO, xz / uSize).r;
     float spark = step(0.985, h21(floor(pxc * 16.0) + cell * 17.0 + floor(uTime * 2.0)));
     if (anim == 2.0) gEmit = col * (0.85 + 0.15 * sin(uTime * 2.0 + cell.x * 0.7)) + vec3(1.0, 0.8, 0.3) * spark * 0.6;
@@ -401,9 +431,7 @@ if (aTile == 1.0) { float ph = vWPos.x * 0.35 + vWPos.z * 0.27; transformed.x +=
 vec4 sampledDiffuseColor = texture2D(map, vec2((fs.x * 0.998 + 0.001 + vTl) / ${TILE_COUNT}.0, fs.y));
 diffuseColor *= sampledDiffuseColor;
 vec2 cellId = floor(vSub);
-diffuseColor.rgb *= 0.94 + fract(sin(dot(cellId, vec2(12.9898, 78.233)) + vTl) * 43758.5453) * 0.1;
-float se = min(min(fs.x, fs.y), min(1.0 - fs.x, 1.0 - fs.y));
-if (se < 0.05) diffuseColor.rgb *= 0.86;
+if (vTl == 1.0 || vTl == 2.0 || vTl == 8.0) diffuseColor.rgb *= 0.95 + fract(sin(dot(cellId, vec2(12.9898, 78.233)) + vTl) * 43758.5453) * 0.08;
 diffuseColor.rgb *= mix(0.62, 1.0, smoothstep(0.0, 1.3, vWPos.y));`);
     };
     const glowMat = new THREE.MeshBasicMaterial({ map: tex });
