@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import type { MapDef } from '../data/types';
 import { CELL, type Block, type Terrain } from '../game/Terrain';
 import { hash2 } from '../core/Rng';
-import { ATLAS_VARIANTS, makeGroundAtlas, makeTerrainBlockTexture } from './Textures';
+import { ATLAS_VARIANTS, makeBlockAtlas, makeGroundAtlas } from './Textures';
+import { TILE_COUNT, roofVoxels, tileOf, treeVoxels, type Vox } from './VoxelFlora';
 import { unitCube } from './VoxelGeometry';
 
 const CHUNK = 16;
@@ -73,7 +73,6 @@ export class WorldRenderer {
     this.level = this.computeLevels(terrain);
     this.buildGround(terrain, map);
     this.buildBlocks(terrain, map, quality);
-    this.buildTrees(terrain, map, quality);
     this.buildDecor(terrain, quality);
     this.buildGrass(terrain, map, quality);
   }
@@ -375,8 +374,8 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
     const n = t.size;
     const chunks = Math.ceil(n / CHUNK);
     const cube = unitCube();
-    const tex = makeTerrainBlockTexture();
-    const mat = new THREE.MeshLambertMaterial({ map: tex });
+    const tex = makeBlockAtlas();
+    const mat = new THREE.MeshLambertMaterial({ map: tex, alphaTest: 0.5 });
     const u = this.uniforms;
     // Blocks standing between the camera and the hero dissolve with an ordered dither so
     // tall trees and walls in the foreground never hide the action; block bases get a soft
@@ -384,15 +383,25 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
     mat.onBeforeCompile = (sh) => {
       sh.uniforms.uFocus = u.uFocus;
       sh.uniforms.uCamDir = u.uCamDir;
+      sh.uniforms.uTime = u.uTime;
       sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;')
-        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWPos = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;');
+        .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nattribute float aTile;\nuniform float uTime;')
+        .replace('#include <uv_vertex>', `#include <uv_vertex>
+float tl = aTile;
+if (tl == 2.0 && abs(normal.y) > 0.5) tl = 7.0;
+vMapUv.x = (vMapUv.x * 0.998 + 0.001 + tl) / ${TILE_COUNT}.0;`)
+        .replace('#include <begin_vertex>', `#include <begin_vertex>
+vWPos = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
+if (aTile == 1.0) { float ph = vWPos.x * 0.35 + vWPos.z * 0.27; transformed.x += sin(uTime * 1.3 + ph) * 0.04; transformed.z += cos(uTime * 1.1 + ph) * 0.03; }`);
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nuniform vec3 uFocus;\nuniform vec2 uCamDir;')
         .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n' + DITHER)
         .replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb *= mix(0.62, 1.0, smoothstep(0.0, 1.3, vWPos.y));');
     };
     const glowMat = new THREE.MeshBasicMaterial({ map: tex });
+    glowMat.onBeforeCompile = (sh) => {
+      sh.vertexShader = sh.vertexShader.replace('#include <uv_vertex>', `#include <uv_vertex>\nvMapUv.x /= ${TILE_COUNT}.0;`);
+    };
     this.disposables.push(cube, mat, glowMat, tex);
     const buckets: (typeof t.blocks)[] = Array.from({ length: chunks * chunks }, () => []);
     const glowBlocks: typeof t.blocks = [];
@@ -413,318 +422,48 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
     const pal = map.palette.blocks;
     // Blocks are drawn by material: stone as rounded masonry (lone stones as boulders), wood
     // as stacked horizontal logs, everything else as plain blocks.
-    const occ = new Set<number>();
-    const key = (x: number, y: number, z: number) => (y * n + z) * n + x;
-    for (const b of t.blocks) if ((b.s ?? 1) === 1) occ.add(key(b.x, b.y, b.z));
-    const STONE = /stone|rock|basalt|brick|marble|sandstone|^wall|pillar|bone|obsidian|cobble/;
-    const WOOD = /plank|trunk|log/;
-    type Style = 'cube' | 'stone' | 'boulder' | 'logX' | 'logZ';
-    const styleOf = (b: Block): Style => {
-      if ((b.s ?? 1) !== 1) return 'cube';
-      const nx = occ.has(key(b.x - 1, b.y, b.z)) || occ.has(key(b.x + 1, b.y, b.z));
-      const nz = occ.has(key(b.x, b.y, b.z - 1)) || occ.has(key(b.x, b.y, b.z + 1));
-      if (WOOD.test(b.mat)) return nz && !nx ? 'logZ' : 'logX';
-      if (STONE.test(b.mat)) {
-        const ci = b.z * n + b.x;
-        const lone = (t.height[ci] ?? 0) <= 2 && !(nx && nz) && !(occ.has(key(b.x - 1, b.y, b.z)) && occ.has(key(b.x + 1, b.y, b.z))) && !(occ.has(key(b.x, b.y, b.z - 1)) && occ.has(key(b.x, b.y, b.z + 1)));
-        return lone ? 'boulder' : 'stone';
-      }
-      return 'cube';
-    };
-    const stoneGeo = new RoundedBoxGeometry(0.94, 0.94, 0.94, 2, 0.16);
-    stoneGeo.translate(0, 0.47, 0);
-    const boulderGeo = (() => {
-      const g = new THREE.IcosahedronGeometry(0.62, 1).toNonIndexed();
-      const p = g.getAttribute('position') as THREE.BufferAttribute;
-      for (let i = 0; i < p.count; i++) {
-        const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-        const k = 1 + (hash2(Math.round(x * 40), Math.round(y * 40) * 3 + Math.round(z * 40) * 7, 3) - 0.5) * 0.28;
-        p.setXYZ(i, x * k, Math.max(-0.1, y * k * 0.8), z * k);
-      }
-      g.translate(0, 0.42, 0);
-      g.computeVertexNormals();
-      return g;
-    })();
-    const logGeo = (() => {
-      const parts: THREE.BufferGeometry[] = [];
-      for (const [y, o] of [[0.25, 0.04], [0.75, -0.04]] as [number, number][]) {
-        const c = new THREE.CylinderGeometry(0.26, 0.26, 1.02, 9, 1);
-        c.rotateZ(Math.PI / 2);
-        c.translate(o, y, 0);
-        parts.push(c);
-      }
-      const g = mergeGeometries(parts, false)!;
-      for (const c of parts) c.dispose();
-      return g;
-    })();
-    const GEO: Record<Style, THREE.BufferGeometry> = { cube, stone: stoneGeo, boulder: boulderGeo, logX: logGeo, logZ: logGeo };
-    this.disposables.push(stoneGeo, boulderGeo, logGeo);
-    const fill = (list: typeof t.blocks, material: THREE.Material, shadows: boolean, cx = -1, cz = -1) => {
-      if (!list.length) return;
-      const groups = new Map<Style, Block[]>();
-      for (const b of list) {
-        const st = material === glowMat ? 'cube' : styleOf(b);
-        let g = groups.get(st);
-        if (!g) groups.set(st, (g = []));
-        g.push(b);
-      }
-      for (const [st, items] of groups) {
-        const mesh = new THREE.InstancedMesh(GEO[st], material, items.length);
-        items.forEach((b, i) => {
-          const s = b.s ?? 1;
-          const h = hash2(b.x * 3 + b.y, b.z, 23);
-          let yaw = 0;
-          sc.set(s, s, s);
-          if (st === 'logZ') yaw = Math.PI / 2;
-          else if (st === 'stone') {
-            // masonry: each stone slightly different in size and turn
-            yaw = (h - 0.5) * 0.12;
-            const k = 0.94 + hash2(b.x, b.z * 5 + b.y, 24) * 0.08;
-            sc.set(k, 0.96 + h * 0.06, k);
-          } else if (st === 'boulder') {
-            yaw = h * Math.PI * 2;
-            const k = 0.85 + hash2(b.x, b.z, 25) * 0.4;
-            sc.set(k, 0.8 + hash2(b.z, b.x, 26) * 0.5, k);
-          }
-          q.setFromAxisAngle(v3.set(0, 1, 0), yaw);
-          m4.compose(v3.set(b.x + 0.5, b.y, b.z + 0.5), q, sc);
-          mesh.setMatrixAt(i, m4);
-          const colors = pal[b.mat] ?? [0x888888];
-          col.setHex(colors[b.v % colors.length]);
-          const shade = 0.9 + hash2(b.x * 3 + b.y, b.z, 11) * 0.16;
-          col.multiplyScalar(shade);
-          mesh.setColorAt(i, col);
-        });
-        mesh.castShadow = shadows;
-        mesh.receiveShadow = true;
-        mesh.computeBoundingSphere();
-        this.group.add(mesh);
-        this.disposables.push(mesh);
-        if (cx >= 0) this.chunks.push({ mesh, x: (cx + 0.5) * CHUNK, z: (cz + 0.5) * CHUNK });
-      }
-    };
-    const shadows = quality !== 'low';
-    buckets.forEach((list, i) => fill(list, mat, shadows, i % chunks, Math.floor(i / chunks)));
-    fill(glowBlocks, glowMat, false);
-  }
-
-  /**
-   * Rounded trees: a tapered trunk with a root flare and a canopy of faceted blobs for
-   * broadleaf trees, stacked cones with snowy tips for pines. Merged per chunk; the canopy
-   * sways in the wind and dissolves when it stands in front of the hero.
-   */
-  private buildTrees(t: Terrain, map: MapDef, quality: string) {
-    if (!t.trees.length && !t.roofs.length) return;
-    const pal = map.palette.blocks;
-    const u = this.uniforms;
-    const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
-    mat.onBeforeCompile = (sh) => {
-      sh.uniforms.uFocus = u.uFocus;
-      sh.uniforms.uCamDir = u.uCamDir;
-      sh.uniforms.uTime = u.uTime;
-      sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nuniform float uTime;\nattribute float aSway;')
-        .replace(
-          '#include <begin_vertex>',
-          `#include <begin_vertex>
-float ph = position.x * 0.35 + position.z * 0.27;
-transformed.x += sin(uTime * 1.3 + ph) * 0.07 * aSway;
-transformed.z += cos(uTime * 1.1 + ph) * 0.05 * aSway;
-vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`,
-        );
-      sh.fragmentShader = sh.fragmentShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nuniform vec3 uFocus;\nuniform vec2 uCamDir;')
-        .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n' + DITHER);
-    };
-    this.disposables.push(mat);
-    const rbox = new RoundedBoxGeometry(1, 1, 1, 2, 0.1);
-    const blob = new THREE.IcosahedronGeometry(1, 1);
-    const cone = new THREE.ConeGeometry(1, 1, 8, 2);
-    const trunkG = new THREE.CylinderGeometry(1, 1, 1, 7, 1);
-    const dome = new THREE.SphereGeometry(1, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2);
-    const disc = new THREE.CylinderGeometry(1, 1, 1, 12, 1);
-    const slab = new THREE.BoxGeometry(1, 1, 1, 4, 1, 4);
-    const prism = new THREE.CylinderGeometry(1, 1, 1, 3, 1);
-    const tmp = new THREE.Color();
-    const m4 = new THREE.Matrix4();
-    const q = new THREE.Quaternion();
-    const e = new THREE.Euler();
-    // one coloured, flat-shaded piece of a tree in world space
-    const piece = (g: THREE.BufferGeometry, px: number, py: number, pz: number, sx: number, sy: number, sz: number, ry: number, color: number, sway: number, seed: number, opts: { jitter?: number; snowAbove?: number; snow?: number; taper?: number } = {}) => {
-      const geo = g.clone().toNonIndexed();
-      geo.deleteAttribute('uv');
-      const pos = geo.getAttribute('position') as THREE.BufferAttribute;
-      const jit = opts.jitter ?? 0;
-      for (let i = 0; i < pos.count; i++) {
-        let x = pos.getX(i);
-        let y = pos.getY(i);
-        let z = pos.getZ(i);
-        if (opts.taper !== undefined) {
-          const k = 1 - (y + 0.5) * opts.taper;
-          x *= k;
-          z *= k;
-        }
-        if (jit) {
-          // lumpy, organic silhouette; the same corner moves the same way on every face
-          const n = hash2(Math.round(x * 50) + seed, Math.round(y * 50) * 7 + Math.round(z * 50) * 13, 5) - 0.5;
-          x *= 1 + n * jit;
-          y *= 1 + n * jit;
-          z *= 1 + n * jit;
-        }
-        pos.setXYZ(i, x, y, z);
-      }
-      e.set(0, ry, 0);
-      q.setFromEuler(e);
-      m4.compose(new THREE.Vector3(px, py, pz), q, new THREE.Vector3(sx, sy, sz));
-      geo.applyMatrix4(m4);
-      geo.computeVertexNormals();
-      const n = pos.count;
-      const cols = new Float32Array(n * 3);
-      const sw = new Float32Array(n);
-      const nor = geo.getAttribute('normal') as THREE.BufferAttribute;
-      const wp = geo.getAttribute('position') as THREE.BufferAttribute;
-      for (let i = 0; i < n; i += 3) {
-        // per-face tint: lit tops, darker undersides, a little variation
-        const ny = (nor.getY(i) + nor.getY(i + 1) + nor.getY(i + 2)) / 3;
-        const cy = (wp.getY(i) + wp.getY(i + 1) + wp.getY(i + 2)) / 3;
-        const v = 0.78 + ny * 0.2 + (hash2(i + seed, seed, 9) - 0.5) * 0.14;
-        tmp.setHex(opts.snowAbove !== undefined && cy > opts.snowAbove && ny > 0.1 ? opts.snow ?? 0xffffff : color).multiplyScalar(v);
-        for (let j = 0; j < 3; j++) {
-          cols[(i + j) * 3] = tmp.r;
-          cols[(i + j) * 3 + 1] = tmp.g;
-          cols[(i + j) * 3 + 2] = tmp.b;
-          sw[i + j] = sway * Math.max(0, wp.getY(i + j) - 1.2);
-        }
-      }
-      geo.setAttribute('color', new THREE.BufferAttribute(cols, 3));
-      geo.setAttribute('aSway', new THREE.BufferAttribute(sw, 1));
-      return geo;
-    };
-    const chunks = Math.ceil(t.size / CHUNK);
-    const buckets: THREE.BufferGeometry[][] = Array.from({ length: chunks * chunks }, () => []);
+    // Every block is a Minecraft-style textured cube; trees and roofs add their own blocks.
+    const vox: Vox[][] = Array.from({ length: chunks * chunks }, () => []);
+    const bucketOf = (x: number, z: number) => Math.min(chunks - 1, Math.max(0, Math.floor(z / CHUNK))) * chunks + Math.min(chunks - 1, Math.max(0, Math.floor(x / CHUNK)));
     for (const tr of t.trees) {
-      const cx = tr.x + 0.5;
-      const cz = tr.z + 0.5;
-      const seed = tr.x * 131 + tr.z * 17;
-      const r = (a: number) => hash2(tr.x, tr.z, a);
-      const trunkCols = pal[tr.trunk] ?? [0x6e4c2c];
-      const leafCols = pal[tr.leaf] ?? [0x3f8a30];
-      const trunkC = trunkCols[tr.v % trunkCols.length];
-      const leafC = leafCols[tr.v % leafCols.length];
-      const parts: THREE.BufferGeometry[] = [];
-      // Minecraft-like: everything is built from slightly bevelled cubes
-      const cube = (x: number, y: number, z: number, sx: number, sy: number, sz: number, c: number, sway: number, sd: number) => {
-        tmp.setHex(c).offsetHSL(0, 0, (hash2(sd, seed, 3) - 0.5) * 0.07);
-        parts.push(piece(rbox, x, y, z, sx, sy, sz, 0, tmp.getHex(), sway, sd));
-      };
-      const ox = cx + (r(5) - 0.5) * 0.1;
-      const oz = cz + (r(6) - 0.5) * 0.1;
-      if (tr.kind === 'oak') {
-        const h = tr.h;
-        const big = h >= 4;
-        cube(ox, h / 2, oz, 0.55, h, 0.55, trunkC, 0, seed);
-        const R = big ? 2 : 1;
-        const top = h + 0.2;
-        // two wide leaf layers, corners trimmed at random, then a small cap
-        for (let ly = 0; ly < 2; ly++) {
-          for (let ix = -R; ix <= R; ix++) for (let iz = -R; iz <= R; iz++) {
-            const corner = Math.abs(ix) === R && Math.abs(iz) === R;
-            if (corner && r(200 + ix * 7 + iz * 3 + ly * 31) < 0.7) continue;
-            cube(ox + ix * 0.8, top - 0.8 + ly * 0.8, oz + iz * 0.8, 0.84, 0.84, 0.84, leafC, 1, seed + 50 + ix * 9 + iz * 3 + ly * 41);
-          }
-        }
-        for (let ix = -1; ix <= 1; ix++) for (let iz = -1; iz <= 1; iz++) {
-          if (ix && iz && r(300 + ix * 5 + iz) < 0.6) continue;
-          cube(ox + ix * 0.8, top + 0.8, oz + iz * 0.8, 0.84, 0.84, 0.84, leafC, 1, seed + 90 + ix * 9 + iz);
-        }
-      } else if (tr.kind === 'mushroom') {
-        // giant Minecraft-style toadstool: square stem, flat blocky cap with white spots
-        const capC = leafCols[0];
-        const stemC = leafCols[1 % leafCols.length];
-        const h = tr.h + 0.6;
-        cube(ox, h / 2, oz, 0.7, h, 0.7, stemC, 0, seed);
-        const R = 2;
-        for (let ix = -R; ix <= R; ix++) for (let iz = -R; iz <= R; iz++) {
-          if (Math.abs(ix) === R && Math.abs(iz) === R) continue;
-          const spot = r(400 + ix * 11 + iz * 5) < 0.22;
-          cube(ox + ix * 0.75, h + 0.3, oz + iz * 0.75, 0.78, 0.6, 0.78, spot ? 0xf4eee2 : capC, 0, seed + 60 + ix * 9 + iz);
-        }
-        for (let ix = -1; ix <= 1; ix++) for (let iz = -1; iz <= 1; iz++) {
-          const spot = r(500 + ix * 11 + iz * 5) < 0.25;
-          cube(ox + ix * 0.75, h + 0.85, oz + iz * 0.75, 0.78, 0.55, 0.78, spot ? 0xf4eee2 : capC, 0, seed + 120 + ix * 9 + iz);
-        }
-        cube(ox, h - 0.08, oz, 3.4, 0.12, 3.4, 0xb89a80, 0, seed + 2);
-      } else {
-        // spruce: square trunk and stacked square layers that narrow upward
-        const h = tr.h + 1;
-        cube(ox, h / 2, oz, 0.5, h, 0.5, trunkC, 0, seed);
-        const layers = [2, 1, 1, 0];
-        for (let i = 0; i < layers.length; i++) {
-          const R = layers[i];
-          const y = 1.5 + i * ((h - 1.2) / layers.length);
-          for (let ix = -R; ix <= R; ix++) for (let iz = -R; iz <= R; iz++) {
-            if (R === 2 && Math.abs(ix) === 2 && Math.abs(iz) === 2) continue;
-            if (R === 1 && i === 2 && ix && iz) continue;
-            const c = i === layers.length - 1 && pal.snow ? 0xf2f6fa : leafC;
-            cube(ox + ix * 0.7, y, oz + iz * 0.7, 0.74, 0.6, 0.74, c, 0.6, seed + 30 + i * 37 + ix * 7 + iz);
-          }
-        }
-      }
-      const bx = Math.min(chunks - 1, Math.max(0, Math.floor(tr.x / CHUNK)));
-      const bz = Math.min(chunks - 1, Math.max(0, Math.floor(tr.z / CHUNK)));
-      buckets[bz * chunks + bx].push(...parts);
+      const list: Vox[] = [];
+      treeVoxels(tr, map, list);
+      vox[bucketOf(tr.x, tr.z)].push(...list);
     }
-    // Minecraft-style stepped roofs: stair layers that narrow toward the ridge
     for (const rf of t.roofs) {
-      const cols = pal[rf.mat] ?? [0x8a4a3a];
-      let rc = cols[0];
-      if (rf.mat === 'leaves') rc = 0x9a7a4a;
-      if (rf.mat === 'snow') rc = 0xeef3f8;
-      const seed = rf.x * 31 + rf.z * 7;
-      const alongX = rf.w >= rf.d;
-      const L = (alongX ? rf.w : rf.d) + 0.6;
-      const W = (alongX ? rf.d : rf.w) + 0.6;
-      const cx = rf.x + rf.w / 2;
-      const cz = rf.z + rf.d / 2;
-      const parts: THREE.BufferGeometry[] = [];
-      const steps = Math.max(2, Math.ceil(W / 2));
-      const stepW = W / (steps * 2);
-      for (let i = 0; i < steps; i++) {
-        const w = W - i * stepW * 2;
-        tmp.setHex(rc).offsetHSL(0, 0, (i % 2 ? -0.04 : 0.02));
-        const sx = alongX ? L : w;
-        const sz = alongX ? w : L;
-        parts.push(piece(rbox, cx, rf.y + 0.25 + i * 0.5, cz, sx, 0.5, sz, 0, tmp.getHex(), 0, seed + i));
-      }
-      // log ridge on top
-      parts.push(piece(rbox, cx, rf.y + 0.25 + steps * 0.5 - 0.1, cz, alongX ? L + 0.1 : 0.4, 0.3, alongX ? 0.4 : L + 0.1, 0, 0x5a3a24, 0, seed + 20));
-      if (L > 4) parts.push(piece(rbox, cx + (alongX ? L * 0.25 : W * 0.25), rf.y + steps * 0.35 + 0.3, cz + (alongX ? W * 0.25 : L * 0.25), 0.6, steps * 0.7 + 0.6, 0.6, 0, 0x7a7a80, 0, seed + 7));
-      const bx = Math.min(chunks - 1, Math.max(0, Math.floor(cx / CHUNK)));
-      const bz = Math.min(chunks - 1, Math.max(0, Math.floor(cz / CHUNK)));
-      buckets[bz * chunks + bx].push(...parts);
+      const list: Vox[] = [];
+      roofVoxels(rf, map, list);
+      vox[bucketOf(rf.x + rf.w / 2, rf.z + rf.d / 2)].push(...list);
     }
-    rbox.dispose();
-    blob.dispose();
-    cone.dispose();
-    trunkG.dispose();
-    dome.dispose();
-    disc.dispose();
-    slab.dispose();
-    prism.dispose();
-    const shadows = quality !== 'low';
-    buckets.forEach((list, i) => {
-      if (!list.length) return;
-      const geo = mergeGeometries(list, false);
-      for (const g of list) g.dispose();
-      if (!geo) return;
-      geo.computeBoundingSphere();
-      const mesh = new THREE.Mesh(geo, mat);
+    const toVox = (b: Block): Vox => {
+      const s = b.s ?? 1;
+      const colors = pal[b.mat] ?? [0x888888];
+      col.setHex(colors[b.v % colors.length]).multiplyScalar(0.92 + hash2(b.x * 3 + b.y, b.z, 11) * 0.14);
+      return { x: b.x + 0.5, y: b.y, z: b.z + 0.5, sx: s, sy: s, sz: s, color: col.getHex(), tile: tileOf(b.mat) };
+    };
+    const fill = (list: Block[], extra: Vox[], material: THREE.Material, shadows: boolean, cx = -1, cz = -1) => {
+      const items = list.map(toVox).concat(extra);
+      if (!items.length) return;
+      const geo = cube.clone();
+      const tiles = new Float32Array(items.length);
+      const mesh = new THREE.InstancedMesh(geo, material, items.length);
+      items.forEach((b, i) => {
+        m4.compose(v3.set(b.x, b.y, b.z), q.identity(), sc.set(b.sx, b.sy, b.sz));
+        mesh.setMatrixAt(i, m4);
+        mesh.setColorAt(i, col.setHex(b.color).multiplyScalar(1.12));
+        tiles[i] = b.tile;
+      });
+      geo.setAttribute('aTile', new THREE.InstancedBufferAttribute(tiles, 1));
       mesh.castShadow = shadows;
       mesh.receiveShadow = true;
+      mesh.computeBoundingSphere();
       this.group.add(mesh);
-      this.disposables.push(geo);
-      this.chunks.push({ mesh, x: ((i % chunks) + 0.5) * CHUNK, z: (Math.floor(i / chunks) + 0.5) * CHUNK });
-    });
+      this.disposables.push(mesh, geo);
+      if (cx >= 0) this.chunks.push({ mesh, x: (cx + 0.5) * CHUNK, z: (cz + 0.5) * CHUNK });
+    };
+    const shadows = quality !== 'low';
+    buckets.forEach((list, i) => fill(list, vox[i], mat, shadows, i % chunks, Math.floor(i / chunks)));
+    fill(glowBlocks, [], glowMat, false);
   }
 
   private buildDecor(t: Terrain, quality: string) {

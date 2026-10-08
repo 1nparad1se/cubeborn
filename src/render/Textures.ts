@@ -171,3 +171,75 @@ export function makeBlobTexture(): THREE.CanvasTexture {
   const t = new THREE.CanvasTexture(c);
   return t;
 }
+
+/**
+ * Minecraft-style 16px block textures in one strip (tiles in VoxelFlora.TILE order), grey so
+ * the per-block colour tints them. Leaves have see-through pixels (alpha-tested).
+ */
+export function makeBlockAtlas(): THREE.DataTexture {
+  const px = 16;
+  const tiles = 8;
+  const W = px * tiles;
+  const data = new Uint8Array(W * px * 4);
+  const set = (t: number, x: number, y: number, v: number, a = 255) => {
+    const i = (y * W + t * px + x) * 4;
+    data[i] = data[i + 1] = data[i + 2] = Math.round(Math.min(1, Math.max(0, v)) * 255);
+    data[i + 3] = a;
+  };
+  for (let y = 0; y < px; y++)
+    for (let x = 0; x < px; x++) {
+      const n = hash2(x, y, 61);
+      const cl = hash2(x >> 1, y >> 1, 62);
+      // 0 smooth
+      let v = 0.82 + cl * 0.12 + n * 0.06;
+      if (x === 0 || y === px - 1) v *= 1.06;
+      if (x === px - 1 || y === 0) v *= 0.84;
+      set(0, x, y, v);
+      // 1 leaves: dense two-tone clumps with holes
+      const leaf = hash2(x, y, 63);
+      const hole = leaf > 0.86 && hash2(x >> 1, y >> 1, 64) > 0.4;
+      const lv = hash2(x, y, 65) > 0.55 ? 0.95 + n * 0.05 : hash2(x, y, 66) > 0.4 ? 0.74 : 0.56;
+      set(1, x, y, lv, hole ? 0 : 255);
+      // 2 bark: vertical grooves
+      const col = hash2(x, 0, 67);
+      let bv = 0.7 + col * 0.22 + hash2(x, y >> 2, 68) * 0.1;
+      if (col < 0.25) bv *= 0.72;
+      set(2, x, y, bv);
+      // 3 planks: four boards with seams and offset end joints
+      const row = y >> 2;
+      let pv = 0.84 + hash2(row, 0, 69) * 0.1 + (hash2(x >> 2, y, 70) - 0.5) * 0.08;
+      if ((y & 3) === 3) pv *= 0.62;
+      if (x === ((row * 7 + 3) & 15)) pv *= 0.7;
+      set(3, x, y, pv);
+      // 4 cobble: irregular stones with dark mortar
+      const cx = Math.floor((x + (y >> 2) * 3) / 5);
+      const cy = Math.floor((y + (x >> 3) * 2) / 4);
+      const edge = (x + (y >> 2) * 3) % 5 === 0 || (y + (x >> 3) * 2) % 4 === 0;
+      let cv = 0.72 + hash2(cx, cy, 71) * 0.24 + n * 0.06;
+      if (edge) cv = 0.45 + n * 0.08;
+      set(4, x, y, cv);
+      // 5 brick
+      const br = y >> 2;
+      const bx = (x + (br & 1) * 4) & 7;
+      let kv = 0.8 + hash2((x + (br & 1) * 4) >> 3, br, 72) * 0.15 + n * 0.05;
+      if ((y & 3) === 3 || bx === 7) kv = 0.92;
+      set(5, x, y, kv);
+      // 6 shingles: overlapping rows with staggered gaps
+      const sr = y >> 2;
+      const sx = (x + (sr & 1) * 2) & 3;
+      let sv = 0.8 + hash2((x + (sr & 1) * 2) >> 2, sr, 73) * 0.16 + n * 0.04;
+      if ((y & 3) === 0) sv *= 0.62;
+      if (sx === 0) sv *= 0.8;
+      set(6, x, y, sv);
+      // 7 log top rings
+      const d = Math.max(Math.abs(x - 7.5), Math.abs(y - 7.5));
+      set(7, x, y, d > 6.5 ? 0.6 : 0.8 + ((Math.floor(d) & 1) ? 0.08 : 0) + n * 0.04);
+    }
+  const tex = new THREE.DataTexture(data, W, px, THREE.RGBAFormat);
+  tex.magFilter = THREE.NearestFilter;
+  tex.minFilter = THREE.NearestFilter;
+  tex.generateMipmaps = false;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  return tex;
+}
