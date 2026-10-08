@@ -270,12 +270,18 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
       gEmit = col * 0.1;
     }
   } else {
-    vec2 l = local;
+    // every ground cell reads as 3x3 small blocks, matching the tree blocks
+    vec2 sub = floor(xz * 3.0);
+    vec2 l = fract(xz * 3.0);
+    variant = mod(variant + floor(h21(sub * 1.7) * 4.0), ${ATLAS_VARIANTS.toFixed(1)});
     if (anim > 0.5 && anim < 4.5) {
       float sp = anim == 2.0 ? 0.08 : 0.18;
       l = fract(local + vec2(floor(uTime * sp * 16.0) / 16.0, floor(uTime * sp * 8.0) / 16.0));
     }
     col = atlasAt(tile, variant, l);
+    col *= 0.93 + h21(sub + 11.0) * 0.12;
+    float se = min(min(l.x, l.y), min(1.0 - l.x, 1.0 - l.y));
+    col *= se < 0.06 ? 0.9 : 1.0;
     // large painted patches of lighter and darker ground
     float m = vnoise(xz * 0.08) * 0.6 + vnoise(xz * 0.27) * 0.4;
     col *= 0.86 + m * 0.26;
@@ -378,18 +384,27 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
       sh.uniforms.uCamDir = u.uCamDir;
       sh.uniforms.uTime = u.uTime;
       sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nattribute float aTile;\nuniform float uTime;')
+        .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nattribute float aTile;\nuniform float uTime;\nvarying vec2 vSub;\nvarying float vTl;')
         .replace('#include <uv_vertex>', `#include <uv_vertex>
 float tl = aTile;
 if (tl == 2.0 && abs(normal.y) > 0.5) tl = 7.0;
-vMapUv.x = (vMapUv.x * 0.998 + 0.001 + tl) / ${TILE_COUNT}.0;`)
+float rep = max(1.0, floor(max(length(instanceMatrix[0].xyz), length(instanceMatrix[1].xyz)) * 3.0 + 0.5));
+vSub = vMapUv * rep;
+vTl = tl;`)
         .replace('#include <begin_vertex>', `#include <begin_vertex>
 vWPos = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
 if (aTile == 1.0) { float ph = vWPos.x * 0.35 + vWPos.z * 0.27; transformed.x += sin(uTime * 1.3 + ph) * 0.04; transformed.z += cos(uTime * 1.1 + ph) * 0.03; }`);
       sh.fragmentShader = sh.fragmentShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nuniform vec3 uFocus;\nuniform vec2 uCamDir;')
+        .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nuniform vec3 uFocus;\nuniform vec2 uCamDir;\nvarying vec2 vSub;\nvarying float vTl;')
         .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n' + DITHER)
-        .replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb *= mix(0.62, 1.0, smoothstep(0.0, 1.3, vWPos.y));');
+        .replace('#include <map_fragment>', `vec2 fs = fract(vSub);
+vec4 sampledDiffuseColor = texture2D(map, vec2((fs.x * 0.998 + 0.001 + vTl) / ${TILE_COUNT}.0, fs.y));
+diffuseColor *= sampledDiffuseColor;
+vec2 cellId = floor(vSub);
+diffuseColor.rgb *= 0.94 + fract(sin(dot(cellId, vec2(12.9898, 78.233)) + vTl) * 43758.5453) * 0.1;
+float se = min(min(fs.x, fs.y), min(1.0 - fs.x, 1.0 - fs.y));
+if (se < 0.05) diffuseColor.rgb *= 0.86;
+diffuseColor.rgb *= mix(0.62, 1.0, smoothstep(0.0, 1.3, vWPos.y));`);
     };
     const glowMat = new THREE.MeshBasicMaterial({ map: tex });
     glowMat.onBeforeCompile = (sh) => {
