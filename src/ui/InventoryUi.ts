@@ -1,7 +1,7 @@
 import type { Run } from '../game/Run';
 import { BAG_SIZE } from '../game/arpg/Loot';
 import { EQUIP_POS, baseIcon, isPct, itemName, itemStats, RARITY_COLOR, RARITY_HEX, score, sellPrice, slotOf, type Affix, type AffixStat, type EquipPos, type Item } from '../game/arpg/Gear';
-import { MOD_BY_ID } from '../game/arpg/kits';
+import { POWER_BY_ID } from '../game/action/powers';
 import { h, clear } from './dom';
 import { iconImg } from './icons';
 import { t, L, getLang } from '../i18n';
@@ -33,7 +33,7 @@ export function itemCard(it: Item, cmp: Item | null, title?: string): HTMLElemen
     );
   });
   if (cmp) for (const [stat, v] of cmpMap) if (!seen.has(stat)) lines.push(h('div.it-line.lost', h('span', affixText({ stat, v }) + ' ' + t('inv_lost')), h('span.diff.down', fmtDiff(stat, -v))));
-  const power = it.power ? MOD_BY_ID[it.power] : null;
+  const power = it.power ? POWER_BY_ID[it.power] : null;
   const verdict = cmp !== undefined && cmp !== null ? (score(it) > score(cmp) + 0.05 ? 'better' : score(it) < score(cmp) - 0.05 ? 'worse' : 'same') : null;
   return h(
     'div.it-card',
@@ -141,7 +141,7 @@ export class InventoryUi {
   private renderStats() {
     const run = this.run;
     const st = run.player.stats;
-    const sk = run.skills;
+    const sk = run.action;
     const pct = (v: number) => `${Math.round(v * 100)}%`;
     const rows: [string, string][] = [
       [t('ist_hp'), `${Math.round(st.maxHp)}`],
@@ -151,9 +151,9 @@ export class InventoryUi {
       [t('ist_critd'), '+' + pct(0.6 + st.critDamage)],
       [t('ist_cd'), '−' + pct(1 - st.cooldown)],
       [t('ist_speed'), pct(st.moveSpeed)],
-      [t('ist_aspd'), '+' + pct(sk.buff.atkSpeed)],
+      [t('ist_aspd'), '+' + pct(sk.buff.atkSpeed + (run.loot.totals.atkSpeed ?? 0))],
       [t('ist_regen'), `${st.regen.toFixed(1)}/${t('sec')}`],
-      [L(sk.kit.res.name), `${sk.resMax}`],
+      [L(sk.cls.res.name), `${Math.round(sk.resMax)}`],
     ];
     clear(this.stats);
     this.stats.append(h('div.inv-label', t('inv_stats')), ...rows.map(([a, b]) => h('div.ist', h('span', a), h('b', b))));

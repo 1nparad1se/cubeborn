@@ -1,9 +1,10 @@
 import { h, clear } from './dom';
 import { t, LANGS, setLang, type Lang } from '../i18n';
 import { keyName } from '../input/Input';
-import { QUALITY_PRESETS, defaultKeybinds, type BindAction, type Quality, type Settings } from '../meta/Save';
+import { QUALITY_PRESETS, SKILL_BINDS, defaultKeybinds, type BindAction, type Quality, type Settings } from '../meta/Save';
 import { confirmBox, type MenuApi } from './Menus';
 import { dev } from '../dev/DevMode';
+import './classSelect.css';
 
 const RESOLUTIONS: [number, number][] = [
   [1280, 720],
@@ -93,25 +94,33 @@ export function settingsPanel(api: MenuApi, rerender: () => void, inRun = false)
     { id: 'high' as const, name: t('q_high') },
   ];
 
-  /** Two key slots for an action; a key belongs to one action only. */
-  const bindRow = (a: BindAction) => {
+  /** Notice from the last rebind (a key taken from another action). */
+  let bindNote = '';
+  const bindLabel = (a: BindAction) => t('bind_' + a);
+  /** Two key slots for an action; binding a key already used elsewhere moves it here (with a notice). */
+  const bindRow = (a: BindAction, clash: Set<string>) => {
     const all = Object.keys(defaultKeybinds()) as BindAction[];
     const keys = h('div.binds');
     for (let slot = 0; slot < 2; slot++) {
       const code = s.keybinds[a][slot] ?? '';
-      const b = h('button.bind' + (code ? '' : '.empty'), {
+      const b = h('button.bind' + (code ? '' : '.empty') + (code && clash.has(code) ? '.conflict' : ''), {
+        title: code && clash.has(code) ? t('bind_conflict', { key: keyName(code), a: bindLabel(a), b: all.filter((o) => o !== a && s.keybinds[o].includes(code)).map(bindLabel).join(', ') }) : '',
         onclick: () => {
           api.sfx('ui');
           b.textContent = t('press_key');
           b.classList.add('wait');
           api.captureKey((c) => {
+            bindNote = '';
             if (c !== 'Escape' || a === 'pause') {
               if (c === 'Backspace' || c === 'Delete') s.keybinds[a].splice(slot, 1);
               else {
-                for (const other of all) s.keybinds[other] = s.keybinds[other].filter((k) => k !== c);
-                const list = s.keybinds[a];
+                const from = all.filter((o) => o !== a && s.keybinds[o].includes(c));
+                for (const other of all) if (other !== a) s.keybinds[other] = s.keybinds[other].filter((k) => k !== c);
+                const list = [...s.keybinds[a]];
                 if (slot < list.length) list[slot] = c;
                 else list.push(c);
+                s.keybinds[a] = list.filter((k, i) => list.indexOf(k) === i);
+                if (from.length) bindNote = t('bind_moved', { key: keyName(c), a: bindLabel(a), b: from.map(bindLabel).join(', ') });
               }
               save();
             }
@@ -121,8 +130,16 @@ export function settingsPanel(api: MenuApi, rerender: () => void, inRun = false)
       }, code ? keyName(code) : '—');
       keys.append(b);
     }
-    return row(t('bind_' + a), keys);
+    return row(bindLabel(a), keys);
   };
+  const BIND_GROUPS: [string, BindAction[]][] = [
+    ['combat', ['attack', 'attackHere', ...SKILL_BINDS, 'ult', 'identity', 'special', 'dodge', 'potion']],
+    ['move', ['up', 'down', 'left', 'right', 'stop', 'jump', 'zoomIn', 'zoomOut', 'map']],
+    ['ui', ['inventory', 'skills', 'pause']],
+    ['dev', ['devPanel', 'devDebug', 'devGod']],
+  ];
+  /** Actions every class needs a key for (warned about when left without one). */
+  const ESSENTIAL: BindAction[] = [...SKILL_BINDS, 'ult', 'identity', 'dodge', 'potion', 'inventory', 'skills'];
 
   const renderTab = () => {
     clear(body);
@@ -211,15 +228,33 @@ export function settingsPanel(api: MenuApi, rerender: () => void, inRun = false)
         );
         break;
       case 'controls': {
-        for (const a of ['skillQ', 'skillW', 'skillE', 'skillR', 'dodge', 'attackHere', 'stop', 'up', 'down', 'left', 'right', 'pause', 'zoomIn', 'zoomOut', 'map'] as BindAction[]) body.append(bindRow(a));
+        const all = Object.keys(defaultKeybinds()) as BindAction[];
+        // conflicts: a key used by two actions (old saves, or two slots of the same action)
+        const owners = new Map<string, BindAction[]>();
+        for (const a of all) for (const k of s.keybinds[a]) owners.set(k, [...(owners.get(k) ?? []), a]);
+        const clash = new Set([...owners].filter(([, o]) => o.length > 1).map(([k]) => k));
+        const warns: string[] = [...clash].map((k) => t('bind_conflict', { key: keyName(k), a: bindLabel(owners.get(k)![0]), b: owners.get(k)!.slice(1).map(bindLabel).join(', ') }));
+        const unbound = ESSENTIAL.filter((a) => !s.keybinds[a].length);
+        if (unbound.length) warns.push(t('bind_unbound', { list: unbound.map(bindLabel).join(', ') }));
+        body.append(h('div.set-hint.bind-mouse', t('bind_mouse')));
+        if (bindNote) body.append(h('div.bind-note', bindNote));
+        for (const w of warns) body.append(h('div.bind-warn', '⚠ ' + w));
+        for (const [g, acts] of BIND_GROUPS) {
+          if (g === 'dev' && !dev.available) continue;
+          body.append(h('div.set-sub', t('bindgrp_' + g)));
+          for (const a of acts) body.append(bindRow(a, clash));
+        }
         body.append(
           h('div.set-hint', t('bind_hint')),
           h('div.center', h('button.btn.small', {
-            onclick: () => {
+            onclick: (e: MouseEvent) => {
               api.sfx('ui');
-              s.keybinds = defaultKeybinds();
-              save();
-              renderTab();
+              confirmBox(e.target as HTMLElement, t('bind_reset_confirm'), () => {
+                s.keybinds = defaultKeybinds();
+                bindNote = '';
+                save();
+                renderTab();
+              });
             },
           }, t('bind_reset'))),
         );
@@ -250,9 +285,9 @@ export function settingsPanel(api: MenuApi, rerender: () => void, inRun = false)
               }, t('dv_reset_state')),
             ),
             h('div.set-sub', t('dev_hotkeys')),
-            bindRow('devPanel'),
-            bindRow('devDebug'),
-            bindRow('devGod'),
+            bindRow('devPanel', new Set()),
+            bindRow('devDebug', new Set()),
+            bindRow('devGod', new Set()),
           );
         }
         break;

@@ -2,9 +2,6 @@ import { ACHIEVEMENTS } from '../data/achievements';
 import type { RunRecord } from './runRecord';
 import { HEROES } from '../data/heroes';
 import { MAPS } from '../data/maps';
-import { PASSIVES } from '../data/passives';
-import { PERM_UPGRADES, permCost, PERM_BY_ID } from '../data/upgrades';
-import { WEAPONS } from '../data/weapons';
 import { RELIC_BY_ID } from '../data/bosses';
 import type { AchievementDef, StatMods, UnlockRef } from '../data/types';
 import { loadSave, writeSave, defaultSave, clearSave, type SaveData } from './Save';
@@ -53,14 +50,6 @@ export class Profile {
     const h = HEROES.find((x) => x.id === id);
     return !!h && (!h.locked || this.data.unlocked.heroes.includes(id));
   }
-  isWeaponUnlocked(id: string): boolean {
-    const w = WEAPONS.find((x) => x.id === id);
-    return !!w && (!w.locked || this.data.unlocked.weapons.includes(id));
-  }
-  isPassiveUnlocked(id: string): boolean {
-    const p = PASSIVES.find((x) => x.id === id);
-    return !!p && (!p.locked || this.data.unlocked.passives.includes(id));
-  }
   isMapUnlocked(id: string): boolean {
     return MAPS[0].id === id || this.data.unlocked.maps.includes(id);
   }
@@ -103,7 +92,7 @@ export class Profile {
     const d = this.data;
     switch (key) {
       case 'evolutions':
-        return d.discovered.weapons.filter((id) => WEAPONS.find((w) => w.id === id)?.evolved).length;
+        return 0;
       case 'heroWins':
         return HEROES.filter((h) => this.stat('herowin_' + h.id) > 0).length;
       case 'mapsCleared':
@@ -117,7 +106,7 @@ export class Profile {
       case 'enemiesSeen':
         return d.discovered.enemies.length;
       case 'weaponsFound':
-        return d.discovered.weapons.filter((id) => !WEAPONS.find((w) => w.id === id)?.evolved).length;
+        return 0;
       case 'relics':
         return d.discovered.relics.length;
       case 'permSpent':
@@ -170,35 +159,6 @@ export class Profile {
     return Math.min(a.cond.value, Math.floor(this.derivedStat(a.cond.stat)));
   }
 
-  // ---------------------------------------------------------------- permanent upgrades
-  permLevel(id: string): number {
-    return this.data.perm[id] ?? 0;
-  }
-  permNextCost(id: string): number {
-    const def = PERM_BY_ID[id];
-    return permCost(def, this.permLevel(id));
-  }
-  buyPerm(id: string): boolean {
-    const def = PERM_BY_ID[id];
-    const lvl = this.permLevel(id);
-    if (!def || lvl >= def.maxLevel) return false;
-    const cost = permCost(def, lvl);
-    if (this.data.gold < cost) return false;
-    this.data.gold -= cost;
-    this.data.permSpent = (this.data.permSpent ?? 0) + cost;
-    this.data.perm[id] = lvl + 1;
-    this.save();
-    return true;
-  }
-  /** Refunds all gold spent on upgrades. */
-  refundPerms(): void {
-    // refunds what was actually paid (levels bought before the ×5 price change refund old prices)
-    const total = this.data.permSpent ?? 0;
-    this.data.permSpent = 0;
-    this.data.perm = {};
-    this.data.gold += total;
-    this.save();
-  }
   /** Total upgrade levels bought: shown as account "power level". */
   powerLevel(): number {
     let n = 0;
@@ -215,10 +175,6 @@ export class Profile {
         out[key] = (out[key] ?? 0) + (m[key] ?? 0) * times;
       }
     };
-    for (const def of PERM_UPGRADES) {
-      const lvl = this.permLevel(def.id);
-      if (lvl > 0) add(def.perLevel, lvl);
-    }
     for (const id of this.data.discovered.relics) {
       const r = RELIC_BY_ID[id];
       if (r) add(r.stats);

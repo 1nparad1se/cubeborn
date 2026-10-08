@@ -1,0 +1,510 @@
+/* ------------------------------------------------------------------ class select (v3, action classes) */
+.screen-heroes .mbody {
+  padding: 14px calc(20px + var(--sar)) 14px calc(20px + var(--sal));
+  display: flex;
+  min-height: 0;
+}
+.screen-heroes.mframe {
+  height: 100%;
+}
+.cs {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(200px, 250px) minmax(0, 1fr) minmax(320px, 420px);
+  gap: 16px;
+  min-height: 0;
+}
+.cs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  overflow-y: auto;
+  padding: 4px;
+  min-height: 0;
+}
+.cs-card {
+  --hc: #c8ccd8;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 4px;
+  text-align: left;
+  border-radius: 4px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--hc) 30%, transparent), transparent 70%), linear-gradient(#30353d, #23272d);
+  box-shadow:
+    0 0 0 2px #08090b,
+    inset 0 0 0 2px color-mix(in srgb, var(--hc) 40%, #3a3f48);
+  transition: transform 0.08s;
+}
+.cs-card:hover {
+  transform: translateX(3px);
+}
+.cs-card.sel {
+  box-shadow:
+    0 0 0 2px #08090b,
+    0 0 0 4px var(--gold),
+    inset 0 0 0 2px var(--hc);
+}
+.cs-card.locked {
+  opacity: 0.55;
+}
+.cs-card .thumb {
+  width: 56px;
+  height: 56px;
+  flex: none;
+  image-rendering: pixelated;
+}
+.cs-card-txt {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.cs-card-name {
+  font: 700 15px var(--font-display);
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+.cs-card-role {
+  font-size: var(--fs-min);
+  color: var(--dim);
+  line-height: 1.2;
+}
+.cs-card-diff {
+  font-size: 12px;
+  color: var(--gold);
+  letter-spacing: 1px;
+}
+.cs-card .badge {
+  font-size: 16px;
+  top: 2px;
+  right: 4px;
+  color: var(--gold);
+}
+.cs-center {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+}
+.cs-stage {
+  min-height: 360px;
+}
+.cs-anims {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+}
+.cs-anims .cv-anim {
+  font-size: 13px;
+  padding: 6px 9px 6px 6px;
+  text-transform: none;
+}
+.cv-anim.missing {
+  opacity: 0.55;
+}
+.cs-anims.full {
+  flex: none;
+  flex-direction: column;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  align-items: stretch;
+  gap: 5px;
+  max-height: 34vh;
+  overflow-y: auto;
+  padding: 2px 4px 4px;
+}
+.cs-agroup {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+.cs-alabel {
+  padding-top: 7px;
+  font: 700 12px var(--font-ui);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.cs-aitems {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.cs-acombo {
+  display: inline-flex;
+  gap: 3px;
+  padding: 2px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.05);
+}
+.cv-anim.mini {
+  padding: 4px 7px;
+  font-size: 12px !important;
+  background: #262a31;
+}
+.cv-anim.mini.sel {
+  background: var(--accent);
+}
+
+.cs-right {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+.cs-info {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
+}
+.cs-foot {
+  min-height: 0;
+  padding: 10px 12px;
+}
+.cs-foot:empty {
+  display: none;
+}
+.cs-foot .btn {
+  width: 100%;
+  margin-top: 0 !important;
+}
+
+/* class sheet */
+.cs-sheet {
+  --hc: #ffffff;
+  font-size: 14px;
+  line-height: 1.42;
+}
+.cs-head {
+  border-left: 4px solid var(--hc);
+  padding-left: 10px;
+}
+.cs-name {
+  font: 700 26px var(--font-display);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  line-height: 1.1;
+}
+.cs-title {
+  font: 700 15px var(--font-ui);
+  color: var(--hc);
+  margin-top: 2px;
+}
+.cs-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+.cs-diff {
+  font-size: var(--fs-min);
+  color: var(--dim);
+}
+.cs-diff b {
+  color: var(--gold);
+  letter-spacing: 2px;
+}
+.cs-diff i {
+  font-style: normal;
+  color: #5a606a;
+  letter-spacing: 2px;
+}
+.cs-desc {
+  color: var(--dim);
+  margin: 10px 0 !important;
+}
+.cs-sec {
+  margin: 14px 0 6px;
+  font: 700 13px var(--font-ui);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.cs-ratings {
+  display: grid;
+  gap: 4px;
+}
+.cs-rate {
+  display: grid;
+  grid-template-columns: 110px 1fr 16px;
+  gap: 8px;
+  align-items: center;
+  font-size: var(--fs-min);
+}
+.cs-rate-n {
+  color: var(--dim);
+}
+.cs-rate b {
+  text-align: right;
+}
+.cs-bar {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 3px;
+}
+.cs-bar i {
+  height: 10px;
+  background: #2a2e35;
+  box-shadow: inset 0 0 0 1px #08090b;
+}
+.cs-bar i.on {
+  background: linear-gradient(var(--hc), color-mix(in srgb, var(--hc) 60%, #000));
+  box-shadow:
+    inset 0 0 0 1px #08090b,
+    inset 0 2px 0 rgba(255, 255, 255, 0.25);
+}
+.cs-base {
+  margin-top: 8px;
+}
+.cs-res {
+  --rc: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--rc);
+  background: color-mix(in srgb, var(--rc) 9%, transparent);
+  font-size: 13px;
+}
+.cs-res > span {
+  color: var(--dim);
+}
+.cs-res-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.cs-res-top b {
+  color: var(--rc);
+}
+.cs-resbar {
+  flex: 1;
+  max-width: 140px;
+  height: 10px;
+  background: #15171c;
+  box-shadow: 0 0 0 2px #08090b;
+}
+.cs-resbar i {
+  display: block;
+  width: 70%;
+  height: 100%;
+  background: linear-gradient(var(--rc), color-mix(in srgb, var(--rc) 55%, #000));
+}
+.cs-orbs {
+  display: flex;
+  gap: 4px;
+}
+.cs-orbs i {
+  width: 11px;
+  height: 11px;
+  background: var(--rc);
+  box-shadow:
+    0 0 0 2px #08090b,
+    inset 0 2px 0 rgba(255, 255, 255, 0.35);
+}
+.cs-identity {
+  --sc: #fff;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border-left: 3px solid var(--sc);
+  background: color-mix(in srgb, var(--sc) 9%, transparent);
+  font-size: 13px;
+}
+.cs-identity > div {
+  display: flex;
+  flex-direction: column;
+}
+.cs-identity span {
+  color: var(--dim);
+}
+.cs-identity .icon,
+.cs-skill .icon,
+.cs-tip-head .icon {
+  width: 36px;
+  height: 36px;
+  flex: none;
+  image-rendering: pixelated;
+  box-shadow: 0 0 0 2px #08090b;
+}
+.cs-skills {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 5px;
+}
+.cs-skill {
+  --sc: #fff;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 6px 4px 4px;
+  background: #262a31;
+  border-radius: 4px;
+  box-shadow:
+    0 0 0 2px #08090b,
+    inset 3px 0 0 var(--sc);
+  cursor: help;
+  min-width: 0;
+}
+.cs-skill:hover {
+  background: #323843;
+}
+.cs-key {
+  flex: none;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font: 700 12px var(--font-ui);
+  color: #1b1d21;
+  background: linear-gradient(#f4f5f7, #c9ccd2);
+  border-radius: 3px;
+  box-shadow: 0 2px 0 #6c707a;
+}
+.cs-skill-n {
+  font-size: 13px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+.cs-skill-lv {
+  font-size: 11px;
+  color: var(--dim);
+  flex: none;
+}
+
+/* skill tooltip */
+.cs-tip {
+  position: fixed;
+  z-index: 200;
+  max-width: 340px;
+  padding: 10px 12px;
+  pointer-events: none;
+  background: rgba(14, 15, 19, 0.97);
+  border-radius: 4px;
+  box-shadow:
+    0 0 0 2px #08090b,
+    inset 0 0 0 2px var(--edge-hi),
+    0 8px 24px rgba(0, 0, 0, 0.6);
+  font: 13px/1.4 var(--font-ui);
+  color: var(--text);
+}
+.cs-tip.hidden {
+  display: none;
+}
+.cs-tip p {
+  margin: 8px 0;
+  color: var(--dim);
+}
+.cs-tip-head {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.cs-tip-name {
+  font: 700 16px var(--font-display);
+}
+.cs-tip-sub {
+  font-size: 12px;
+  color: var(--accent);
+}
+.cs-tip-kv {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 2px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.cs-tip-kv span {
+  color: var(--dim);
+}
+.cs-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+}
+.cs-tags span {
+  padding: 1px 6px;
+  font-size: 11px;
+  background: #2a2e35;
+  border-radius: 3px;
+  color: #cfd3da;
+}
+.cs-tip-note {
+  margin-top: 8px;
+  color: var(--gold);
+  font-size: 12px;
+}
+
+/* the viewer reuses the class sheet: grouped clip list under the stage */
+.screen-viewer .cv-center .cs-anims.full {
+  max-height: 30vh;
+}
+
+@media (max-width: 1100px) {
+  .cs {
+    grid-template-columns: minmax(170px, 210px) minmax(0, 1fr);
+  }
+  .cs-right {
+    grid-column: span 2;
+  }
+}
+@media (max-width: 760px), (max-aspect-ratio: 1/1) {
+  .cs {
+    grid-template-columns: 1fr;
+  }
+  .cs-right {
+    grid-column: auto;
+  }
+  .cs-list {
+    flex-direction: row;
+    overflow-x: auto;
+  }
+  .cs-card {
+    flex: none;
+  }
+  .cs-stage {
+    min-height: 320px;
+  }
+}
+
+/* ------------------------------------------------------------------ key bindings */
+.bind.conflict {
+  background: #5a2228;
+  box-shadow:
+    0 0 0 2px #08090b,
+    0 0 0 3px var(--red);
+}
+.bind-warn,
+.bind-note {
+  margin: 4px 0;
+  padding: 6px 10px;
+  font-size: 13px;
+  border-radius: 4px;
+}
+.bind-warn {
+  color: #ffc0c6;
+  background: rgba(255, 74, 90, 0.12);
+  border-left: 3px solid var(--red);
+}
+.bind-note {
+  color: #ffe9a8;
+  background: rgba(255, 210, 61, 0.1);
+  border-left: 3px solid var(--gold);
+}
+.bind-mouse {
+  margin-bottom: 6px;
+}

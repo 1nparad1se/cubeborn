@@ -3,7 +3,7 @@ import { getModel, PROJECTILE_MODELS, PICKUP_MODELS } from '../models';
 import { buildVoxelGeometry } from './VoxelGeometry';
 import { makeVoxelMaterial } from './Materials';
 import { makeBlockTexture, makeHeroTexture } from './Textures';
-import { heroRig } from '../models/heroRigs';
+import { heroRig } from '../models/rigs';
 import { HeroRig } from './rig/HeroRig';
 import { HeroAnimator } from './rig/Animator';
 

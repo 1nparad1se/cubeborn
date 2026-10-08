@@ -4,8 +4,6 @@ import { BALANCE } from '../config/balance';
 import { EventBus } from '../core/EventBus';
 import { Rng } from '../core/Rng';
 import type { DifficultyDef, HeroDef, MapDef, StatMods } from '../data/types';
-import { WEAPON_BY_ID } from '../data/weapons';
-import { PASSIVE_BY_ID } from '../data/passives';
 import { modelMainColor } from '../models';
 import { Allies } from './Allies';
 import type { BossController } from './bosses/Boss';
@@ -13,10 +11,8 @@ import { Combat } from './Combat';
 import { Effects } from './Effects';
 import { EnemyManager } from './EnemyManager';
 import { Hazards } from './Hazards';
-import { Leveling, Passives, type Choice } from './Leveling';
 import { generateTerrain } from './mapgen/generators';
 import { NavField } from './NavField';
-import { Perks } from './Perks';
 import { Pickups } from './Pickups';
 import { Player } from './Player';
 import { Projectiles } from './Projectiles';
@@ -26,21 +22,18 @@ import { resolveStats, sumMods } from './Stats';
 import type { Terrain } from './Terrain';
 import { makeDamage, type FxSink } from './types';
 import { Vfx } from './Vfx';
-import { WeaponSystem, type WeaponInstance } from './weapons/Weapon';
 import { WaveDirector, type RunMode, type Wave, type WaveScale } from './Waves';
 import { MapFeatures } from './MapFeatures';
 import { RARITIES, type Rarity } from '../data/types';
-import './weapons/behaviors';
-import { SkillSystem, makeControls } from './arpg/Skills';
+import { ActionSystem, makeControls } from './action/ActionSystem';
 import { Loot, type GearSave } from './arpg/Loot';
 
-export type RunState = 'playing' | 'levelup' | 'chest' | 'dead' | 'victory';
+export type RunState = 'playing' | 'chest' | 'dead' | 'victory';
 
 export interface ChestReward {
-  kind: 'evolution' | 'weapon_up' | 'passive_up' | 'gold';
+  kind: 'gold' | 'item' | 'heal';
   id: string;
   level: number;
-  from?: string;
 }
 
 export type ChestSource = 'elite' | 'boss' | 'event' | 'secret' | 'treasure';
@@ -53,7 +46,6 @@ export interface ChestData {
 }
 
 export interface RunEvents extends Record<string, unknown> {
-  levelup: Choice[];
   chest: ChestData;
   wave: Wave;
   modifier: string;
@@ -66,7 +58,6 @@ export interface RunEvents extends Record<string, unknown> {
   banner: string;
   dayPeriod: DayPeriod;
   pickup: string;
-  evolution: string;
 }
 
 export interface RunOptions {
@@ -74,8 +65,6 @@ export interface RunOptions {
   diff: DifficultyDef;
   hero: HeroDef;
   permanent: StatMods;
-  unlockedWeapons: Set<string>;
-  unlockedPassives: Set<string>;
   fx: FxSink;
   settings: { damageNumbers: boolean; dayLength?: number };
   tr: (key: string) => string;
@@ -106,18 +95,12 @@ export class Run {
   readonly effects = new Effects();
   readonly combat: Combat;
   readonly vfx: Vfx;
-  readonly weapons: WeaponSystem;
-  readonly passives = new Passives();
-  readonly leveling: Leveling;
   readonly spawner: Spawner;
-  readonly perks: Perks;
-  /** Action-RPG hero abilities and the frame's mouse/keyboard controls. */
-  readonly skills: SkillSystem;
+  /** Action combat: class skills, combos, resource, Identity, Ultimate, summons; and the frame's controls. */
+  readonly action: ActionSystem;
   readonly ctl = makeControls();
   readonly loot: Loot;
   readonly bosses: BossController[] = [];
-  readonly unlockedWeapons: Set<string>;
-  readonly unlockedPassives: Set<string>;
   readonly settings: { damageNumbers: boolean; dayLength?: number };
   readonly dayNight: DayNight;
   readonly tr: (key: string) => string;
@@ -138,7 +121,6 @@ export class Run {
   state: RunState = 'playing';
   /** Real-time slow motion factor (victory/death moments). */
   timeScale = 1;
-  pendingChoices: Choice[] | null = null;
   private permanent: StatMods;
   private lastRevivalStat = 0;
   private timers: { t: number; fn: () => void }[] = [];
@@ -159,9 +141,6 @@ export class Run {
     this.settings = o.settings;
     this.tr = o.tr;
     this.permanent = o.permanent;
-    this.unlockedWeapons = o.unlockedWeapons;
-    this.unlockedPassives = o.unlockedPassives;
-    this.unlockedWeapons.add(o.hero.startWeapon);
     this.mode = o.mode ?? 'campaign';
     this.waves = new WaveDirector(this, this.mode);
     this.dayNight = new DayNight(this, o.settings.dayLength ?? 0);
@@ -171,7 +150,7 @@ export class Run {
     this.nav = new NavField(this.terrain);
     const c = Math.floor(o.map.size / 2) + 0.5;
     this.player = new Player(this, c, c);
-    this.skills = new SkillSystem(this);
+    this.action = new ActionSystem(this);
     this.loot = new Loot(this, o.gear ?? null);
     this.recomputeStats();
     this.player.hp = this.player.stats.maxHp;
@@ -182,12 +161,7 @@ export class Run {
     this.hazards = new Hazards(this);
     this.allies = new Allies(this);
     this.combat = new Combat(this);
-    this.weapons = new WeaponSystem(this);
-    this.leveling = new Leveling(this);
-    this.leveling.initCounters();
     this.spawner = new Spawner(this);
-    // class mechanics replace the old auto-battler perks
-    this.perks = new Perks(this, 'none');
     this.features = new MapFeatures(this);
     this.nav.update(0, this.player.x, this.player.z, true);
     this.reviveBlast.damage = 200;
@@ -202,7 +176,7 @@ export class Run {
   recomputeStats() {
     const p = this.player;
     const oldMax = p.stats?.maxHp ?? 0;
-    const mods = sumMods(this.hero.stats, this.permanent, this.passives.mods(), this.skills.statMods(), this.loot.totals.mods, this.devMods);
+    const mods = sumMods(this.hero.stats, this.permanent, this.action.statMods(), this.loot.totals.mods, this.devMods);
     p.stats = resolveStats(this.hero.baseHp, mods);
     if (oldMax > 0 && p.stats.maxHp > oldMax) p.hp += p.stats.maxHp - oldMax;
     const newRev = p.stats.revival;
@@ -243,11 +217,12 @@ export class Run {
     const p = this.player;
     for (const k of ['darkness', 'blizzard', 'surge', 'storm'] as const) if (this.weather[k] > 0) this.weather[k] -= dt;
     if (!p.dead) p.update(dt, ix, iz);
-    this.skills.update(dt, this.ctl);
+    this.action.update(dt, this.ctl);
     // one-shot inputs are consumed by the first sub-step
     this.ctl.casts.length = 0;
     this.ctl.click = false;
     this.ctl.dodge = false;
+    this.ctl.identity = false;
     this.dayNight.update(dt);
     this.nav.update(dt, p.x, p.z);
     this.surgeBuff();
@@ -264,8 +239,6 @@ export class Run {
     if (!p.dead) {
       this.spawner.update(dt);
       this.features.update(dt);
-      this.weapons.update(dt);
-      this.perks.update(dt);
     }
     this.enemies.update(dt);
     this.projectiles.update(dt);
@@ -274,10 +247,8 @@ export class Run {
     this.pickups.update(dt);
     this.loot.update(dt);
     this.effects.update(dt, p.x, p.z);
-    this.stats.maxedWeapons = Math.max(this.stats.maxedWeapons, this.weapons.list.filter((w) => w.isMax).length);
     if (p.pendingLevels > 0 && !p.dead) {
-      // levels become skill points: the HUD highlights the slots that can be improved
-      this.skills.points += p.pendingLevels;
+      // levels become skill points (granted in ActionSystem.onLevel): the HUD highlights upgradable slots
       p.pendingLevels = 0;
       this.fx.sound('levelup');
       this.fx.burst(p.x, 1, p.z, 0x8affff, 30, 4, 0.16, 0.8, 'glow');
@@ -297,52 +268,6 @@ export class Run {
     }
   }
 
-  // ---------------------------------------------------------------- level up
-  private beginLevelUp() {
-    this.state = 'levelup';
-    this.pendingChoices = this.skills.rollChoices();
-    this.fx.sound('levelup');
-    this.fx.burst(this.player.x, 1, this.player.z, 0x8affff, 30, 4, 0.16, 0.8, 'glow');
-    this.events.emit('levelup', this.pendingChoices);
-  }
-
-  choose(c: Choice | null) {
-    if (this.state !== 'levelup') return;
-    if (c && !this.skills.apply(c)) {
-      // declining the Ultimate keeps the level: offer the regular choices
-      this.pendingChoices = this.skills.rollChoices();
-      this.events.emit('levelup', this.pendingChoices);
-      return;
-    }
-    if (c) this.stats.discovered.add(c.id);
-    this.player.pendingLevels--;
-    this.pendingChoices = null;
-    this.state = 'playing';
-    if (this.player.pendingLevels > 0) this.beginLevelUp();
-  }
-
-  reroll(): Choice[] | null {
-    if (this.leveling.rerolls <= 0 || this.state !== 'levelup') return null;
-    this.leveling.rerolls--;
-    this.pendingChoices = this.skills.rollChoices();
-    return this.pendingChoices;
-  }
-
-  skip() {
-    if (this.leveling.skips <= 0) return;
-    this.leveling.skips--;
-    this.stats.gold += 1;
-    this.choose(null);
-  }
-
-  banish(id: string): Choice[] | null {
-    if (this.leveling.banishes <= 0 || this.state !== 'levelup') return null;
-    this.leveling.banishes--;
-    this.leveling.banished.add(id);
-    this.pendingChoices = this.skills.rollChoices();
-    return this.pendingChoices;
-  }
-
   // ---------------------------------------------------------------- chests
   /** Rolls a chest rarity for a drop source; luck shifts the odds toward rarer chests. */
   rollChestRarity(source: ChestSource): number {
@@ -358,45 +283,27 @@ export class Run {
     return 0;
   }
 
-  /** Opens a chest: rarer chests hold more upgrades, more gold and heal more. */
-  openChest(tier: number, rarityIdx = 0) {
+  /** Opens a chest: gear drops scattered around it, gold and a heal; rarer chests hold more. */
+  openChest(tier: number, rarityIdx = 0, x = this.player.x, z = this.player.z) {
     const rewards: ChestReward[] = [];
     const rarity = RARITIES[Math.max(0, Math.min(4, rarityIdx))];
-    const count = [1, 2, 3, 4, 5][rarityIdx] ?? 1;
-    const used = new Set<string>();
+    const count = [1, 2, 2, 3, 4][rarityIdx] ?? 1;
     for (let i = 0; i < count; i++) {
-      const evo = this.weapons.evolvable().find((w) => !used.has(w.def.id));
-      if (evo) {
-        used.add(evo.def.id);
-        const nw = this.weapons.evolve(evo) as WeaponInstance;
-        rewards.push({ kind: 'evolution', id: nw.def.id, level: 1, from: evo.def.id });
-        this.stats.evolutions.push(nw.def.id);
-        this.stats.discovered.add(nw.def.id);
-        this.events.emit('evolution', nw.def.id);
-        continue;
-      }
-      const ups: ChestReward[] = [];
-      for (const w of this.weapons.list) if (!w.isMax && !w.def.evolved) ups.push({ kind: 'weapon_up', id: w.def.id, level: w.level + 1 });
-      for (const [id, lvl] of this.passives.levels) if (lvl < PASSIVE_BY_ID[id].maxLevel) ups.push({ kind: 'passive_up', id, level: lvl + 1 });
-      if (ups.length) {
-        const pick = this.rng.pick(ups);
-        if (pick.kind === 'weapon_up') this.weapons.get(pick.id)!.levelUp();
-        else {
-          this.passives.add(pick.id);
-          this.recomputeStats();
-        }
-        rewards.push(pick);
-      } else rewards.push({ kind: 'gold', id: 'gold', level: 0 });
+      const it = this.loot.dropAt(x, z, Math.max(rarityIdx, 1));
+      if (it) rewards.push({ kind: 'item', id: it, level: 1 });
     }
     const baseGold = [3, 5, 8, 12, 20][rarityIdx] ?? 3;
-    const gold = Math.round((baseGold + this.rng.int(0, 3) + rewards.filter((x) => x.kind === 'gold').length * 5) * this.player.stats.greed);
+    const gold = Math.round((baseGold + this.rng.int(0, 3)) * this.player.stats.greed);
+    rewards.push({ kind: 'gold', id: 'gold', level: gold });
     this.stats.gold += gold;
     this.stats.chests++;
     this.stats.chestRarity[rarityIdx]++;
-    this.player.heal(this.player.stats.maxHp * (0.1 + rarityIdx * 0.05) * this.perks.healMul(), true);
-    this.state = 'chest';
+    this.player.heal(this.player.stats.maxHp * (0.1 + rarityIdx * 0.05), true);
     this.fx.sound('chestOpen');
-    this.events.emit('chest', { rewards, gold, tier, rarity });
+    this.fx.burst(x, 1, z, 0xffe080, 30, 5, 0.16, 0.8, 'glow');
+    this.fx.text(x, z, this.tr('act_chest'), 0xffe080);
+    void tier;
+    void rarity;
   }
 
   closeChest() {
@@ -438,8 +345,8 @@ export class Run {
       kills: this.stats.kills,
       level: p.level,
       gold: Math.round(this.stats.gold),
-      weapons: this.weapons.list.map((w) => ({ id: w.def.id, level: w.level, damage: Math.round(this.stats.damageBy[w.def.id] ?? 0) })),
-      passives: [...this.passives.levels.entries()].map(([id, level]) => ({ id, level })),
+      weapons: [] as { id: string; level: number; damage: number }[],
+      passives: [] as { id: string; level: number }[],
       victory: this.state === 'victory' || this.endState === 'victory',
       mode: this.mode,
       wave: this.waves.wave.n,
@@ -449,8 +356,8 @@ export class Run {
       evolutions: [...this.stats.evolutions],
       elites: this.stats.elites,
       chests: this.stats.chests,
-      maxedWeapons: this.stats.maxedWeapons,
-      weaponCount: this.weapons.list.length,
+      maxedWeapons: 0,
+      weaponCount: 0,
       treasureSprites: this.stats.treasureSprites,
       discovered: [...this.stats.discovered],
       seen: [...this.stats.seen],
@@ -461,9 +368,5 @@ export class Run {
     const waves = summary.mode === 'endless' ? summary.wave * BALANCE.goldPerWave : 0;
     const base = summary.gold + summary.kills * BALANCE.goldPerKill + (summary.time / 60) * BALANCE.goldPerMinute + summary.bosses.length * BALANCE.goldBossBonus + (summary.victory ? BALANCE.goldVictoryBonus : 0) + waves;
     return Math.round(base * diffReward);
-  }
-
-  weaponName(id: string) {
-    return WEAPON_BY_ID[id]?.name;
   }
 }

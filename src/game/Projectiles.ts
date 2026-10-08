@@ -1,8 +1,7 @@
 import { WALLS } from '../config/walls';
 import type { Enemy } from './Enemy';
 import type { Run } from './Run';
-import { copyDamage, makeDamage, type DamageInfo } from './types';
-import type { WeaponInstance } from './weapons/Weapon';
+import { makeDamage, type DamageInfo } from './types';
 
 /** Player-side projectile. Behaviours may take over movement with `custom`. */
 export class Projectile {
@@ -35,7 +34,6 @@ export class Projectile {
   yaw = 0;
   pitch = 0;
   spin = 0;
-  owner: WeaponInstance | null = null;
   /** Scratch values for behaviours. */
   a = 0;
   b = 0;
@@ -60,11 +58,10 @@ export class Projectiles {
     for (let i = 0; i < 600; i++) this.free.push(new Projectile());
   }
 
-  spawn(owner: WeaponInstance | null, x: number, z: number, vx: number, vz: number, life: number, vis: string, color: number): Projectile {
+  spawn(_owner: null, x: number, z: number, vx: number, vz: number, life: number, vis: string, color: number): Projectile {
     const p = this.free.pop() ?? new Projectile();
     p.active = true;
     p.serial = nextSerial++;
-    p.owner = owner;
     p.x = x;
     p.z = z;
     p.y = 0.8;
@@ -92,7 +89,6 @@ export class Projectiles {
     p.a = p.b = p.c = p.d = p.e = 0;
     p.glow = 0;
     p.hook = null;
-    if (owner) copyDamage(p.dmg, owner.dmg);
     this.list.push(p);
     return p;
   }
@@ -100,7 +96,6 @@ export class Projectiles {
   kill(p: Projectile) {
     if (!p.active) return;
     p.active = false;
-    p.owner?.behavior.projectileExpire?.(p.owner, this.run, p);
     p.hook?.expire?.(p);
   }
 
@@ -118,9 +113,7 @@ export class Projectiles {
       p.life -= dt;
       const ox = p.x;
       const oz = p.z;
-      if (p.custom && p.owner?.behavior.projectileUpdate) {
-        if (!p.owner.behavior.projectileUpdate(p.owner, run, p, dt)) this.kill(p);
-      } else {
+      {
         if (p.homing > 0) this.steer(p, dt);
         p.x += p.vx * dt;
         p.z += p.vz * dt;
@@ -130,7 +123,7 @@ export class Projectiles {
         }
       }
       p.yaw += p.spin * dt;
-      if (p.active && p.collide && !p.passWalls && (p.x !== ox || p.z !== oz) && !(p.owner?.passWalls ?? false)) {
+      if (p.active && p.collide && !p.passWalls && (p.x !== ox || p.z !== oz) && true) {
         const t = run.terrain.shotRay(ox, oz, p.x, p.z);
         if (t < 1) this.hitWall(p, ox, oz, Math.max(0, t - 0.03));
       }
@@ -147,7 +140,6 @@ export class Projectiles {
     const run = this.run;
     const hx = ox + (p.x - ox) * t;
     const hz = oz + (p.z - oz) * t;
-    if (p.owner?.behavior.projectileWall?.(p.owner, run, p, hx, hz)) return;
     p.x = hx;
     p.z = hz;
     run.fx.burst(hx, Math.max(0.4, p.y), hz, p.color, WALLS.impactParticles, 2.5, 0.1, 0.25, 'glow');
@@ -158,7 +150,7 @@ export class Projectiles {
   private steer(p: Projectile, dt: number) {
     const run = this.run;
     if (!p.target || !p.target.alive || p.target.uid !== p.targetUid) {
-      p.target = run.enemies.nearest(p.x, p.z, 10, undefined, !(p.owner?.passWalls ?? false));
+      p.target = run.enemies.nearest(p.x, p.z, 10, undefined, true);
       p.targetUid = p.target?.uid ?? 0;
     }
     const t = p.target;
@@ -179,8 +171,7 @@ export class Projectiles {
   private collide(p: Projectile) {
     const run = this.run;
     const time = run.time;
-    const beh = p.owner?.behavior;
-    const wallsBlock = p.radius > 0.6 && !p.passWalls && !(p.owner?.passWalls ?? false);
+    const wallsBlock = p.radius > 0.6 && !p.passWalls && true;
     run.enemies.forEachInRadius(p.x, p.z, p.radius, (e) => {
       // big area projectiles (pools, tornadoes, crescents) don't reach behind walls
       if (wallsBlock && !run.terrain.los(p.x, p.z, e.x, e.z)) return false;
@@ -194,7 +185,6 @@ export class Projectiles {
       }
       const len = Math.hypot(p.vx, p.vz);
       run.combat.hit(e, p.dmg, 1, len > 0.1 ? p.vx : e.x - p.x, len > 0.1 ? p.vz : e.z - p.z);
-      if (p.owner && beh?.projectileHit) beh.projectileHit(p.owner, run, p, e);
       p.hook?.hit?.(p, e);
       if (p.pierce >= 0) {
         p.pierce--;

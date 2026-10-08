@@ -157,7 +157,7 @@ export class Player {
   }
 
   get moveSpeed(): number {
-    let s = this.run.hero.baseSpeed * this.stats.moveSpeed * this.run.skills.speedMul;
+    let s = this.run.hero.baseSpeed * this.stats.moveSpeed * this.run.action.speedMul;
     if (this.buffs.haste > 0) s *= 1.4;
     if (this.burstT > 0) s *= 1.35;
     if (this.airborne) s *= BALANCE.jump.airSpeed;
@@ -179,9 +179,17 @@ export class Player {
       const key = k as keyof Buffs;
       if (this.buffs[key] > 0) this.buffs[key] -= dt;
     }
-    this.damageMul = (this.buffs.fury > 0 ? 1.5 : 1) * run.perks.damageMul();
+    this.damageMul = this.buffs.fury > 0 ? 1.5 : 1;
     this.updateJump(dt);
 
+    const act = run.action;
+    if (act.mover) {
+      // a skill is moving the hero (dash / leap)
+      this.moving = true;
+      this.anim += dt * 12;
+      this.afterMove(dt);
+      return;
+    }
     if (this.dashT > 0) {
       this.updateDash(dt);
       this.moving = true;
@@ -190,6 +198,9 @@ export class Player {
       return;
     }
     [ix, iz] = this.steer(dt, ix, iz);
+    const mm = act.moveMul;
+    ix *= mm;
+    iz *= mm;
     const len = Math.hypot(ix, iz);
     if (len > 1) {
       ix /= len;
@@ -199,10 +210,10 @@ export class Player {
     this.moveDirX = this.moving ? ix / Math.max(len, 1e-6) : 0;
     this.moveDirZ = this.moving ? iz / Math.max(len, 1e-6) : 0;
     // the hero faces the cursor (or the locked cast direction) while walking any way
-    const sk = run.skills;
-    if (sk.lockT > 0) {
-      this.fx = sk.lockX;
-      this.fz = sk.lockZ;
+    const lock = act.facing;
+    if (lock) {
+      this.fx = lock[0];
+      this.fz = lock[1];
     } else {
       const ax = run.ctl.aimX - this.x;
       const az = run.ctl.aimZ - this.z;
@@ -252,6 +263,11 @@ export class Player {
         this.regenAcc -= Math.floor(this.regenAcc);
       }
     }
+  }
+
+  /** Moves by (mx, mz) sliding along walls. */
+  slide(mx: number, mz: number) {
+    this.moveWithTerrain(mx, mz);
   }
 
   private moveWithTerrain(mx: number, mz: number) {
@@ -390,22 +406,20 @@ export class Player {
     if (this.buffs.aegis > 0) return 0;
     if (this.stats.dodge > 0 && Math.random() < this.stats.dodge) {
       run.fx.text(this.x, this.z, run.tr('dodge'), 0xc1e8ff);
-      run.perks.onDodge();
       return 0;
     }
     if (this.shield) {
       this.shield = false;
-      run.perks.onShieldBreak();
       run.fx.burst(this.x, 1, this.z, 0x8ad0ff, 18, 4, 0.16, 0.5, 'glow');
       run.fx.sound('shield');
       this.invulnT = 0.4;
       return 0;
     }
-    const armor = this.stats.armor + run.skills.armorBonus;
+    const armor = this.stats.armor + run.action.armorBonus;
     // armor: flat reduction for small hits plus a percentage for big ones
-    const dmg = Math.max(BALANCE.armorMin, raw * (1 - Math.min(0.6, armor * 0.015)) - armor * 0.5);
-    run.skills.onHurt(dmg);
-    if (source && run.skills.buff.thorns > 0) run.combat.applyRaw(source, raw * run.skills.buff.thorns, 0xc0c8d8, 'thorns');
+    let dmg = Math.max(BALANCE.armorMin, raw * (1 - Math.min(0.6, armor * 0.015)) - armor * 0.5);
+    dmg = run.action.absorb(dmg, source);
+    if (dmg <= 0) return 0;
     this.hp -= dmg;
     this.hurtT = 0.25;
     this.cues.hit++;
@@ -466,14 +480,14 @@ export class Player {
     this.run.stats.xpGained += v * this.stats.growth;
     while (this.xp >= this.xpNext) {
       this.xp -= this.xpNext;
-      if (this.level >= this.run.skills.maxLevel) {
+      if (this.level >= this.run.action.maxLevel) {
         // past the cap: every extra bar restores the hero instead of levelling
-        this.run.skills.onOverflow();
+        this.run.action.onOverflow();
         continue;
       }
       this.level++;
       this.pendingLevels++;
-      this.run.skills.onLevel(this.level);
+      this.run.action.onLevel(this.level);
       this.xpNext = BALANCE.xpForLevel(this.level);
     }
   }

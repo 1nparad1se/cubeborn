@@ -1,10 +1,16 @@
 import * as THREE from 'three';
 import { HeroRig } from './rig/HeroRig';
 import { HeroAnimator, type AnimName } from './rig/Animator';
-import { heroRig } from '../models/heroRigs';
+import { heroRig } from '../models/rigs';
 import { makeHeroTexture } from './Textures';
 
 const MAX_SPARKS = 400;
+
+/** One clip of a previewed sequence; `hold` keeps a looping clip for that many seconds. */
+export interface PreviewStep {
+  clip: string;
+  hold?: number;
+}
 
 interface Spark {
   x: number;
@@ -68,14 +74,27 @@ export class CharacterViewer {
   dist = 5.4;
   private distNow = 5.4;
   private pitchNow = 0.18;
-  readonly minDist = 2.4;
-  readonly maxDist = 8.5;
+  /** Rig height relative to the 1.9-unit hero the stage was framed for (big weapons, horns). */
+  private fit = 1;
+  get minDist() {
+    return 2.4 * this.fit;
+  }
+  get maxDist() {
+    return 8.5 * this.fit;
+  }
   turntable = false;
   speed = 1;
   topView = false;
-  /** Current animation shown by the viewer. */
+  /** Current animation shown by the viewer (a gait, a clip name or a sequence key). */
   mode: AnimName = 'idle';
   onModeChange: ((m: AnimName) => void) | null = null;
+  /** Base locomotion under the actions. */
+  private gait: 'idle' | 'walk' | 'run' = 'idle';
+  /** Clip sequence being previewed (combo steps, charge pose → release, hold intro → loop → finish). */
+  private seq: PreviewStep[] = [];
+  private seqI = 0;
+  private seqT = 0;
+  private seqClip = '';
 
   constructor(private host: HTMLElement) {
     this.canvas = document.createElement('canvas');
@@ -161,11 +180,66 @@ export class CharacterViewer {
     (this.glowDisc.material as THREE.MeshBasicMaterial).color.setHex(color);
     this.rig = new HeroRig(def, this.texture, { shadows: true, rim: silhouette ? 0 : 0.42, silhouette });
     this.anim = new HeroAnimator(this.rig);
+    this.anim.update(0.016);
+    const box = new THREE.Box3().setFromObject(this.rig.root);
+    const hgt = Number.isFinite(box.max.y) ? box.max.y - Math.min(0, box.min.y) : 1.9;
+    const prev = this.fit;
+    this.fit = Math.min(1.8, Math.max(0.85, hgt / 1.9));
+    this.dist *= this.fit / prev;
     this.anim.onEvent = (ev) => this.onEvent(ev);
     this.stage.add(this.rig.root);
     this.deathT = -1;
-    this.play(this.mode === 'death' || this.mode === 'hit' ? 'idle' : this.mode);
+    this.seq = [];
+    this.anim.forceGait = this.gait === 'idle' ? null : this.gait;
+    this.setMode(this.gait);
     this.anim.update(0.016);
+  }
+
+  /** Whether the current rig's clip library has this clip. */
+  has(clip: string): boolean {
+    return !!this.anim?.has(clip);
+  }
+
+  private setMode(m: string) {
+    if (this.mode === m) return;
+    this.mode = m;
+    this.onModeChange?.(m);
+  }
+
+  /**
+   * Plays a sequence of named clips one after another (each step starts when the previous one
+   * ends, or after `hold` seconds for looping poses). `key` is reported through onModeChange.
+   */
+  playSeq(steps: PreviewStep[], key = steps[0]?.clip ?? '') {
+    if (!this.anim || !steps.length) return;
+    this.deathT = -1;
+    this.anim.reset();
+    this.seq = steps;
+    this.startStep(0);
+    this.setMode(key);
+  }
+
+  private startStep(i: number) {
+    const a = this.anim!;
+    this.seqI = i;
+    this.seqT = 0;
+    a.play(this.seq[i].clip, { force: true });
+    this.seqClip = a.playing;
+  }
+
+  private updateSeq(adt: number) {
+    const a = this.anim;
+    if (!a || !this.seq.length) return;
+    this.seqT += adt;
+    const st = this.seq[this.seqI];
+    const done = st.hold !== undefined ? this.seqT >= st.hold || (a.playing !== this.seqClip && this.seqT > 0.05) : a.playing !== this.seqClip;
+    if (!done) return;
+    if (this.seqI + 1 < this.seq.length) this.startStep(this.seqI + 1);
+    else {
+      if (st.hold !== undefined && a.playing === this.seqClip) a.endLoop();
+      this.seq = [];
+      this.setMode(this.gait);
+    }
   }
 
   get hero(): string {
@@ -177,9 +251,11 @@ export class CharacterViewer {
     const a = this.anim;
     if (!a) return;
     this.deathT = -1;
+    this.seq = [];
     if (name === 'idle' || name === 'walk' || name === 'run') {
       a.reset();
       a.forceGait = name === 'idle' ? null : name;
+      this.gait = name;
       this.mode = name;
     } else if (name === 'hit') {
       a.hit(0, -1);
@@ -198,13 +274,13 @@ export class CharacterViewer {
     this.yaw = 0.5;
     this.yawVel = 0;
     this.pitch = this.topView ? 0.92 : 0.18;
-    this.dist = 5.4;
+    this.dist = 5.4 * this.fit;
   }
 
   setTopView(on: boolean) {
     this.topView = on;
     this.pitch = on ? 0.92 : 0.18;
-    if (on) this.dist = Math.max(this.dist, 6.2);
+    if (on) this.dist = Math.max(this.dist, 6.2 * this.fit);
   }
 
   zoomBy(f: number) {
@@ -281,10 +357,12 @@ export class CharacterViewer {
     if (this.running) return;
     this.running = true;
     this.last = performance.now();
-    const loop = (now: number) => {
+    const loop = () => {
       if (!this.running) return;
       this.raf = requestAnimationFrame(loop);
-      const dt = Math.min(0.05, (now - this.last) / 1000);
+      // performance.now(): rAF timestamps can run behind it (negative steps would grow timers)
+      const now = performance.now();
+      const dt = Math.max(0, Math.min(0.05, (now - this.last) / 1000));
       this.last = now;
       this.frame(dt);
     };
@@ -313,16 +391,14 @@ export class CharacterViewer {
         this.deathT += adt;
         if (this.deathT > 2.6) this.play('idle');
       }
-      if (this.mode !== 'idle' && this.mode !== 'walk' && this.mode !== 'run' && this.mode !== 'death' && this.mode !== 'victory' && this.anim.current !== this.mode) {
-        this.mode = this.anim.forceGait ?? 'idle';
-        this.onModeChange?.(this.mode);
-      }
+      if (this.seq.length) this.updateSeq(adt);
+      else if (this.mode !== this.gait && this.mode !== 'death' && this.mode !== 'victory' && this.anim.current !== this.mode) this.setMode(this.gait);
     }
     // camera: zoom also raises the target toward the face
     this.distNow += (this.dist - this.distNow) * (1 - Math.exp(-10 * dt));
     this.pitchNow += (this.pitch - this.pitchNow) * (1 - Math.exp(-10 * dt));
     const zoomT = (this.maxDist - this.distNow) / (this.maxDist - this.minDist);
-    const ty = 0.82 + zoomT * 0.55;
+    const ty = (0.82 + zoomT * 0.55) * this.fit;
     const cp = Math.cos(this.pitchNow);
     this.camera.position.set(0, ty + Math.sin(this.pitchNow) * this.distNow, cp * this.distNow);
     this.camera.lookAt(0, ty - zoomT * 0.05, 0);

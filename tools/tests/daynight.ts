@@ -8,13 +8,12 @@ import { DAY_NIGHT } from '../../src/config/dayNight';
 
 const mk = (len: number) =>
   new Run({
-    map: MAP_BY_ID.blightwood, diff: DIFFICULTY_BY_ID.normal, hero: HERO_BY_ID.bram, permanent: {}, mode: 'campaign',
-    unlockedWeapons: new Set(), unlockedPassives: new Set(), fx: NullFx, settings: { damageNumbers: false, dayLength: len }, tr: (k: string) => k, seed: 3,
+    map: MAP_BY_ID.blightwood, diff: DIFFICULTY_BY_ID.normal, hero: HERO_BY_ID.berserker, permanent: {}, mode: 'campaign',
+    fx: NullFx, settings: { damageNumbers: false, dayLength: len }, tr: (k: string) => k, seed: 3,
   });
 /** Steps the run, auto-resolving level-ups and chests like the sim bot. */
 function step(r: Run, dt: number) {
-  if (r.state === 'levelup') r.choose(r.pendingChoices![0]);
-  else if (r.state === 'chest') r.closeChest();
+  if (r.state === 'chest') r.closeChest();
   r.update(dt, 0, 0);
 }
 let fails = 0;

@@ -89,6 +89,15 @@ export class Loot {
     }
   }
 
+  /** Drops a random item of at least the given rarity tier (chests). Returns its base id. */
+  dropAt(x: number, z: number, minTier: number): string | null {
+    const rar = rollRarity(Math.random, minTier * 0.8 + (this.run.player.stats.luck - 1) * 0.6);
+    const it = makeItem(Math.random, this.ilvl, rar);
+    const a = Math.random() * Math.PI * 2;
+    this.drop(it, x + Math.cos(a) * 1.2, z + Math.sin(a) * 1.2);
+    return it.base;
+  }
+
   drop(item: Item, x: number, z: number) {
     const run = this.run;
     if (run.terrain.blocksWalker(Math.floor(x), Math.floor(z))) {

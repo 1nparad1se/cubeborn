@@ -1,18 +1,13 @@
-import { h, clear, hex } from './dom';
-import { iconImg } from './icons';
+import { h, clear } from './dom';
 import { t, L } from '../i18n';
-import { statModLines, weaponDeltaLines, fmtNum, fmtTime } from './format';
-import type { Run, ChestReward, ChestData } from '../game/Run';
-import type { Choice } from '../game/Leveling';
-import { WEAPON_BY_ID, WEAPON_MAX_LEVEL } from '../data/weapons';
-import { PASSIVE_BY_ID } from '../data/passives';
+import { fmtNum, fmtTime } from './format';
+import type { Run } from '../game/Run';
 import type { AchievementDef } from '../data/types';
 import { rewardText, settingsPanel, type MenuApi } from './Menus';
-import { BALANCE } from '../config/balance';
 import { InventoryUi } from './InventoryUi';
-import { MOD_BY_ID, STAT_UPS, SKILL_MAX, type SkillDef, type SkillUp } from '../game/arpg/kits';
-
-const RARITY_COLOR: Record<string, string> = { common: '#c8ccd8', uncommon: '#6aff8a', rare: '#5ab4ff', epic: '#c77dff', legendary: '#ffb02e' };
+import { SKILL_MAX } from '../game/action/types';
+import { SLOT_ULT } from '../game/action/ActionSystem';
+import { skillImg, slotKey } from './SkillsScreen';
 
 export interface ResultData {
   victory: boolean;
@@ -24,12 +19,13 @@ export interface ResultData {
   newUnlocks: string[];
   /** Endless: whether this run beat the stored record, and the best wave before it. */
   endless?: { newRecord: boolean; best: number };
+  /** The finished run, to show the class and its skill levels (optional). */
+  run?: Run;
 }
 
-/** Level-up, chest, pause and results overlays shown during a run. */
+/** Inventory, pause and results overlays shown during a run. */
 export class RunModals {
   readonly root: HTMLElement;
-  private banishMode = false;
 
   constructor(parent: HTMLElement, private api: MenuApi) {
     this.root = h('div.run-modals');
@@ -51,140 +47,9 @@ export class RunModals {
     this.root.classList.add('open');
   }
 
-  // ------------------------------------------------------------------ level up
-  levelUp(run: Run, choices: Choice[], done: () => void) {
-    this.banishMode = false;
-    if (choices.length === 2 && choices[0].kind === 'ult_learn' && choices[1].kind === 'ult_decline') {
-      // level 6: the Ultimate is a choice, not a given
-      const u = run.skills.kit.ult;
-      const pick = (c: Choice) => {
-        this.api.sfx(c.kind === 'ult_learn' ? 'select' : 'uiBack');
-        run.choose(c);
-        done();
-      };
-      this.open(
-        h(
-          'div.modal-back',
-          h(
-            'div.modal.levelup.ult-prompt',
-            h('h2.glow', t('arpg_ult_q')),
-            h('div.sub', t('hud_level', { n: run.player.level + 1 - run.player.pendingLevels })),
-            h('div.ult-card', h('div.choice-icon', iconImg(u.icon, u.color, 'icon lg')), h('div', h('div.choice-name', L(u.name)), h('div.choice-line', L(u.desc)), h('div.choice-line.dim', skillStatLine(run, 3, 1)))),
-            h('div.ult-hint', t('arpg_ult_hint')),
-            h('div.row.actions', h('button.btn.primary', { onclick: () => pick(choices[0]) }, t('arpg_yes')), h('button.btn', { onclick: () => pick(choices[1]) }, t('arpg_no'))),
-          ),
-        ),
-      );
-      return;
-    }
-    const cards = h('div.choices');
-    const actions = h('div.row.actions');
-    const render = (list: Choice[]) => {
-      clear(cards);
-      list.forEach((c, i) => {
-        const card = choiceCard(run, c);
-        card.style.animationDelay = i * 0.06 + 's';
-        card.addEventListener('click', () => {
-          if (this.banishMode) {
-            if (c.kind === 'gold' || c.kind === 'heal' || c.kind === 'skill_up' || c.kind === 'ult_learn') return;
-            const next = run.banish(c.id);
-            this.api.sfx('uiBack');
-            this.banishMode = false;
-            if (next) render(next);
-            return;
-          }
-          this.api.sfx('select');
-          run.choose(c);
-          done();
-        });
-        cards.append(card);
-      });
-      renderActions();
-    };
-    const renderActions = () => {
-      clear(actions);
-      const lv = run.leveling;
-      actions.append(
-        h('button.btn.small' + (lv.rerolls > 0 ? '' : '.disabled'), {
-          onclick: () => {
-            const next = run.reroll();
-            if (next) {
-              this.api.sfx('ui');
-              render(next);
-            } else this.api.sfx('denied');
-          },
-        }, iconImg('dice', 0xffffff, 'icon sm'), `${t('btn_reroll')} ${lv.rerolls}`),
-        h('button.btn.small' + (lv.skips > 0 ? '' : '.disabled'), {
-          onclick: () => {
-            if (lv.skips <= 0) return this.api.sfx('denied');
-            this.api.sfx('ui');
-            run.skip();
-            done();
-          },
-        }, iconImg('skip', 0x8ad8ff, 'icon sm'), `${t('btn_skip')} ${lv.skips}`),
-        h('button.btn.small' + (lv.banishes > 0 ? '' : '.disabled') + (this.banishMode ? '.active' : ''), {
-          onclick: () => {
-            if (lv.banishes <= 0) return this.api.sfx('denied');
-            this.banishMode = !this.banishMode;
-            this.api.sfx('ui');
-            this.root.querySelector('.levelup')?.classList.toggle('banishing', this.banishMode);
-            renderActions();
-          },
-        }, iconImg('banish', 0xff5a5a, 'icon sm'), `${t('btn_banish')} ${lv.banishes}`),
-      );
-    };
-    render(choices);
-    this.open(h('div.modal-back', h('div.modal.levelup', h('h2.glow', t('level_up')), h('div.sub', t('hud_level', { n: run.player.level + 1 - run.player.pendingLevels + 0 })), cards, actions, h('div.banish-hint', t('banish_hint')))));
-  }
-
   // ------------------------------------------------------------------ inventory
   inventory(run: Run, close: () => void) {
     this.open(new InventoryUi(run, close).root);
-  }
-
-  // ------------------------------------------------------------------ chest
-  chest(run: Run, data: ChestData, done: () => void) {
-    const list = h('div.chest-rewards');
-    const chest = h('div.chest-anim' + (data.tier > 0 ? '.boss' : ''), h('div.chest-lid'), h('div.chest-body'), h('div.chest-rays'));
-    const btn = h('button.btn.primary.hidden', {
-      onclick: () => {
-        this.api.sfx('ui');
-        done();
-      },
-    }, t('btn_take'));
-    const goldEl = h('div.chest-gold.hidden', h('i.ic-coin'), '+' + fmtNum(data.gold));
-    const rc = RARITY_COLOR[data.rarity];
-    this.open(
-      h(
-        'div.modal-back',
-        h(
-          'div.modal.chest.rarity-' + data.rarity,
-          { style: `--rc:${rc}` },
-          h('h2.glow', { style: `color:${rc}` }, t('chest_' + data.rarity)),
-          h('div.sub', t(data.tier > 0 ? 'chest_boss' : 'chest') + ' · ' + t('rarity_' + data.rarity)),
-          chest,
-          list,
-          goldEl,
-          btn,
-        ),
-      ),
-    );
-    let i = 0;
-    const reveal = () => {
-      if (!this.isOpen) return;
-      if (i >= data.rewards.length) {
-        goldEl.classList.remove('hidden');
-        btn.classList.remove('hidden');
-        this.api.sfx('coin');
-        return;
-      }
-      const r = data.rewards[i++];
-      list.append(rewardRow(run, r));
-      this.api.sfx(r.kind === 'evolution' ? 'evolution' : 'powerup');
-      setTimeout(reveal, r.kind === 'evolution' ? 900 : 420);
-    };
-    setTimeout(() => chest.classList.add('open'), 350);
-    setTimeout(reveal, 900);
   }
 
   // ------------------------------------------------------------------ pause
@@ -221,7 +86,6 @@ export class RunModals {
   // ------------------------------------------------------------------ results
   results(data: ResultData, actions: { retry(): void; menu(): void }) {
     const s = data.summary;
-    const weapons = [...s.weapons].sort((a, b) => b.damage - a.damage);
     this.open(
       h(
         'div.modal-back',
@@ -240,13 +104,7 @@ export class RunModals {
             h('div.kv', h('span', t('r_diff')), h('span', data.diffName)),
             h('div.kv.gold', h('span', t('r_gold')), h('span', h('i.ic-coin'), '+' + fmtNum(data.goldEarned))),
           ),
-          h(
-            'div.dmg-table',
-            ...weapons.map((w) => {
-              const def = WEAPON_BY_ID[w.id];
-              return h('div.dmg-row', iconImg(def.icon, def.color, 'icon sm'), h('span.n', L(def.name)), h('span.l', def.evolved ? '★' : w.level >= WEAPON_MAX_LEVEL ? 'MAX' : t('lvl_short', { n: w.level })), h('span.d', fmtNum(w.damage)));
-            }),
-          ),
+          data.run ? h('div.build.results-build', h('div.build-head', t('ak_skills_used')), ...buildRows(data.run)) : null,
           data.relic ? h('div.unlock', t('relic_found', { name: data.relic })) : null,
           ...data.newUnlocks.map((u) => h('div.unlock', u)),
           ...data.achievements.map((a) => h('div.unlock.ach', '★ ' + L(a.name) + (a.reward || a.gold ? ' — ' + rewardText(a) : ''))),
@@ -271,168 +129,28 @@ export class RunModals {
   }
 }
 
-function choiceCard(run: Run, c: Choice): HTMLElement {
-  let icon: HTMLElement;
-  let name: string;
-  let tag: string;
-  let lines: string[] = [];
-  let color = RARITY_COLOR[c.rarity] ?? '#ffffff';
-  let hint = '';
-  if (c.kind === 'weapon_new' || c.kind === 'weapon_up') {
-    const w = WEAPON_BY_ID[c.id];
-    icon = iconImg(w.icon, w.color, 'icon lg');
-    name = L(w.name);
-    if (c.kind === 'weapon_new') {
-      tag = t('new');
-      lines = [L(w.desc)];
-    } else {
-      tag = c.level >= WEAPON_MAX_LEVEL ? 'MAX' : t('lvl_short', { n: c.level });
-      lines = weaponDeltaLines(w.levels[c.level - 2] ?? {});
-    }
-    if (w.evolution) {
-      const ps = PASSIVE_BY_ID[w.evolution.passive];
-      const has = run.passives.levels.has(ps.id);
-      hint = (has ? '✓ ' : '') + t('evo_with', { name: L(ps.name) });
-    }
-  } else if (c.kind === 'passive_new' || c.kind === 'passive_up') {
-    const p = PASSIVE_BY_ID[c.id];
-    icon = iconImg(p.icon, p.color, 'icon lg');
-    name = L(p.name);
-    tag = c.kind === 'passive_new' ? t('new') : t('lvl_short', { n: c.level });
-    lines = c.kind === 'passive_new' ? [L(p.desc)] : statModLines(p.perLevel);
-    const evo = Object.values(WEAPON_BY_ID).find((w) => w.evolution?.passive === p.id && run.weapons.has(w.id));
-    if (evo) hint = '✓ ' + t('evo_for', { name: L(evo.name) });
-  } else if (c.kind === 'skill_up') {
-    const slot = +c.id;
-    const def = run.skills.skill(slot);
-    icon = iconImg(def.icon, def.color, 'icon lg');
-    name = L(def.name);
-    tag = (c.level >= SKILL_MAX ? 'MAX' : t('lvl_short', { n: c.level })) + ' · ' + ['Q', 'W', 'E'][slot];
-    lines = [upText(def.ups[c.level - 2]), skillStatLine(run, slot, c.level)];
-    color = hex(def.color);
-  } else if (c.kind === 'ult_learn') {
-    const def = run.skills.kit.ult;
-    icon = iconImg(def.icon, def.color, 'icon lg');
-    name = L(def.name);
-    tag = t('arpg_ult');
-    lines = [L(def.desc)];
-    color = '#ffd060';
-  } else if (c.kind === 'stat') {
-    const su = STAT_UPS.find((x) => x.id === c.id)!;
-    icon = iconImg(su.icon, 0xc8d0dc, 'icon lg');
-    name = L(su.name);
-    tag = t('arpg_stat');
-    lines = [t('arpg_stat_desc')];
-  } else if (c.kind === 'dodge_up') {
-    icon = iconImg('sk_dodge', 0x8ab8e0, 'icon lg');
-    name = t('arpg_dodge');
-    tag = t('lvl_short', { n: c.level + 1 });
-    lines = [t('arpg_dodge_up')];
-  } else if (c.kind === 'mod') {
-    const m = MOD_BY_ID[c.id];
-    icon = iconImg(m.icon, m.color, 'icon lg');
-    name = L(m.name);
-    tag = t('arpg_mod');
-    lines = [L(m.desc)];
-    color = hex(m.color);
-    hint = t('arpg_build_' + m.tag);
-  } else if (c.kind === 'gold') {
-    icon = iconImg('coin', 0xffd23d, 'icon lg');
-    name = t('choice_gold');
-    tag = '';
-    lines = [t('choice_gold_desc', { n: Math.round(3 * run.player.stats.greed) })];
-    color = '#ffd23d';
-  } else {
-    icon = iconImg('heart', 0xff4a6a, 'icon lg');
-    name = t('choice_heal');
-    tag = '';
-    lines = [t('choice_heal_desc')];
-    color = '#ff6a8a';
-  }
-  return h(
-    'button.choice' + (c.kind.endsWith('_new') ? '.is-new' : ''),
-    { style: `--rc:${color}` },
-    h('div.choice-icon', icon),
-    h('div.choice-body', h('div.choice-head', h('span.choice-name', name), tag ? h('span.choice-tag', tag) : null), ...lines.map((l) => h('div.choice-line', l)), hint ? h('div.choice-hint', hint) : null),
-  );
-}
-
-/** One-line description of a skill upgrade. */
-export function upText(u: SkillUp | undefined): string {
-  if (!u) return '';
-  const pct = Math.round(u.v * 100);
-  switch (u.t) {
-    case 'dmg':
-      return t('up_dmg', { n: pct });
-    case 'cd':
-      return t('up_cd', { n: pct });
-    case 'area':
-      return t('up_area', { n: pct });
-    case 'count':
-      return t('up_count', { n: u.v });
-    case 'dur':
-      return t('up_dur', { n: pct });
-    case 'cost':
-      return t('up_cost', { n: pct });
-    case 'status':
-      return t('up_status', { st: t('st_' + u.st) });
-    case 'special':
-      return t('sp_' + u.sp);
-  }
-}
-
-/** Damage / cooldown / cost summary for a skill at a level. */
-export function skillStatLine(run: Run, slot: number, level: number): string {
-  const sk = run.skills;
-  const def: SkillDef = sk.skill(slot);
-  let dmg = 1;
-  let cd = 1;
-  for (let i = 0; i < level - 1 && i < def.ups.length; i++) {
-    const u = def.ups[i];
-    if (u.t === 'dmg') dmg += u.v;
-    if (u.t === 'cd') cd -= u.v;
-  }
-  const base = def.acts.reduce((a, x) => Math.max(a, x.dmg ?? 0), 0);
-  const parts: string[] = [];
-  if (base > 0) parts.push(t('arpg_dmg', { n: Math.round(base * dmg * (1 + (run.player.level - 1) * 0.06) * run.player.stats.might) }));
-  parts.push(t('arpg_cd', { n: (def.cd * cd * run.player.stats.cooldown).toFixed(1) }));
-  if (def.cost) parts.push((sk.kit.res.id === 'heat' ? (def.cost > 0 ? '+' : '') : '') + Math.round(def.cost) + ' ' + L(sk.kit.res.name));
-  return parts.join(' · ');
-}
-
-function rewardRow(_run: Run, r: ChestReward): HTMLElement {
-  if (r.kind === 'evolution') {
-    const w = WEAPON_BY_ID[r.id];
-    const from = WEAPON_BY_ID[r.from!];
-    return h('div.reward.evo', iconImg(from.icon, from.color, 'icon'), h('span.arrow', '→'), iconImg(w.icon, w.color, 'icon lg'), h('div', h('b', t('evolution') + '!'), h('div', L(w.name)), h('small', L(w.desc))));
-  }
-  if (r.kind === 'weapon_up') {
-    const w = WEAPON_BY_ID[r.id];
-    return h('div.reward', iconImg(w.icon, w.color, 'icon'), h('div', h('b', L(w.name)), h('small', r.level >= WEAPON_MAX_LEVEL ? 'MAX' : t('lvl_short', { n: r.level }))));
-  }
-  if (r.kind === 'passive_up') {
-    const p = PASSIVE_BY_ID[r.id];
-    return h('div.reward', iconImg(p.icon, p.color, 'icon'), h('div', h('b', L(p.name)), h('small', t('lvl_short', { n: r.level }))));
-  }
-  return h('div.reward', iconImg('coin', 0xffd23d, 'icon'), h('div', h('b', t('choice_gold'))));
-}
-
+/** Class name and the learned skills with their levels and chosen tripods. */
 function buildRows(run: Run): HTMLElement[] {
-  const rows: HTMLElement[] = [];
-  const ws = h('div.build-row');
-  for (let i = 0; i < BALANCE.weaponSlots; i++) {
-    const w = run.weapons.list[i];
-    ws.append(w ? h('div.slot' + (w.def.evolved ? '.evo' : ''), { title: L(w.def.name) }, iconImg(w.def.icon, w.def.color), h('b', w.def.evolved ? '★' : w.isMax ? 'M' : String(w.level))) : h('div.slot.empty'));
+  const a = run.action;
+  const c = a.cls;
+  const row = h('div.build-row.skills');
+  for (let i = 0; i < 8; i++) {
+    const s = c.skills[i];
+    const lv = a.levels[i];
+    const tri = [0, 1].map((tier) => a.tripod(i, tier)).filter(Boolean).map((x) => L(x!.name));
+    row.append(
+      h(
+        'div.slot.sk-mini' + (lv > 0 ? '' : '.empty'),
+        { title: `${L(s.name)} · ${lv > 0 ? t('ak_lv', { n: lv, m: SKILL_MAX }) : t('ak_unlock_short', { n: s.unlock })}${tri.length ? '\n' + tri.join(', ') : ''}` },
+        skillImg(s.icon, s.color, 'icon'),
+        h('span.sk-mini-key', slotKey(null, i)),
+        lv > 0 ? h('b', String(lv)) : null,
+      ),
+    );
   }
-  const ps = h('div.build-row');
-  const list = [...run.passives.levels];
-  for (let i = 0; i < BALANCE.passiveSlots; i++) {
-    const e = list[i];
-    const def = e && PASSIVE_BY_ID[e[0]];
-    ps.append(def ? h('div.slot', { title: L(def.name) }, iconImg(def.icon, def.color), h('b', String(e[1]))) : h('div.slot.empty'));
-  }
-  rows.push(ws, ps);
-  return rows;
+  const ultOn = run.player.level >= c.ult.unlock;
+  row.append(h('div.slot.sk-mini.ult' + (ultOn ? '' : '.empty'), { title: L(c.ult.name) }, skillImg(c.ult.icon, c.ult.color, 'icon'), h('span.sk-mini-key', slotKey(null, SLOT_ULT))));
+  return [h('div.build-cls', { style: `color:#${c.color.toString(16).padStart(6, '0')}` }, L(c.name), h('span', ' · ' + t('ak_level_hero', { n: run.player.level }))), row];
 }
 
 function statRows(run: Run): HTMLElement[] {
@@ -445,7 +163,6 @@ function statRows(run: Run): HTMLElement[] {
     [t('stat_might'), pct(s.might)],
     [t('stat_area'), pct(s.area)],
     [t('stat_cooldown'), pct(s.cooldown)],
-    [t('stat_amount'), '+' + s.amount],
     [t('stat_moveSpeed'), pct(s.moveSpeed)],
     [t('stat_luck'), pct(s.luck)],
     [t('stat_growth'), pct(s.growth)],
@@ -455,4 +172,3 @@ function statRows(run: Run): HTMLElement[] {
   return rows.map(([k, v]) => h('div.kv', h('span', k), h('span', v)));
 }
 
-export { hex };

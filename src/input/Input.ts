@@ -1,4 +1,7 @@
-import type { BindAction, Keybinds } from '../meta/Save';
+import { SKILL_BINDS, type BindAction, type Keybinds } from '../meta/Save';
+
+/** Bindings of the action slots: 0..7 skills, 8 Ultimate, 9 special. */
+export const SLOT_BINDS: BindAction[] = [...SKILL_BINDS, 'ult', 'special'];
 
 /**
  * PC input: rebindable keyboard movement, pause, camera zoom (mouse wheel or keys) and the
@@ -30,6 +33,8 @@ export class Input {
   lmbPressed = false;
   readonly casts: number[] = [];
   dodgeQueued = false;
+  identityQueued = false;
+  onSkills: (() => void) | null = null;
   onInventory: (() => void) | null = null;
   /** Ctrl + skill key: spend a skill point on that slot (4 = dodge). */
   onLearn: ((slot: number) => void) | null = null;
@@ -75,18 +80,18 @@ export class Input {
           e.preventDefault();
           this.onJump?.();
         }
-        const slots: BindAction[] = ['skillQ', 'skillW', 'skillE', 'skillR'];
-        for (let i = 0; i < 4; i++) if (this.is(slots[i], e.code)) {
-          if (e.ctrlKey) {
+        for (let i = 0; i < SLOT_BINDS.length; i++)
+          if (this.is(SLOT_BINDS[i], e.code)) {
             e.preventDefault();
-            this.onLearn?.(i);
-          } else this.casts.push(i);
-        }
+            if (e.ctrlKey) this.onLearn?.(i);
+            else this.casts.push(i);
+          }
         if (this.is('dodge', e.code)) {
           e.preventDefault();
-          if (e.ctrlKey) this.onLearn?.(4);
-          else this.dodgeQueued = true;
+          this.dodgeQueued = true;
         }
+        if (this.is('identity', e.code)) this.identityQueued = true;
+        if (this.is('skills', e.code)) this.onSkills?.();
         if (this.is('potion', e.code)) this.onPotion?.();
       }
       this.keys.add(e.code);
@@ -185,7 +190,7 @@ export class Input {
     this.enabled = on;
     if (!on) {
       this.keys.clear();
-      this.lmb = this.rmb = this.lmbPressed = this.dodgeQueued = false;
+      this.lmb = this.rmb = this.lmbPressed = this.dodgeQueued = this.identityQueued = false;
       this.casts.length = 0;
     }
   }

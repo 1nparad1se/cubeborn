@@ -11,25 +11,24 @@ import type { Enemy } from './game/Enemy';
 import { itemName, RARITY_COLOR as ITEM_COLOR } from './game/arpg/Gear';
 import { NullFx, type FxSink } from './game/types';
 import { Renderer } from './render/Renderer';
-import { Input, keyName } from './input/Input';
+import { Input, keyName, SLOT_BINDS } from './input/Input';
 import { audio } from './audio/Audio';
 import { Profile } from './meta/Profile';
 import { Hud } from './ui/Hud';
 import { Menus, type MenuApi } from './ui/Menus';
+import { SkillsScreen } from './ui/SkillsScreen';
 import { RunModals } from './ui/RunModals';
 import { h } from './ui/dom';
 import { t, L, setLang, getLang } from './i18n';
 import { HERO_BY_ID } from './data/heroes';
 import { MAP_BY_ID, MAPS } from './data/maps';
 import { DIFFICULTIES, DIFFICULTY_BY_ID } from './data/difficulty';
-import { WEAPONS, WEAPON_BY_ID } from './data/weapons';
-import { PASSIVES, PASSIVE_BY_ID } from './data/passives';
 import { BOSS_BY_ID, RELIC_BY_ID } from './data/bosses';
 import { generateTerrain } from './game/mapgen/generators';
 import type { BossController } from './game/bosses/Boss';
 import { WAVE_TYPE_COLOR, MODIFIERS, type RunMode, type Wave } from './game/Waves';
 
-export const VERSION = 'v2.4.0';
+export const VERSION = 'v3.0.0';
 
 /** Discrete camera zoom steps for the mouse wheel (camera distance multipliers). */
 const ZOOM_STEPS = [0.75, 0.88, 1, 1.15, 1.35];
@@ -81,7 +80,7 @@ export class App implements MenuApi {
   private modals: RunModals;
   private toasts: HTMLElement;
   private run: Run | null = null;
-  private runArgs: [string, string, string, RunMode] = ['bram', 'blightwood', 'normal', 'campaign'];
+  private runArgs: [string, string, string, RunMode] = ['berserker', 'blightwood', 'normal', 'campaign'];
   private postVignette: HTMLElement;
   private frameDue = 0;
   private paused = false;
@@ -114,12 +113,17 @@ export class App implements MenuApi {
     this.hud = new Hud(root);
     this.hud.onPause = () => this.togglePause();
     this.hud.arpg.onInventory = () => this.toggleInventory();
-    this.hud.arpg.onLearn = (i) => this.run?.skills.learn(i);
-    this.input.onLearn = (i) => this.run?.skills.learn(i);
+    this.hud.arpg.onLearn = (i) => this.run?.action.learn(i);
+    this.input.onLearn = (i) => this.run?.action.learn(i);
     this.hud.setVisible(false);
     this.menus = new Menus(root, this);
     this.menus.setVisible(false);
     this.modals = new RunModals(root, this);
+    this.skills = new SkillsScreen(root);
+    this.skills.onSfx = (id) => this.sfx(id);
+    this.skills.binds = s.keybinds;
+    this.hud.arpg.onSkills = () => this.toggleSkills();
+    this.input.onSkills = () => this.toggleSkills();
     this.toasts = h('div.toasts');
     root.appendChild(this.toasts);
     this.initDev();
@@ -171,12 +175,24 @@ export class App implements MenuApi {
     dev.onProfileChange = () => {
       if (this.mode === 'menu') this.menus.render();
     };
+    this.wireDevClass();
     this.input.onDev = (a) => {
       if (!dev.enabled || !this.devUi) return false;
       if (a === 'devPanel') this.devUi.setPanel(!dev.panelOpen);
       else if (a === 'devDebug') this.devUi.setDebug(!dev.debugOpen);
       else dev.toggle('god');
       return true;
+    };
+  }
+
+  private wireDevClass() {
+    dev.onStartClass = (id) => {
+      if (this.run) {
+        this.renderer.endRun();
+        this.run = null;
+        dev.endRun();
+      }
+      this.startRun(id, this.runArgs[1], this.runArgs[2], this.runArgs[3]);
     };
   }
 
@@ -208,6 +224,7 @@ export class App implements MenuApi {
     this.postVignette.classList.toggle('hidden', !s.postProcessing);
     this.input.binds = s.keybinds;
     this.hud.arpg.binds = s.keybinds;
+    this.skills.binds = s.keybinds;
     if (this.run) this.run.settings.damageNumbers = s.damageNumbers;
     this.applyDisplayMode();
   }
@@ -254,6 +271,10 @@ export class App implements MenuApi {
       return;
     }
     if (this.mode === 'run') {
+      if (this.skills.isOpen) {
+        this.skills.close();
+        return;
+      }
       if (this.invOpen) {
         this.toggleInventory();
         return;
@@ -262,6 +283,14 @@ export class App implements MenuApi {
       return;
     }
     if (this.mode === 'menu' && this.menus.canGoBack) this.menus.back();
+  }
+
+  private skills: SkillsScreen;
+  /** Skills window (K): learning skills and picking upgrades while the fight goes on. */
+  toggleSkills() {
+    const run = this.run;
+    if (!run || this.mode !== 'run' || this.paused || this.invOpen) return;
+    this.skills.toggle(run);
   }
 
   private invOpen = false;
@@ -340,6 +369,7 @@ export class App implements MenuApi {
     this.runArgs = [heroId, mapId, diffId, mode];
     this.menus.setVisible(false);
     this.modals.close();
+    this.skills?.close();
     this.renderer.endRun();
     const p = this.profile;
     const fx = new ProxyFx();
@@ -348,8 +378,6 @@ export class App implements MenuApi {
       diff: DIFFICULTY_BY_ID[diffId],
       hero: HERO_BY_ID[heroId],
       permanent: p.permanentMods(),
-      unlockedWeapons: new Set(WEAPONS.filter((w) => p.isWeaponUnlocked(w.id)).map((w) => w.id)),
-      unlockedPassives: new Set(PASSIVES.filter((x) => p.isPassiveUnlocked(x.id)).map((x) => x.id)),
       fx,
       settings: { damageNumbers: p.data.settings.damageNumbers, dayLength: DAY_NIGHT.lengths[p.data.settings.dayNight] ?? DAY_NIGHT.lengths[DAY_NIGHT.defaultLength] },
       tr: (k) => t(k),
@@ -389,22 +417,6 @@ export class App implements MenuApi {
   }
 
   private bindRunEvents(run: Run) {
-    run.events.on('levelup', (choices) => {
-      this.input.setEnabled(false);
-      this.modals.levelUp(run, choices, () => {
-        if (run.state === 'levelup') return;
-        this.modals.close();
-        this.input.setEnabled(true);
-      });
-    });
-    run.events.on('chest', (data) => {
-      this.input.setEnabled(false);
-      this.modals.chest(run, data, () => {
-        run.closeChest();
-        this.modals.close();
-        this.input.setEnabled(true);
-      });
-    });
     run.events.on('bossSpawn', (b: BossController) => {
       if (b.isClone) return;
       this.hud.setBoss(b);
@@ -434,10 +446,6 @@ export class App implements MenuApi {
       this.toast(t('mod_' + id) + ': ' + t('mod_' + id + '_desc'), m?.color ?? '#ffffff');
     });
     run.events.on('feature', (key) => this.hud.showBanner(t(key), '#ffcf7a', 2.6, t(key + '_desc')));
-    run.events.on('evolution', (id) => {
-      const w = WEAPON_BY_ID[id];
-      this.toast(t('evolved', { name: L(w.name) }), '#ffb02e');
-    });
     run.loot.onPickup = (it) => {
       if (it.rarity !== 'common') this.toast(t('inv_got', { name: itemName(it, getLang()) }), ITEM_COLOR[it.rarity]);
     };
@@ -506,10 +514,6 @@ export class App implements MenuApi {
       const def = BOSS_BY_ID[id];
       if (def && RELIC_BY_ID[def.relic] && p.discover('relics', def.relic)) relic = L(RELIC_BY_ID[def.relic].name);
     }
-    for (const id of s.discovered) {
-      if (WEAPON_BY_ID[id]) p.discover('weapons', id);
-      else if (PASSIVE_BY_ID[id]) p.discover('passives', id);
-    }
     for (const id of s.seen) {
       if (BOSS_BY_ID[id]) p.discover('bosses', id);
       else p.discover('enemies', id);
@@ -548,7 +552,7 @@ export class App implements MenuApi {
     setTimeout(
       () =>
         this.modals.results(
-          { victory, summary: s, goldEarned, diffName: L(diff.name), achievements, relic, newUnlocks, endless },
+          { victory, summary: s, goldEarned, diffName: L(diff.name), achievements, relic, newUnlocks, endless, run },
           {
             retry: () => this.startRun(...this.runArgs),
             menu: () => this.exitToMenu(),
@@ -559,6 +563,7 @@ export class App implements MenuApi {
   }
 
   private exitToMenu() {
+    this.skills.close();
     this.renderer.endRun();
     this.run = null;
     dev.endRun();
@@ -657,19 +662,23 @@ export class App implements MenuApi {
       inp.lmbPressed = false;
       inp.casts.length = 0;
       inp.dodgeQueued = false;
+      inp.identityQueued = false;
+      c.held.fill(false);
+      c.attack = false;
       return;
     }
     const here = inp.held('attackHere');
     if (inp.lmbPressed) {
       inp.lmbPressed = false;
-      this.lmbMode = hover || here ? 'attack' : 'move';
+      this.lmbMode = here ? 'attack' : 'move';
       if (this.lmbMode === 'move') {
         c.click = true;
         const ring = run.effects.add('ring', c.aimX, c.aimZ, 0.35, 0x9affc0);
         ring.r = 0.6;
       }
     }
-    c.attack = inp.rmb || (inp.lmb && (this.lmbMode === 'attack' || here));
+    c.attack = inp.rmb || inp.held('attack') || (inp.lmb && (this.lmbMode === 'attack' || here));
+    for (let i = 0; i < SLOT_BINDS.length; i++) c.held[i] = inp.held(SLOT_BINDS[i]);
     c.move = inp.lmb && this.lmbMode === 'move' && !here;
     c.stop = inp.held('stop');
     if (inp.casts.length) {
@@ -679,6 +688,10 @@ export class App implements MenuApi {
     if (inp.dodgeQueued) {
       c.dodge = true;
       inp.dodgeQueued = false;
+    }
+    if (inp.identityQueued) {
+      c.identity = true;
+      inp.identityQueued = false;
     }
     // big fights pull the camera back a little
     let near = 0;

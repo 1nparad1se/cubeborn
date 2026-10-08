@@ -39,7 +39,7 @@ type Sel = { kind: 'stash' | 'eq' | 'shop'; item: Item; pos?: EquipPos };
  * found, sell what is not needed, and buy new pieces in the shop for gold.
  */
 export function armoryScreen(profile: Profile, sfx: (id: string) => void, heroId: string, onHero: (id: string) => void, onGold: () => void): HTMLElement {
-  let hero = profile.isHeroUnlocked(heroId) ? heroId : 'bram';
+  let hero = profile.isHeroUnlocked(heroId) ? heroId : (HEROES.find((x) => profile.isHeroUnlocked(x.id))?.id ?? HEROES[0].id);
   let tab: 'gear' | 'shop' = 'gear';
   let sel: Sel | null = null;
   let filter: 'all' | EquipPos = 'all';

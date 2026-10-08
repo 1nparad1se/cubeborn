@@ -1,8 +1,6 @@
 import { ELEMENT_FX, VFX, elementFor, type Element } from '../config/vfx';
-import { WEAPON_BY_ID } from '../data/weapons';
 import type { Enemy } from './Enemy';
 import type { Run } from './Run';
-import type { WeaponInstance } from './weapons/Weapon';
 
 /**
  * Skill VFX director: plays the anticipation → impact → follow-through beats of every attack in
@@ -21,7 +19,7 @@ export class Vfx {
   elementOf(weaponId: string): Element {
     let e = this.elements.get(weaponId);
     if (!e) {
-      e = elementFor(weaponId, WEAPON_BY_ID[weaponId]?.tags);
+      e = elementFor(weaponId, undefined);
       this.elements.set(weaponId, e);
     }
     return e;
@@ -32,24 +30,6 @@ export class Vfx {
     if (this.shakeT > 0) this.shakeT -= dt;
     for (const k in this.soundT) this.soundT[k as Element]! -= dt;
     this.statusTick(dt);
-  }
-
-  /** Anticipation: energy converges on the hero's hand just before a weapon fires. */
-  windup(w: WeaponInstance) {
-    const lv = this.run.fx.level();
-    if (lv < 1) return;
-    const p = this.run.player;
-    const fx = ELEMENT_FX[this.elementOf(w.def.id)];
-    this.run.fx.emit(p.x + p.fx * 0.35, 1 + p.jumpY, p.z + p.fz * 0.35, fx.windup, 0, 0, VFX.levelMul[lv]);
-  }
-
-  /** Release: a short cone from the hero toward the attack direction. */
-  release(w: WeaponInstance, dirX: number, dirZ: number) {
-    const lv = this.run.fx.level();
-    if (lv < 0) return;
-    const p = this.run.player;
-    const fx = ELEMENT_FX[this.elementOf(w.def.id)];
-    this.run.fx.emit(p.x + dirX * 0.45, 0.95 + p.jumpY, p.z + dirZ * 0.45, fx.release, dirX, dirZ, VFX.levelMul[lv]);
   }
 
   /**

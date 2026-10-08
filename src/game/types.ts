@@ -23,6 +23,13 @@ export interface DamageInfo {
   bleedDur: number;
   curse: number;
   weaken: number;
+  /** Action combat: stagger damage, back-attack and execute multipliers, launch, root and mark seconds. */
+  stag: number;
+  backMul: number;
+  execute: number;
+  launch: boolean;
+  root: number;
+  mark: number;
 }
 
 export type DmgType = 'phys' | 'fire' | 'ice' | 'lightning' | 'poison' | 'dark' | 'magic';
@@ -30,7 +37,7 @@ export type DmgType = 'phys' | 'fire' | 'ice' | 'lightning' | 'poison' | 'dark' 
 export const MAX_SOURCES = 24;
 
 export function makeDamage(): DamageInfo {
-  return { damage: 0, critChance: 0, critDamage: 1.5, knockback: 1, source: 0, weaponId: '', slow: 0, slowDur: 0, freeze: 0, freezeDur: 0, poison: 0, poisonDur: 0, burn: 0, burnDur: 0, el: '', stun: 0, bleed: 0, bleedDur: 0, curse: 0, weaken: 0 };
+  return { damage: 0, critChance: 0, critDamage: 1.5, knockback: 1, source: 0, weaponId: '', slow: 0, slowDur: 0, freeze: 0, freezeDur: 0, poison: 0, poisonDur: 0, burn: 0, burnDur: 0, el: '', stun: 0, bleed: 0, bleedDur: 0, curse: 0, weaken: 0, stag: 0, backMul: 1, execute: 1, launch: false, root: 0, mark: 0 };
 }
 
 export function copyDamage(dst: DamageInfo, src: DamageInfo): DamageInfo {
@@ -54,6 +61,12 @@ export function copyDamage(dst: DamageInfo, src: DamageInfo): DamageInfo {
   dst.bleedDur = src.bleedDur;
   dst.curse = src.curse;
   dst.weaken = src.weaken;
+  dst.stag = src.stag;
+  dst.backMul = src.backMul;
+  dst.execute = src.execute;
+  dst.launch = src.launch;
+  dst.root = src.root;
+  dst.mark = src.mark;
   return dst;
 }
 

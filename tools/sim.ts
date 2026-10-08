@@ -8,13 +8,12 @@ import { NullFx } from '../src/game/types';
 import { MAP_BY_ID } from '../src/data/maps';
 import { HERO_BY_ID } from '../src/data/heroes';
 import { DIFFICULTY_BY_ID } from '../src/data/difficulty';
-import { WEAPONS } from '../src/data/weapons';
-import { PASSIVES } from '../src/data/passives';
+import { actBot } from './actbot';
 import type { StatMods } from '../src/data/types';
 import type { Enemy } from '../src/game/Enemy';
 import type { RunMode } from '../src/game/Waves';
 
-const [mapId = 'blightwood', heroId = 'bram', diffId = 'normal', runsArg = '3', permArg = '0', modeArg = 'campaign'] = process.argv.slice(2);
+const [mapId = 'blightwood', heroId = 'berserker', diffId = 'normal', runsArg = '3', permArg = '0', modeArg = 'campaign'] = process.argv.slice(2);
 const PERM1: StatMods = { might: 0.25, maxHp: 50, armor: 3, regen: 0.75, growth: 0.25, cooldown: 0.09, area: 0.16, duration: 0.16, luck: 0.24, magnet: 0.6 };
 // perm=2: every permanent upgrade maxed, including Multiplier and Second Chance
 const PERM2: StatMods = { ...PERM1, moveSpeed: 0.15, critChance: 0.09, projSpeed: 0.24, amount: 1, revival: 1 };
@@ -27,7 +26,7 @@ const maxT = Number(process.env.MAXT ?? (mode === 'endless' ? 3200 : 1400));
  * Sampling bot: scores 16 headings by predicted danger (enemies, bullets, hazard zones and
  * tiles, walls) against the pull of gems and chests, the way a careful human kites.
  */
-export function bot(run: Run): [number, number] {
+export function bot(run: Run, pref = 0): [number, number] {
   const p = run.player;
   const t = run.terrain;
   const near: Enemy[] = [];
@@ -74,7 +73,7 @@ export function bot(run: Run): [number, number] {
         const ez = e.z + e.vz * h;
         const d2 = (ex - px) ** 2 + (ez - pz) ** 2;
         const r = e.radius + p.radius + 0.4;
-        score -= (e.boss ? 6 : e.elite ? 2.5 : 1) * (d2 < r * r ? 60 : 4 / (d2 + 0.3));
+        score -= (e.boss ? 6 : e.elite ? 2.5 : 1) * (d2 < r * r ? (pref > 0 && pref < 3 ? 6 : 60) : (pref > 0 && pref < 3 ? 0.6 : 4) / (d2 + 0.3));
       }
       for (const b of run.hazards.bullets) {
         if (!b.active) continue;
@@ -86,6 +85,20 @@ export function bot(run: Run): [number, number] {
         const d = Math.hypot(px - z.x, pz - z.z);
         if (d < z.r + 0.6) score -= 50;
       }
+    }
+    // fighting distance: melee classes close in, ranged ones keep range
+    if (pref > 0 && near.length) {
+      let ne = near[0];
+      let nd = 1e9;
+      for (const e of near) {
+        const d = (e.x - p.x) ** 2 + (e.z - p.z) ** 2;
+        if (d < nd) {
+          nd = d;
+          ne = e;
+        }
+      }
+      const d = Math.hypot(ne.x - p.x - dx * speed * 0.5, ne.z - p.z - dz * speed * 0.5);
+      score -= Math.abs(d - pref - ne.radius) * (pref < 3 ? 2.2 : 1.2);
     }
     if (target) {
       const tx = target.x - p.x;
@@ -118,8 +131,6 @@ for (let r = 0; r < Number(runsArg); r++) {
   const t0 = performance.now();
   const run = new Run({
     map, diff, hero, permanent: perm, mode,
-    unlockedWeapons: new Set(WEAPONS.map((w) => w.id)),
-    unlockedPassives: new Set(PASSIVES.map((p) => p.id)),
     fx: NullFx, settings: { damageNumbers: false, dayLength: Number(process.env.DAY ?? 300) }, tr: (k) => k, seed: 1000 + r,
   });
   run.debug.god = god;
@@ -191,18 +202,12 @@ for (let r = 0; r < Number(runsArg); r++) {
   };
   while (run.state !== 'dead' && run.state !== 'victory' && run.time < maxT && steps < 200000) {
     steps++;
-    if (run.state === 'levelup') {
-      const ch = run.pendingChoices!;
-      // prefer upgrades of owned weapons, then new
-      const pick = ch.find((c) => c.kind === 'weapon_up') ?? ch.find((c) => c.kind === 'weapon_new') ?? ch[0];
-      run.choose(pick);
-      continue;
-    }
     if (run.state === 'chest') {
       run.closeChest();
       continue;
     }
-    const [ix, iz] = bot(run);
+    const pref = actBot(run, dt);
+    const [ix, iz] = bot(run, pref);
     run.update(dt, ix, iz);
     maxEnemies = Math.max(maxEnemies, run.enemies.aliveCount);
     if (mode === 'campaign') {
@@ -215,7 +220,7 @@ for (let r = 0; r < Number(runsArg); r++) {
   line('END');
   const s = run.summary();
   const ms = performance.now() - t0;
-  const res = `RUN ${r}: ${s.victory ? 'VICTORY' : run.state === 'dead' || run.ending ? 'DEAD' : 'TIMEOUT'} time=${s.time.toFixed(0)} wave=${s.wave} level=${s.level} kills=${s.kills} maxAlive=${maxEnemies} taken=${taken.toFixed(0)} runGold=${s.gold} reward=${Run.goldReward(s, diff.reward)} elites=${s.elites} chests=${s.chestRarity.join('/')} bosses=${s.bosses.join('/')} evos=${s.evolutions.length} sim=${(ms / 1000).toFixed(1)}s`;
+  const res = `RUN ${r}: ${s.victory ? 'VICTORY' : run.state === 'dead' || run.ending ? 'DEAD' : 'TIMEOUT'} time=${s.time.toFixed(0)} wave=${s.wave} level=${s.level} kills=${s.kills} maxAlive=${maxEnemies} taken=${taken.toFixed(0)} runGold=${s.gold} reward=${Run.goldReward(s, diff.reward)} elites=${s.elites} chests=${s.chestRarity.join('/')} bosses=${s.bosses.join('/')} staggers=${run.stats.combos} casts=${run.stats.skillsCast} sim=${(ms / 1000).toFixed(1)}s`;
   results.push(res);
   console.log(res);
   if (process.env.DMG) console.log('  taken by:', Object.entries(dmgBy).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + '=' + v.toFixed(0)).join(' '));

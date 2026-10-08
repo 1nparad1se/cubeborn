@@ -1,41 +1,55 @@
 import { h, clear } from '../ui/dom';
 import { L, t } from '../i18n';
-import { WEAPONS, WEAPON_BY_ID } from '../data/weapons';
-import { PASSIVES, PASSIVE_BY_ID } from '../data/passives';
-import { ENEMIES } from '../data/enemies';
+import { ENEMIES, ELITE_IDS, ELITE_MODS } from '../data/enemies';
 import { BOSSES } from '../data/bosses';
-import { BALANCE } from '../config/balance';
 import { keyName } from '../input/Input';
-import { dev, INF_XP_MUL, type DevToggle } from './DevMode';
+import { dev, INF_XP_MUL, type DevPlace, type DevToggle } from './DevMode';
 import type { PickupKind } from '../game/Pickups';
 import type { GearSlot } from '../game/arpg/Gear';
 import type { Rarity, StatKey } from '../data/types';
 import { RARITIES } from '../data/types';
+import { CLASSES } from '../game/action/classes';
+import { MAX_LEVEL, SKILL_MAX, SLOT_KEYS, TRIPOD_LEVELS, type ClassId } from '../game/action/types';
+import { tripodsFor } from '../game/action/tripods';
+import type { ActionSystem } from '../game/action/ActionSystem';
+import type { Enemy } from '../game/Enemy';
+import type { Run } from '../game/Run';
 
 // selections survive panel rebuilds
 const sel = {
-  weapon: WEAPONS.find((w) => !w.evolved)?.id ?? '',
-  evo: WEAPONS.find((w) => w.evolved)?.id ?? '',
-  passive: PASSIVES[0]?.id ?? '',
+  cls: (CLASSES[0]?.id ?? 'berserker') as ClassId,
   enemy: ENEMIES.find((e) => e.behavior !== 'prop')?.id ?? '',
+  elite: 'random',
   boss: BOSSES[0]?.id ?? '',
+  place: 'cursor' as DevPlace,
+  point: 'centre',
   power: 'fury' as PickupKind,
-  count: 1,
   wave: 10,
   time: 300,
   xp: 500,
   gold: 1000,
   coins: 10000,
+  level: MAX_LEVEL,
   slot: 'any' as GearSlot | 'any',
   rarity: 'legendary' as Rarity,
   stat: 'might' as StatKey,
   statV: 0.25,
 };
-const openSecs = new Set<string>(['player', 'arpg', 'time']);
+const openSecs = new Set<string>(['player', 'combat', 'skills']);
+
+/** Action-system internals the debug readout shows (private in ActionSystem, read-only here). */
+interface ActionPeek {
+  combo: { slot: number; idx: number; t: number };
+  basicIdx: number;
+  basicT: number;
+}
+
+/** Key label of an action slot: Q..F skills, V Ultimate, X special. */
+const slotKey = (slot: number) => (slot < 8 ? SLOT_KEYS[slot] : slot === 8 ? 'V' : 'X');
 
 /**
- * Developer overlays: the DEVELOPER TOOLS panel (F1), the debug info readout (F2) and the
- * TEST MODE / GOD MODE badges. Nothing here is created unless developer mode is switched on.
+ * Developer overlays: the developer tools panel (F1), the debug info readout (F2) and the
+ * test mode / god mode badges. Nothing here is created unless developer mode is switched on.
  */
 export class DevUi {
   private panel = h('div.dev-panel.hidden');
@@ -72,6 +86,7 @@ export class DevUi {
 
   setInRun(v: boolean) {
     this.inRun = v;
+    if (v && dev.run) sel.cls = dev.run.action.cls.id;
     this.refresh();
   }
 
@@ -92,7 +107,7 @@ export class DevUi {
     if (on && dev.panelOpen) this.build();
   }
 
-  /** Per-frame: FPS counter and the debug readout (updated a few times a second). */
+  /** Per-frame: FPS counter and the debug readout (updated several times a second). */
   frame(realDt: number) {
     this.frames++;
     this.fpsT += realDt;
@@ -104,34 +119,64 @@ export class DevUi {
     if (!dev.enabled || !dev.debugOpen) return;
     this.infoT -= realDt;
     if (this.infoT > 0) return;
-    this.infoT = 0.25;
+    this.infoT = 0.1;
     const run = dev.run;
     const rows: [string, string][] = [[t('dv_i_fps'), this.fps.toFixed(0)]];
     if (run) {
       const p = run.player;
-      const w = run.waves.wave;
       const tm = run.time;
       let proj = 0;
       for (const x of run.projectiles.list) if (x.active) proj++;
-      let picks = 0;
-      for (const x of run.pickups.list) if (x.active) picks++;
       rows.push(
-        [t('dv_i_enemies'), String(run.enemies.aliveCount)],
-        [t('dv_i_proj'), String(proj)],
-        [t('dv_i_pickups'), String(picks)],
-        [t('dv_i_wave'), `${w.n} (${t('wave_' + w.type)})`],
-        [t('dv_i_time'), `${Math.floor(tm / 60)}:${String(Math.floor(tm % 60)).padStart(2, '0')}`],
+        [t('dv_i_time'), `${Math.floor(tm / 60)}:${String(Math.floor(tm % 60)).padStart(2, '0')} · ${t('dv_i_wave_n', { n: run.waves.wave.n })}`],
+        [t('dv_i_enemies'), `${run.enemies.aliveCount} · ${t('dv_i_proj_n', { n: proj })}`],
         [t('dv_i_dps'), dev.dps.value.toFixed(0)],
         [t('dv_i_taken'), `${Math.round(run.stats.damageTaken)} (${dev.dtps.value.toFixed(1)}${t('dv_per_s')})`],
-        [t('dv_i_spawn'), dev.spawnRate.value.toFixed(1) + t('dv_per_s')],
-        [t('dv_i_xp'), `${t('dv_lv', { n: p.level })} · ${Math.floor(p.xp)}/${Math.floor(p.xpNext)}`],
         [t('dv_i_hp'), `${Math.ceil(p.hp)}/${Math.round(p.stats.maxHp)}`],
-        [t('dv_i_gold'), String(Math.floor(run.stats.gold))],
+        [t('dv_i_xp'), `${t('dv_lv', { n: p.level })} · ${Math.floor(p.xp)}/${Math.floor(p.xpNext)}`],
+        ...this.actionRows(run),
       );
     }
-    rows.push([t('dv_i_coins'), String(dev.profile?.data.gold ?? 0)]);
     clear(this.info);
     this.info.append(h('div.dev-info-head', t('dv_info_head')), ...rows.map(([k, v]) => h('div.dev-row', h('span', k), h('b', v))));
+  }
+
+  /** Action combat state: current step and animation, combo window, resource, gauge, cooldowns, stagger. */
+  private actionRows(run: Run): [string, string][] {
+    const a = run.action;
+    const pk = a as unknown as ActionPeek;
+    const rows: [string, string][] = [];
+    const c = a.cur;
+    let act = t('dv_i_free');
+    if (c) {
+      const who = c.src === 'skill' ? `${slotKey(c.slot)} ${L(c.def?.name)}` : t('dv_src_' + c.src);
+      act = `${who} · ${t('dv_i_step', { n: c.idx + 1 })} · ${t('dv_ph_' + c.phase)} ${c.t.toFixed(2)}/${c.step.dur.toFixed(2)}`;
+    } else if (a.mover) act = t('dv_i_moving');
+    else if (a.stunT > 0) act = t('dv_i_stunned', { s: a.stunT.toFixed(1) });
+    rows.push([t('dv_i_action'), act]);
+    rows.push([t('dv_i_anim'), a.anim.name ? `${a.anim.name} ×${a.anim.rate.toFixed(2)}${a.anim.loop ? ' ↻' : ''}` : '—']);
+    let combo = '—';
+    if (pk.combo && pk.combo.t > 0 && pk.combo.slot >= 0) combo = `${slotKey(pk.combo.slot)} → ${t('dv_i_step', { n: pk.combo.idx + 1 })} · ${pk.combo.t.toFixed(2)} ${t('dv_sec_s')}`;
+    else if (pk.basicT > 0) combo = `${t('dv_src_basic')} → ${t('dv_i_step', { n: pk.basicIdx + 1 })} · ${pk.basicT.toFixed(2)} ${t('dv_sec_s')}`;
+    rows.push([t('dv_i_combo'), combo]);
+    const orbs = a.cls.res.orbs ? ` (${t('dv_i_orbs', { n: a.orbs, max: a.cls.res.orbs })})` : '';
+    rows.push([L(a.cls.res.name) || t('dv_i_res'), `${Math.floor(a.res)}/${Math.round(a.resMax)}${orbs}`]);
+    const ultOpen = run.player.level >= a.cls.ult.unlock;
+    rows.push([t('dv_i_ult'), ultOpen ? `${Math.floor(a.ult)}%${a.ult >= 100 ? ' · ' + t('dv_i_ready') : ''}` : t('dv_i_ult_lock', { n: a.cls.ult.unlock })]);
+    rows.push([t('dv_i_identity'), a.identityT > 0 ? t('dv_i_active', { s: a.identityT.toFixed(1) }) : a.identityReady ? t('dv_i_ready') : t('dv_i_not_ready')]);
+    const cds: string[] = [];
+    for (let i = 0; i < 10; i++) if (a.cds[i] > 0.05) cds.push(`${slotKey(i)} ${a.cds[i].toFixed(1)}`);
+    rows.push([t('dv_i_cds'), cds.length ? cds.join(' · ') : t('dv_i_all_ready')]);
+    rows.push([t('dv_i_dodge'), `${a.dodgeCharges}/${a.cls.dodge.charges}${a.dodgeCharges < a.cls.dodge.charges ? ` · ${(a.cls.dodge.cd - a.dodgeT).toFixed(1)} ${t('dv_sec_s')}` : ''}`]);
+    if (a.shield > 0) rows.push([t('dv_i_shield'), `${Math.round(a.shield)}/${Math.round(a.shieldMax)}`]);
+    rows.push([t('dv_i_points'), String(a.points)]);
+    const e = nearestFoe(run);
+    if (e) {
+      const name = e.boss ? L(e.boss.def.name) : L(e.def.name);
+      const st = e.brokenT > 0 ? t('dv_i_broken', { s: e.brokenT.toFixed(1) }) : e.stagMax > 0 ? `${Math.floor(e.stag)}/${Math.round(e.stagMax)} (${Math.round((e.stag / e.stagMax) * 100)}%)` : '—';
+      rows.push([t('dv_i_target'), `${name} · ${Math.round((e.hp / e.maxHp) * 100)}%`], [t('dv_i_stagger'), st]);
+    } else rows.push([t('dv_i_target'), '—']);
+    return rows;
   }
 
   // ---------------------------------------------------------------- panel
@@ -144,44 +189,65 @@ export class DevUi {
     this.body.append(
       h('div.dev-keys', t('dv_keys', { panel: keyName(k.panel), debug: keyName(k.debug), god: keyName(k.god) })),
       h('div.dev-row2', btn(t('dv_max_player'), () => dev.maxPlayer(), '.gold', !run), btn(t('dv_reset_state'), () => dev.resetTestState(), '.red')),
+      sec('class', t('dv_sec_class'), [
+        run ? h('div.dev-cur', t('dv_class_cur', { name: L(run.action.cls.name), role: L(run.action.cls.role) })) : null,
+        h('div.dev-pickrow', pick(CLASSES.map((c) => [c.id, `${L(c.name)} · ${L(c.role)}`]), () => sel.cls, (v) => (sel.cls = v as ClassId)), btn(t('dv_class_start'), () => dev.startClass(sel.cls), '.gold', !dev.onStartClass, dev.onStartClass ? t('dv_class_note') : t('dvm_no_start'))),
+        h('div.dev-note', t('dv_class_note')),
+      ]),
       sec('player', t('dv_sec_player'), [
         tog(t('dv_god'), 'god'),
         tog(t('dv_infHp'), 'infHp'),
         tog(t('dv_infXp', { n: INF_XP_MUL }), 'infXp'),
         tog(t('dv_infGold'), 'infGold'),
         tog(t('dv_infCoins'), 'infCoins'),
-        h('div.dev-grid', btn(t('dv_max_level'), () => dev.maxLevel(), '', !run), btn(t('dv_heal'), () => dev.heal(), '', !run), btn(t('dv_kill_player'), () => dev.killPlayer(), '.red', !run)),
+        run ? h('div.dev-cur', t('dv_level_cur', { n: run.player.level, max: MAX_LEVEL, pts: run.action.points })) : noRun,
+        h('div.dev-grid', btn(t('dv_max_level'), () => dev.maxLevel(), '.gold', !run), btn(t('dv_heal'), () => dev.heal(), '', !run), btn('−1 ' + t('dv_lv_short'), () => run && dev.setLevel(run.player.level - 1), '', !run), btn('+1 ' + t('dv_lv_short'), () => run && dev.setLevel(run.player.level + 1), '', !run)),
+        numRow(t('dv_set_level'), 'level', () => dev.setLevel(sel.level), !run, t('dv_go')),
+        h('div.dev-grid', btn(t('dv_points', { n: 1 }), () => dev.addPoints(1), '', !run), btn(t('dv_points', { n: 10 }), () => dev.addPoints(10), '', !run)),
         numRow(t('dv_add_xp'), 'xp', () => dev.addXp(sel.xp), !run),
         numRow(t('dv_add_gold'), 'gold', () => dev.addGold(sel.gold), !run),
         numRow(t('dv_add_coins'), 'coins', () => dev.addCoins(sel.coins)),
-        noRun,
+        btn(t('dv_kill_player'), () => dev.killPlayer(), '.red.wide', !run),
       ]),
-      sec('arpg', t('dv_sec_arpg'), run ? this.arpgSec() : [noRun]),
-      sec('gear', t('dv_sec_gear'), run ? this.gearSec() : [noRun]),
-      sec('unlock', t('dv_sec_unlock'), [
+      sec('combat', t('dv_sec_combat'), [
+        tog(t('dv_infRes'), 'infRes'),
+        tog(t('dv_noCd'), 'noCd'),
         h(
           'div.dev-grid',
-          btn(t('dv_unlock_heroes'), () => dev.unlock('heroes')),
-          btn(t('dv_unlock_weapons'), () => dev.unlock('weapons')),
-          btn(t('dv_unlock_maps'), () => dev.unlock('maps')),
-          btn(t('dv_unlock_upgrades'), () => dev.unlock('upgrades')),
-          btn(t('dv_unlock_achievements'), () => dev.unlock('achievements')),
-          btn(t('dv_unlock_evolutions'), () => dev.unlock('evolutions')),
+          btn(t('dv_cd_reset'), () => dev.resetCooldowns(), '', !run),
+          btn(t('dv_res_fill'), () => dev.fillResource(), '', !run),
+          btn(t('dv_identity'), () => dev.readyIdentity(), '', !run),
+          btn(t('dv_ult_fill'), () => dev.fillUlt(), '.gold', !run),
         ),
-        btn(t('dv_unlock_all'), () => dev.unlock('all'), '.gold.wide'),
-        h('div.dev-note', t('dv_unlock_note')),
+        run ? h('div.dev-note', t('dv_combat_cur', { res: L(run.action.cls.res.name), id: L(run.action.cls.identity.name), ult: L(run.action.cls.ult.name), n: run.action.cls.ult.unlock })) : noRun,
+        btn(t('dv_test_ult'), () => dev.testSkill(8), '.wide', !run),
       ]),
-      sec('weapons', t('dv_sec_weapons'), run ? this.weaponsSec() : [noRun]),
+      sec('skills', t('dv_sec_skills'), run ? this.skillsSec(run.action) : [noRun]),
+      sec('gear', t('dv_sec_gear'), run ? this.gearSec() : [noRun]),
+      sec('tp', t('dv_sec_tp'), [
+        btn(t('dv_tp'), () => dev.teleportToCursor(), '.wide', !run),
+        h('div.dev-note', t('dv_tp_note')),
+        run ? h('div.dev-pickrow', pick(dev.points().map((p) => [p.id, p.label]), () => sel.point, (v) => (sel.point = v)), btn(t('dv_go'), () => dev.teleportTo(sel.point))) : noRun,
+      ]),
       sec('enemies', t('dv_sec_enemies'), [
+        h('div.dev-numrow', h('span', t('dv_place')), h('div.dev-seg', ...(['cursor', 'hero'] as DevPlace[]).map((p) => btn(t('dv_place_' + p), () => ((sel.place = p), this.refresh()), sel.place === p ? '.on' : '')))),
         pick(ENEMIES.filter((e) => e.behavior !== 'prop').map((e) => [e.id, L(e.name)]), () => sel.enemy, (v) => (sel.enemy = v)),
-        h('div.dev-grid', ...[1, 10, 50].map((n) => btn(t('dv_spawn_n', { n }), () => dev.spawnEnemy(sel.enemy, false, n), '', !run)), btn(t('dv_spawn_elite'), () => dev.spawnEnemy(sel.enemy, true), '', !run)),
-        pick(BOSSES.map((b) => [b.id, L(b.name)]), () => sel.boss, (v) => (sel.boss = v)),
-        h('div.dev-grid', btn(t('dv_spawn_boss'), () => dev.spawnBoss(sel.boss), '', !run), btn(t('dv_kill_all'), () => dev.killAll(), '.red', !run)),
+        h('div.dev-grid', ...[1, 5, 20].map((n) => btn(t('dv_spawn_n', { n }), () => dev.spawnEnemy(sel.enemy, false, n, sel.place), '', !run)), btn(t('dv_spawn_elite'), () => dev.spawnEnemy(sel.enemy, sel.elite === 'random' ? true : (sel.elite as (typeof ELITE_IDS)[number]), 1, sel.place), '', !run)),
+        h('div.dev-pickrow', pick([['random', t('dv_elite_random')], ...ELITE_IDS.map((id) => [id, L(ELITE_MODS[id].name)] as [string, string])], () => sel.elite, (v) => (sel.elite = v)), h('span.dev-lv', t('dv_elite_kind'))),
+        pick(BOSSES.map((b) => [b.id, `${L(b.name)} · ${L(b.title)}`]), () => sel.boss, (v) => (sel.boss = v)),
+        h('div.dev-grid', btn(t('dv_spawn_boss'), () => dev.spawnBoss(sel.boss, sel.place), '.gold', !run), btn(t('dv_kill_all'), () => dev.killAll(), '.red', !run)),
+        h('div.dev-sub', t('dv_stagger_head')),
+        h('div.dev-grid', btn(t('dv_stagger'), () => dev.breakStagger(), '.gold', !run), btn(t('dv_stagger_all'), () => dev.breakAll(), '', !run), btn(t('dv_low_target'), () => dev.lowTarget(), '', !run)),
+        h('div.dev-note', t('dv_stagger_note')),
         tog(t('dv_freeze'), 'freeze'),
         mulRow(t('dv_enemy_hp'), () => dev.enemyHp, (v) => dev.setEnemyMul(v, dev.enemyDmg)),
         mulRow(t('dv_enemy_dmg'), () => dev.enemyDmg, (v) => dev.setEnemyMul(dev.enemyHp, v)),
         h('div.dev-note', t('dv_mul_note')),
         noRun,
+      ]),
+      sec('unlock', t('dv_sec_unlock'), [
+        h('div.dev-grid', btn(t('dv_unlock_heroes'), () => dev.unlock('heroes')), btn(t('dv_unlock_maps'), () => dev.unlock('maps')), btn(t('dv_unlock_achievements'), () => dev.unlock('achievements')), btn(t('dv_unlock_all'), () => dev.unlock('all'), '.gold')),
+        h('div.dev-note', t('dv_unlock_note')),
       ]),
       sec('waves', t('dv_sec_waves'), [
         run ? h('div.dev-cur', t('dv_wave_cur', { n: run.waves.wave.n, total: run.waves.total === Infinity ? '∞' : run.waves.total, type: t('wave_' + run.waves.wave.type) })) : noRun,
@@ -196,15 +262,12 @@ export class DevUi {
       ]),
       sec('time', t('dv_sec_time'), [
         h('div.dev-grid', btn(dev.paused ? t('dv_resume') : t('dv_pause'), () => dev.setPaused(!dev.paused), dev.paused ? '.on' : '', !run)),
-        h('div.dev-numrow', h('span', t('dv_speed')), h('div.dev-seg', ...[0.5, 1, 2, 5].map((v) => btn('×' + v, () => dev.setTimeScale(v), dev.timeScale === v ? '.on' : '')))),
+        h('div.dev-numrow', h('span', t('dv_speed')), h('div.dev-seg', ...[0.25, 0.5, 1, 2, 5].map((v) => btn('×' + v, () => dev.setTimeScale(v), dev.timeScale === v ? '.on' : '')))),
         numRow(t('dv_set_time'), 'time', () => dev.setTime(sel.time), !run, t('dv_go')),
       ]),
       sec('spawn', t('dv_sec_spawn'), [
         h(
           'div.dev-grid',
-          btn(t('dv_sp_enemy'), () => dev.spawnEnemy(sel.enemy), '', !run),
-          btn(t('dv_sp_elite'), () => dev.spawnEnemy(sel.enemy, true), '', !run),
-          btn(t('dv_sp_boss'), () => dev.spawnBoss(sel.boss), '', !run),
           btn(t('dv_sp_chest'), () => dev.spawnPickup('chest'), '', !run),
           btn(t('dv_sp_xp'), () => dev.spawnPickup('xp', 200), '', !run),
           btn(t('dv_sp_gold'), () => dev.spawnPickup('pouch', 25), '', !run),
@@ -221,97 +284,68 @@ export class DevUi {
     this.body.scrollTop = this.scroll;
   }
 
-  /** Hero level, skill levels, cooldowns, resource, per-skill tests and teleport. */
-  private arpgSec(): (HTMLElement | null)[] {
-    const run = dev.run!;
-    const sk = run.skills;
-    const rows = h('div.dev-list');
-    for (let i = 0; i < 4; i++) {
-      const def = sk.skill(i);
-      const lv = sk.level(i);
-      const max = i === 3 ? 4 : 6;
-      rows.append(
+  /** The class's eight skills: level controls, a test cast and both tripod choices per skill. */
+  private skillsSec(a: ActionSystem): (HTMLElement | null)[] {
+    const list = h('div.dev-list');
+    for (let i = 0; i < 8; i++) {
+      const s = a.cls.skills[i];
+      const lv = a.levels[i];
+      const [t1, t2] = tripodsFor(s);
+      const triPick = (tier: number, opts: typeof t1) => {
+        const s2 = h('select.dev-select', { title: t('dv_tri_tier', { n: tier + 1, lv: TRIPOD_LEVELS[tier] }) }) as HTMLSelectElement;
+        s2.append(h('option', { value: '-1' }, t('dv_tri_none', { n: tier + 1 })));
+        opts.forEach((tp, j) => s2.append(h('option', { value: String(j) }, `${tier + 1}: ${L(tp.name)}`)));
+        s2.value = String(a.tri[i][tier]);
+        s2.addEventListener('change', () => dev.setTripod(i, tier, Number(s2.value)));
+        return s2;
+      };
+      list.append(
         h(
-          'div.dev-item',
-          h('span.dev-item-name', `${['Q', 'W', 'E', 'R'][i]} · ${L(def.name)}`),
-          h('span.dev-lv', `${lv}/${max}`),
-          btn('−', () => dev.setSkillLevel(i, lv - 1), '.sq', false, t('dv_level_down')),
-          btn('+', () => dev.setSkillLevel(i, lv + 1), '.sq', false, t('dv_level_up')),
-          btn(t('dv_max_short'), () => dev.setSkillLevel(i, max), '.sq', false, t('dv_level_up')),
-          btn('▶', () => dev.testSkill(i), '.sq', false, t('dv_test_skill')),
+          'div.dev-skill',
+          h(
+            'div.dev-item',
+            h('span.dev-item-name', { title: L(s.desc), style: lv > 0 ? '' : 'opacity:.5' }, `${SLOT_KEYS[i]} · ${L(s.name)}`),
+            h('span.dev-lv', lv > 0 ? `${lv}/${SKILL_MAX}` : t('dv_locked')),
+            btn('−', () => dev.setSkillLevel(i, lv - 1), '.sq', false, t('dv_level_down')),
+            btn('+', () => dev.setSkillLevel(i, lv + 1), '.sq', false, t('dv_level_up')),
+            btn(t('dv_max_short'), () => dev.setSkillLevel(i, SKILL_MAX), '.sq', false, t('dv_level_max')),
+            btn('▶', () => dev.testSkill(i), '.sq', false, t('dv_test_skill')),
+          ),
+          h('div.dev-tri', triPick(0, t1), triPick(1, t2)),
         ),
       );
     }
     return [
-      h('div.dev-cur', t('dv_arpg_cur', { cls: L(sk.kit.role), res: L(sk.kit.res.name), lv: run.player.level })),
-      h('div.dev-grid', btn(t('dv_arpg_max'), () => dev.arpgMax(), '.gold'), btn(t('dv_max_level'), () => dev.maxLevel()), btn(t('dv_cd_reset'), () => dev.resetCooldowns()), btn(t('dv_heal'), () => dev.heal())),
-      tog(t('dv_infRes'), 'infRes'),
-      tog(t('dv_noCd'), 'noCd'),
-      tog(t('dv_god'), 'god'),
-      rows,
-      h('div.dev-grid', btn(t('dv_tp'), () => dev.teleportToCursor())),
-      h('div.dev-note', t('dv_tp_note')),
+      h('div.dev-grid', btn(t('dv_skills_open'), () => dev.unlockSkills()), btn(t('dv_skills_max'), () => dev.maxSkills(), '.gold')),
+      list,
+      h('div.dev-note', t('dv_skills_note', { a: TRIPOD_LEVELS[0], b: TRIPOD_LEVELS[1] })),
     ];
   }
 
-  /** Items, gear sets and stat overrides. */
+  /** Items into the bag, gear sets and stat overrides. */
   private gearSec(): (HTMLElement | null)[] {
     const slots: (GearSlot | 'any')[] = ['any', 'weapon', 'helm', 'armor', 'gloves', 'boots', 'amulet', 'ring', 'trinket'];
     const stats: StatKey[] = ['might', 'maxHp', 'armor', 'moveSpeed', 'critChance', 'critDamage', 'cooldown', 'regen', 'area', 'lifesteal', 'duration'];
     const v = h('input.dev-num', { type: 'number', step: '0.05', value: String(sel.statV) }) as HTMLInputElement;
     v.addEventListener('change', () => (sel.statV = Number(v.value) || 0));
+    const bag = dev.run?.loot.bag.length ?? 0;
     return [
-      h('div.dev-pickrow', pick(slots.map((x) => [x, x === 'any' ? t('dv_any_slot') : t('slot_' + x)]), () => sel.slot, (x) => (sel.slot = x as GearSlot | 'any')), pick(RARITIES.map((r) => [r, t('rar_' + r)]), () => sel.rarity, (x) => (sel.rarity = x as Rarity))),
-      h('div.dev-grid', btn(t('dv_create_item'), () => dev.createItem(sel.slot, sel.rarity)), btn(t('dv_gear_set'), () => dev.giveGearSet(sel.rarity), '.gold')),
+      h('div.dev-tri', pick(slots.map((x) => [x, x === 'any' ? t('dv_any_slot') : t('slot_' + x)]), () => sel.slot, (x) => (sel.slot = x as GearSlot | 'any')), pick(RARITIES.map((r) => [r, t('rar_' + r)]), () => sel.rarity, (x) => (sel.rarity = x as Rarity))),
+      h('div.dev-grid', btn(t('dv_give_item'), () => dev.giveItem(sel.slot, sel.rarity)), btn(t('dv_give_items', { n: 5 }), () => dev.giveItem(sel.slot, sel.rarity, 5)), btn(t('dv_drop_item'), () => dev.dropItem(sel.slot, sel.rarity)), btn(t('dv_gear_set'), () => dev.giveGearSet(sel.rarity), '.gold')),
+      h('div.dev-pickrow', h('span.dev-note', t('dv_bag', { n: bag })), btn(t('dv_bag_clear'), () => dev.clearBag(), '.red')),
       h('div.dev-sub', t('dv_set_stats')),
-      h('div.dev-pickrow', pick(stats.map((x) => [x, t('stat_' + x)]), () => sel.stat, (x) => (sel.stat = x as StatKey)), v, btn('+', () => dev.addStat(sel.stat, sel.statV))),
+      h('div.dev-pickrow3', pick(stats.map((x) => [x, t('stat_' + x)]), () => sel.stat, (x) => (sel.stat = x as StatKey)), v, btn('+', () => dev.addStat(sel.stat, sel.statV))),
       btn(t('dv_stats_clear'), () => dev.clearStats(), '.wide'),
       h('div.dev-note', t('dv_stats_note')),
     ];
   }
+}
 
-  private weaponsSec(): (HTMLElement | null)[] {
-    const run = dev.run!;
-    const list = h('div.dev-list');
-    for (const w of run.weapons.list) {
-      list.append(
-        h(
-          'div.dev-item',
-          h('span.dev-item-name', { style: `color:#${w.def.color.toString(16).padStart(6, '0')}` }, L(w.def.name)),
-          h('span.dev-lv', `${w.level}/${w.maxLevel}`),
-          btn('−', () => dev.setWeaponLevel(w.def.id, w.level - 1), '.sq', false, t('dv_level_down')),
-          btn('+', () => dev.setWeaponLevel(w.def.id, w.level + 1), '.sq', false, t('dv_level_up')),
-          btn(t('dv_max_short'), () => dev.setWeaponLevel(w.def.id, w.maxLevel), '.sq', false, t('dv_max_weapon')),
-          btn('✕', () => dev.removeWeapon(w.def.id), '.sq.red', false, t('dv_remove_weapon')),
-        ),
-      );
-    }
-    const plist = h('div.dev-list');
-    for (const [id, lvl] of run.passives.levels) {
-      const def = PASSIVE_BY_ID[id];
-      plist.append(
-        h(
-          'div.dev-item',
-          h('span.dev-item-name', L(def.name)),
-          h('span.dev-lv', `${lvl}/${def.maxLevel}`),
-          btn('−', () => dev.setPassiveLevel(id, lvl - 1), '.sq', false, t('dv_passive_down')),
-          btn('+', () => dev.setPassiveLevel(id, lvl + 1), '.sq', false, t('dv_passive_up')),
-          btn(t('dv_max_short'), () => dev.setPassiveLevel(id, def.maxLevel), '.sq', false, t('dv_passive_max')),
-          btn('✕', () => dev.setPassiveLevel(id, 0), '.sq.red', false, t('dv_passive_remove')),
-        ),
-      );
-    }
-    return [
-      h('div.dev-sub', t('dv_weapons_n', { n: run.weapons.list.length, max: BALANCE.weaponSlots })),
-      list,
-      h('div.dev-pickrow', pick(WEAPONS.filter((w) => !w.evolved).map((w) => [w.id, L(w.name)]), () => sel.weapon, (v) => (sel.weapon = v)), btn(t('dv_add_weapon'), () => dev.addWeapon(sel.weapon))),
-      h('div.dev-pickrow', pick(WEAPONS.filter((w) => w.evolved).map((w) => [w.id, L(w.name)]), () => sel.evo, (v) => (sel.evo = v)), btn(t('dv_evolve'), () => dev.addEvolution(sel.evo))),
-      h('div.dev-sub', t('dv_passives_n', { n: run.passives.count, max: BALANCE.passiveSlots })),
-      plist,
-      h('div.dev-pickrow', pick(PASSIVES.map((x) => [x.id, L(x.name)]), () => sel.passive, (v) => (sel.passive = v)), btn(t('dv_add_passive'), () => dev.addPassive(sel.passive))),
-      h('div.dev-note', WEAPON_BY_ID[sel.evo]?.evolved ? t('dv_evolve_note') : ''),
-    ];
-  }
+/** The living boss, or else the enemy nearest the hero. */
+function nearestFoe(run: Run): Enemy | null {
+  const b = run.bosses.find((x) => x.e.alive);
+  if (b) return b.e;
+  return run.enemies.nearest(run.player.x, run.player.z, 30);
 }
 
 // ---------------------------------------------------------------- tiny builders
@@ -346,10 +380,11 @@ function pick(opts: [string, string][], get: () => string, set: (v: string) => v
   return s;
 }
 
-function numRow(label: string, key: 'xp' | 'gold' | 'coins' | 'wave' | 'time', fn: () => void, disabled = false, go = '+'): HTMLElement {
+function numRow(label: string, key: 'xp' | 'gold' | 'coins' | 'wave' | 'time' | 'level', fn: () => void, disabled = false, go = '+'): HTMLElement {
   const inp = h('input.dev-num', { type: 'number', value: String(sel[key]), min: '0' }) as HTMLInputElement;
   inp.addEventListener('change', () => (sel[key] = Math.max(0, Number(inp.value) || 0)));
   inp.addEventListener('keydown', (e) => {
+    e.stopPropagation();
     if (e.key === 'Enter') {
       sel[key] = Math.max(0, Number(inp.value) || 0);
       if (!disabled) fn();
@@ -362,6 +397,6 @@ function numRow(label: string, key: 'xp' | 'gold' | 'coins' | 'wave' | 'time', f
 }
 
 function mulRow(label: string, get: () => number, set: (v: number) => void): HTMLElement {
-  const steps = [0.25, 0.5, 1, 2, 5, 10];
+  const steps = [0.1, 0.25, 0.5, 1, 2, 5, 10];
   return h('div.dev-numrow', h('span', `${label} ×${get()}`), h('div.dev-seg', ...steps.map((v) => btn('×' + v, () => set(v), get() === v ? '.on' : ''))));
 }

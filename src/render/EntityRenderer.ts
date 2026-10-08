@@ -4,7 +4,6 @@ import { BALANCE } from '../config/balance';
 import * as THREE from 'three';
 import type { Run } from '../game/Run';
 import type { VoxelModel } from '../data/types';
-import { WeaponVisualSystem } from './weapons/WeaponVisualSystem';
 import { getModel, PROJECTILE_MODELS, PICKUP_MODELS, BOSS_MODELS } from '../models';
 import { RARITY_HEX } from '../game/arpg/Gear';
 import { ELITE_MODS } from '../data/enemies';
@@ -13,10 +12,12 @@ import { buildVoxelGeometry } from './VoxelGeometry';
 import { makeVoxelMaterial, makeGlowMaterial } from './Materials';
 import { ArticulatedModel } from './ArticulatedModel';
 import type { LightPool } from './LightPool';
-import { heroRig } from '../models/heroRigs';
+import { heroRig } from '../models/rigs';
 import { HeroRig } from './rig/HeroRig';
 import { HeroAnimator } from './rig/Animator';
 import { makeCreatureTexture, makeHeroTexture } from './Textures';
+import { ActionFxRenderer } from './ActionFxRenderer';
+import { SUMMON_MODELS } from '../models/summons';
 
 const TAU = Math.PI * 2;
 
@@ -49,25 +50,26 @@ export class EntityRenderer {
   private anim: HeroAnimator | null = null;
   private heroTex: THREE.Texture | null = null;
   private cues = { attack: 0, hit: 0, ability: 0, level: 1, revive: 0 };
-  private lastAttack = -9;
   private heroYaw = 0;
   /** While > 0 the hero faces its attack direction instead of its travel direction. */
   private victoryPlayed = false;
   private creatureTex: THREE.Texture;
   private bossModels = new Map<string, ArticulatedModel>();
   private shadows: InstancedBatch;
-  private glowBox: InstancedBatch;
-  private glowBoxTop: InstancedBatch;
-  private glowDisc: InstancedBatch;
-  private glowRing: InstancedBatch;
-  private glowRingThin: InstancedBatch;
-  private glowPlane: InstancedBatch;
-  private darkDisc: InstancedBatch;
+  readonly glowBox: InstancedBatch;
+  readonly glowBoxTop: InstancedBatch;
+  readonly glowDisc: InstancedBatch;
+  readonly glowRing: InstancedBatch;
+  readonly glowRingThin: InstancedBatch;
+  readonly glowPlane: InstancedBatch;
+  readonly darkDisc: InstancedBatch;
   private heroWalk = 0;
   private time = 0;
   private enemyShadows: boolean;
-  /** Reworked weapon objects (models with their own animation, trails and effects). */
-  private weaponVis: WeaponVisualSystem;
+  /** Last action animation request applied to the rig. */
+  private actAnim = 0;
+  private actFx: ActionFxRenderer;
+  private stealthA = 1;
 
   constructor(
     scene: THREE.Scene,
@@ -113,7 +115,7 @@ export class EntityRenderer {
     this.darkDisc = new InstancedBatch(flatPlane(), darkMat, this.group, 16);
     for (const b of [this.glowBox, this.glowDisc, this.glowRing, this.glowRingThin, this.glowPlane]) b.mesh.renderOrder = 5;
     this.glowBoxTop.mesh.renderOrder = 6;
-    this.weaponVis = new WeaponVisualSystem(this.group, run, lights);
+    this.actFx = new ActionFxRenderer(run, this, lights);
   }
 
   private batchesFor(id: string, model: VoxelModel | undefined, frames: number): ModelBatches | null {
@@ -153,13 +155,14 @@ export class EntityRenderer {
 
     this.drawHero(dt, time);
     this.drawEnemies(time, visible);
-    this.weaponVis.update(dt, camera, camX, camZ);
     this.drawAllies(visible);
     this.drawProjectiles(time, visible);
     this.drawPickups(time, visible);
     this.drawLoot(time, visible);
     this.drawHazards(time);
     this.drawEffects(time);
+    this.drawSummons(time, visible);
+    this.actFx.update(dt);
 
     for (const b of this.models.values()) for (const f of b.frames) f.end();
     for (const b of all) b.end();
@@ -245,13 +248,15 @@ export class EntityRenderer {
         const hz = c.hitX * sn + c.hitZ * cs;
         a.hit(hx, hz);
       }
+      // action combat drives the clips: every skill step / basic swing / dodge requests one
+      const req = run.action.anim;
+      if (req.n !== this.actAnim) {
+        this.actAnim = req.n;
+        a.play(req.name, { force: true, rate: req.rate });
+      } else if (!run.action.cur && a.playing && a.has(a.playing) && (a.playing.endsWith('_charge') || a.playing.endsWith('_cast'))) a.endLoop();
       if (p.level > this.cues.level && run.state === 'playing') {
         this.cues.level = p.level;
-        a.play('levelup');
-      } else if (c.ability !== this.cues.ability) a.play('ability');
-      else if (c.attack !== this.cues.attack && time - this.lastAttack > 0.28) {
-        this.lastAttack = time;
-        a.play('attack');
+        if (!run.action.busy) a.play('levelup');
       }
     }
     this.cues.attack = c.attack;
@@ -260,6 +265,17 @@ export class EntityRenderer {
     a.update(adt);
     const blink = p.invulnT > 0 && !p.dead && Math.floor(time * 20) % 2 === 0;
     rig.flash.value = p.hurtT > 0 ? p.hurtT * 3 : blink ? 0.3 : 0;
+    // Reaper stealth: the hero turns into a faint shadow
+    const want = run.action.stealth ? 0.35 : 1;
+    this.stealthA += (want - this.stealthA) * Math.min(1, adt * 10);
+    const mat = rig.material;
+    const tr = this.stealthA < 0.99;
+    if (mat.transparent !== tr) {
+      mat.transparent = tr;
+      mat.depthWrite = !tr;
+      mat.needsUpdate = true;
+    }
+    mat.opacity = this.stealthA;
   }
 
   private heroY = 0;
@@ -297,6 +313,8 @@ export class EntityRenderer {
       let s = e.scale;
       let sy = s;
       let y = e.y;
+      // launched into the air by a skill: a short hop arc
+      if (e.launchT > 0) y += Math.sin((1 - e.launchT / 0.6) * Math.PI) * 1.4;
       let flash = Math.min(1, e.flash * 6);
       let ex = e.x;
       let ez = e.z;
@@ -384,6 +402,7 @@ export class EntityRenderer {
       if (def.behavior === 'exploder' && e.state === 1) {
         this.glowDisc.push(e.x, 0.06, e.z, 0, 2, 1, 2, 0xff5020, 0, 0, 0, 0.5 + Math.sin(time * 30) * 0.5);
       }
+      if (e.brokenT > 0 && e.dying === 0) this.stars(e.x, y + 1.2 * s + 0.5, e.z, 0.45 * s + 0.2, time);
       if (e.shieldT > 0) this.glowRing.push(e.x, 0.6 * s, e.z, time * 3, e.radius * 2.6, 1, e.radius * 2.6, 0x9a7aff, 0, 0, 0, 0.7);
     }
     for (const [id, m] of this.bossModels) if (!usedBoss.has(id)) m.root.visible = false;
@@ -407,19 +426,56 @@ export class EntityRenderer {
       // burrow mound
       this.glowDisc.push(e.x, 0.05, e.z, time, 3, 1, 3, b.def.color, 0, 0, 0, 0.5);
     }
+    if (e.brokenT > 0) {
+      this.stars(e.x, e.y + e.scale * 3.2 + 0.6, e.z, e.radius * 0.8 + 0.4, time);
+      this.glowDisc.push(e.x, 0.06, e.z, 0, e.radius * 4, 1, e.radius * 4, 0xffe080, 0, 0, 0, 0.25 + Math.sin(time * 8) * 0.1);
+    }
     if (e.invuln) this.glowRing.push(e.x, 1.2, e.z, time, e.radius * 2, 1, e.radius * 2, 0x9adfff, 0, 0, 0, 0.8);
     this.glowRing.push(e.x, 0.05, e.z, -time * 0.5, e.radius * 1.8, 1, e.radius * 1.8, b.def.color, 0, 0, 0, 0.6);
     this.lights.request(e.x, 3, e.z, b.def.color, 1.4, 10, this.run.player.x, this.run.player.z);
+  }
+
+  /** Dizzy stars circling a staggered (broken) enemy. */
+  private stars(x: number, y: number, z: number, r: number, time: number) {
+    for (let i = 0; i < 4; i++) {
+      const a = time * 4 + (i * TAU) / 4;
+      this.glowBoxTop.push(x + Math.cos(a) * r, y + Math.sin(a * 2) * 0.08, z + Math.sin(a) * r, a * 2, 0.18, 0.18, 0.18, i % 2 ? 0xffe080 : 0xffffff, 0, 0, Math.PI / 4, 1);
+    }
+  }
+
+  // ---------------------------------------------------------------- summons
+  private drawSummons(time: number, visible: (x: number, z: number) => boolean) {
+    for (const m of this.run.action.summons.list) {
+      if (!m.active || !visible(m.x, m.z)) continue;
+      const fade = Math.min(1, m.life * 2, (m.max - m.life) * 5);
+      if (m.kind === 'clone') {
+        // shadow double: a dark violet silhouette that flickers
+        const a = (0.55 + Math.sin(time * 14 + m.serial) * 0.1) * fade;
+        this.glowBoxTop.push(m.x, 0.75, m.z, m.yaw, 0.55, 0.9, 0.35, 0x5a2aaa, 0, 0, 0, a);
+        this.glowBoxTop.push(m.x, 1.45, m.z, m.yaw, 0.42, 0.42, 0.42, 0x7a4aff, 0, 0, 0, a);
+        this.glowBox.push(m.x, 0.25, m.z, m.yaw, 0.5, 0.5, 0.3, 0x3a1a6a, 0, 0, 0, a);
+        this.darkDisc.push(m.x, 0.04, m.z, 0, 1.6, 1, 1.6, 0x806090);
+        continue;
+      }
+      const model = SUMMON_MODELS[m.kind];
+      const mb = this.batchesFor('s:' + m.kind, model, 2);
+      if (!mb) continue;
+      const spec = m.kind === 'golem' ? 1.5 : m.kind === 'ancient' ? 2.2 : m.kind === 'drake' ? 1.8 : m.kind === 'serpent' ? 1.3 : m.kind === 'wisp' ? 0.6 : m.kind === 'hawk' ? 0.9 : 1;
+      const atk = m.attackT > 0 ? 1 : 0;
+      const fi = atk ? 1 : Math.floor(m.anim * (m.kind === 'hawk' || m.kind === 'drake' ? 3 : 2.4)) & 1;
+      const s = spec * (0.4 + fade * 0.6) * (1 + atk * 0.06);
+      mb.frames[fi].pushFast(m.x, m.y, m.z, m.yaw, s, s, 1.05, 1.1, 1.15, atk * 0.2 + (1 - fade) * 0.6);
+      const sh = Math.max(0.7, spec * 0.9);
+      this.shadows.push(m.x, 0.02, m.z, 0, sh, 1, sh);
+      this.glowRingThin.push(m.x, 0.04, m.z, 0, sh * 0.6, 1, sh * 0.6, this.run.hero.color, 0, 0, 0, 0.35 * fade);
+      if (m.kind === 'wisp') this.glowDisc.push(m.x, m.y, m.z, 0, 1.2, 1, 1.2, 0x8ad8ff, 0, 0, 0, 0.6 * fade);
+    }
   }
 
   // ---------------------------------------------------------------- allies
   private drawAllies(visible: (x: number, z: number) => boolean) {
     for (const a of this.run.allies.list) {
       if (!a.active || !visible(a.x, a.z)) continue;
-      if (this.weaponVis.handlesAlly(a)) {
-        this.shadows.push(a.x, 0.02, a.z, 0, 0.6 * a.scale, 1, 0.6 * a.scale);
-        continue;
-      }
       const mb = this.batchesFor(a.model, getModel(a.model), 2);
       if (!mb) continue;
       const fi = Math.floor(a.anim * 1.2) & 1;
@@ -438,10 +494,6 @@ export class EntityRenderer {
     const trailLv = run.fx.level();
     for (const p of run.projectiles.list) {
       if (!p.active || !visible(p.x, p.z)) continue;
-      if (this.weaponVis.handles(p)) {
-        if (p.vis !== 'pool' && p.vis !== 'tornado') this.shadows.push(p.x, 0.02, p.z, 0, 0.5 * Math.min(2, p.scale), 1, 0.5 * Math.min(2, p.scale));
-        continue;
-      }
       const model = PROJECTILE_MODELS[p.vis];
       const fadeIn = Math.min(1, p.age * 12);
       const s = p.scale * (0.4 + fadeIn * 0.6);
@@ -474,8 +526,8 @@ export class EntityRenderer {
         }
       }
       // element trail (follow-through of the release): embers, frost, sparks, bubbles, wisps
-      if (trailLv >= 1 && p.owner && p.y > 0.2 && Math.random() < 0.15 * trailLv) {
-        const F = ELEMENT_FX[this.run.vfx.elementOf(p.owner.def.id)];
+      if (trailLv >= 1 && p.dmg.weaponId && p.y > 0.2 && Math.random() < 0.15 * trailLv) {
+        const F = ELEMENT_FX[this.run.vfx.elementOf(p.dmg.weaponId)];
         // smoke would smear the screen behind fast shots: trails use the light layers only
         const L = F.residue.find((l) => l.kind !== 'smoke') ?? F.release;
         this.run.fx.emit(p.x, p.y, p.z, L, 0, 0, 0.3);
@@ -752,7 +804,7 @@ export class EntityRenderer {
     }
   }
 
-  private segment(x1: number, y1: number, z1: number, x2: number, y2: number, z2: number, w: number, c: number, a: number) {
+  segment(x1: number, y1: number, z1: number, x2: number, y2: number, z2: number, w: number, c: number, a: number) {
     const dx = x2 - x1;
     const dy = y2 - y1;
     const dz = z2 - z1;
@@ -769,7 +821,6 @@ export class EntityRenderer {
     this.rig?.dispose();
     this.heroTex?.dispose();
     this.creatureTex.dispose();
-    this.weaponVis.dispose();
     this.group.parent?.remove(this.group);
   }
 }

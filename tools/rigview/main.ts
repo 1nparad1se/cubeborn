@@ -1,6 +1,6 @@
 // Dev-only contact sheet of every hero rig: ?view=front|back|side|top|game&anim=idle|walk|run|attack...&t=seconds
 import * as THREE from 'three';
-import { HERO_RIGS } from '../../src/models/heroRigs';
+import { ALL_RIGS as HERO_RIGS, CLASS_IDS } from './rigsList';
 import { HeroRig } from '../../src/render/rig/HeroRig';
 import { HeroAnimator } from '../../src/render/rig/Animator';
 import { makeHeroTexture } from '../../src/render/Textures';
@@ -32,7 +32,7 @@ floor.rotation.x = -Math.PI / 2;
 floor.receiveShadow = true;
 scene.add(floor);
 const tex = makeHeroTexture();
-const ids = only ? only.split(',') : Object.keys(HERO_RIGS);
+const ids = only ? only.split(',') : CLASS_IDS;
 const gap = view === 'game' ? 1.6 : 2.1;
 ids.forEach((id, i) => {
   const rig = new HeroRig(HERO_RIGS[id], tex, { shadows: true });

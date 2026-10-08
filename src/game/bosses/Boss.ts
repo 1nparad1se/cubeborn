@@ -73,6 +73,13 @@ export class BossController {
   enraged = false;
   /** A roaming night boss (day/night cycle), not part of the wave plan. */
   nightBoss = false;
+  /** Stagger check: a long cast the hero must break with stagger damage before it lands. */
+  checkT = 0;
+  checkMax = 0;
+  checkNeed = 1;
+  checkDone = 0;
+  nextCheck = 26;
+  private checkZone: { active: boolean } | null = null;
 
   static spawn(run: Run, id: string, x: number, z: number, isFinal: boolean, hpMul = 1, isClone = false, dmgMul = 1): BossController | null {
     const def = BOSS_BY_ID[id];
@@ -96,6 +103,33 @@ export class BossController {
     return c;
   }
 
+  /** Stagger bar size: grows with boss health; each phase refills it. */
+  stagMax(): number {
+    return 260 + Math.sqrt(this.e.maxHp) * 5 + this.phase * 80;
+  }
+
+  /** Stagger break: every attack in progress is interrupted and the boss is stunned (vulnerable). */
+  onStagger() {
+    if (this.checkT > 0) {
+      this.checkT = 0;
+      if (this.checkZone) this.checkZone.active = false;
+      this.checkZone = null;
+    }
+    this.spiralT = 0;
+    this.spiralAttack = null;
+    this.dashPhase = 0;
+    this.dashLeft = 0;
+    this.pullT = 0;
+    this.cast = 0;
+    this.busy = 1.2;
+    this.run.player.pullX = this.run.player.pullZ = 0;
+  }
+
+  /** Damage taken multiplier outside a stagger window. */
+  dmgTakenMul(): number {
+    return 1;
+  }
+
   get phaseDef(): BossPhase {
     return this.def.phases[this.phase];
   }
@@ -103,6 +137,8 @@ export class BossController {
   private enterPhase(i: number) {
     this.phase = i;
     const ph = this.def.phases[i];
+    this.e.stag = 0;
+    this.e.stagMax = 0;
     this.cds = ph.attacks.map((a, k) => a.cd * 0.5 + k * 0.7);
     if (i > 0) {
       this.busy = 1.2;
@@ -112,6 +148,52 @@ export class BossController {
       this.run.events.emit('bossPhase', this);
     }
     if (ph.onEnter) for (const a of ph.onEnter) runAttack(this, a);
+    // every new phase opens with a stagger check
+    if (i > 0 && !this.isClone) this.nextCheck = 2;
+  }
+
+  /** Starts the stagger check: the boss channels a huge blast unless broken in time. */
+  private startCheck() {
+    const run = this.run;
+    const e = this.e;
+    this.checkMax = this.checkT = 6;
+    this.checkDone = 0;
+    // sized so a focused rotation of stagger skills breaks it, independent of the normal bar
+    this.checkNeed = Math.round((120 + Math.sqrt(e.maxHp) * 2.2 + this.phase * 40) * (this.isFinal ? 1.25 : 1));
+    e.stag = 0;
+    this.spiralT = 0;
+    this.dashPhase = 0;
+    this.checkZone = run.hazards.zone(e.x, e.z, 8, this.checkMax, e.damage * 3.2 * this.dmgScale, { color: 0xff7a1a });
+    run.fx.sound('bossRoar', 0.8);
+    run.fx.text(e.x, e.z, run.tr('act_check'), 0xffb040);
+  }
+
+  /** Damage dealt during a stagger check counts toward it. */
+  checkHit(stag: number) {
+    if (this.checkT <= 0) return false;
+    this.checkDone += stag;
+    return this.checkDone >= this.checkNeed;
+  }
+
+  /** Counter window: the boss is winding up a charge and can be interrupted by a skill. */
+  get counterOpen(): boolean {
+    return this.dashPhase === 1;
+  }
+
+  /** A skill landed in the counter window: the charge is cancelled and the boss reels. */
+  countered() {
+    const run = this.run;
+    const e = this.e;
+    this.dashPhase = 0;
+    this.dashLeft = 0;
+    this.busy = 1.6;
+    e.stunT = Math.max(e.stunT, 1.6);
+    e.vx = e.vz = 0;
+    run.fx.text(e.x, e.z, run.tr('act_counter'), 0x8ad8ff);
+    run.fx.sound('shield', 0.9);
+    run.fx.shake(0.25);
+    const f = run.action.fx.add('break', e.x, e.z, 0.6, 0x8ad8ff);
+    f.r = e.radius * 2;
   }
 
   update(dt: number) {
@@ -137,6 +219,33 @@ export class BossController {
         run.hazards.explode(e.x, e.z, 2.6, e.damage, this.def.color);
       }
       return;
+    }
+    if (this.checkT > 0) {
+      e.vx = e.vz = 0;
+      this.cast = 1;
+      this.checkT -= dt;
+      if (this.checkZone) {
+        const z = this.checkZone as { x: number; z: number; active: boolean };
+        z.x = e.x;
+        z.z = e.z;
+      }
+      if (this.checkT <= 0) {
+        // failed: the blast lands (the hazard zone deals the damage)
+        this.checkZone = null;
+        run.fx.text(e.x, e.z, run.tr('act_check_fail'), 0xff5a3a);
+        run.fx.shake(0.6);
+        run.hazards.shock(e.x, e.z, 14, 9, 1.2, e.damage * 0.8, 0xff7a1a);
+        this.busy = 1.2;
+      }
+      return;
+    }
+    if (!this.isClone && (this.phase > 0 || this.isFinal) && e.stunT <= 0 && this.dashPhase === 0 && this.spiralT <= 0) {
+      this.nextCheck -= dt;
+      if (this.nextCheck <= 0) {
+        this.nextCheck = 24 + Math.random() * 8;
+        this.startCheck();
+        return;
+      }
     }
     if (this.pullT > 0) {
       this.pullT -= dt;

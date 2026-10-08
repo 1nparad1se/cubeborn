@@ -29,7 +29,8 @@ export class Combat {
     if (crit) dmg *= info.critDamage + st.critDamage;
     dmg *= 0.92 + Math.random() * 0.16;
     if (e.hasElite('armored')) dmg *= 0.7;
-    if (info.el) dmg *= this.combo(e, info, crit, dmg);
+    if (e.boss && e.brokenT <= 0) dmg *= e.boss.dmgTakenMul();
+    if (info.el) dmg *= this.combo(e, info, crit, dmg, dirX, dirZ);
     e.hp -= dmg;
     e.flash = 0.1;
     run.stats.addDamage(info.weaponId, dmg);
@@ -68,7 +69,8 @@ export class Combat {
     }
     if (info.curse > 0) e.curseT = Math.max(e.curseT, info.curse * st.duration);
     if (info.weaken > 0) e.weakenT = Math.max(e.weakenT, info.weaken * st.duration);
-    if (info.el) run.skills.onHit(e, info, dmg, crit);
+    if (info.el) run.action.onHit(e, info, dmg, crit);
+    if (info.stag > 0 || info.launch || info.root > 0 || info.mark > 0) this.actionEffects(e, info);
     if (crit) run.stats.crits++;
     if (run.settings.damageNumbers) run.fx.number(e.x, e.z, dmg, crit);
     run.vfx.impact(e, info.weaponId, dmg, crit, dirX || e.x - run.player.x, dirZ || e.z - run.player.z);
@@ -86,9 +88,9 @@ export class Combat {
    * Frozen + lightning shatters, burning + fire ignites, bleeding + physical crit hemorrhages,
    * curse amplifies everything and dark most of all.
    */
-  private combo(e: Enemy, info: DamageInfo, crit: boolean, dmg: number): number {
+  private combo(e: Enemy, info: DamageInfo, crit: boolean, dmg: number, dirX: number, dirZ: number): number {
     const run = this.run;
-    let m = run.skills.damageMulVs(e, info);
+    let m = run.action.damageMulVs(e, info, dirX, dirZ);
     if (e.curseT > 0) m *= info.el === 'dark' ? 1.35 : 1.2;
     if (info.el === 'lightning' && e.freezeT > 0) {
       e.freezeT = 0;
@@ -115,6 +117,84 @@ export class Combat {
       run.stats.combos++;
     }
     return m;
+  }
+
+  /** Stagger bar size of an enemy (bosses define their own per phase). */
+  stagMaxOf(e: Enemy): number {
+    if (e.boss) return e.boss.stagMax();
+    let m: number;
+    switch (e.def.category) {
+      case 'tank':
+        m = 70;
+        break;
+      case 'summoner':
+      case 'special':
+        m = 45;
+        break;
+      case 'fast':
+        m = 12;
+        break;
+      case 'prop':
+        m = 1;
+        break;
+      default:
+        m = 18;
+    }
+    m += e.maxHp * 0.05;
+    if (e.elite) m *= 3.2;
+    return m;
+  }
+
+  /** Stagger, knock-up, root and mark from action skills. */
+  private actionEffects(e: Enemy, info: DamageInfo) {
+    if (!e.alive) return;
+    if (e.boss && info.stag > 0) {
+      // counter window (charge wind-up) and stagger check (long channel)
+      if (e.boss.counterOpen && info.stag >= 6) {
+        e.boss.countered();
+        e.stag += info.stag;
+      }
+      if (e.boss.checkHit(info.stag)) {
+        this.breakStagger(e);
+        return;
+      }
+    }
+    if (info.stag > 0 && e.brokenT <= 0) {
+      if (!e.stagMax) e.stagMax = this.stagMaxOf(e);
+      e.stag += info.stag;
+      e.stagIdle = 0;
+      if (e.stag >= e.stagMax) this.breakStagger(e);
+    }
+    if (info.launch && !e.boss && e.kbResist < 0.95 && !e.flying) {
+      e.launchT = 0.6;
+      e.stunT = Math.max(e.stunT, 0.65);
+    }
+    if (info.root > 0) e.rootT = Math.max(e.rootT, info.root * (e.boss ? 0.3 : 1));
+    if (info.mark > 0) e.markT = Math.max(e.markT, info.mark);
+  }
+
+  /** A full stagger bar breaks the enemy: stunned, vulnerable (+30% damage), attacks interrupted. */
+  breakStagger(e: Enemy) {
+    const run = this.run;
+    e.stag = 0;
+    e.brokenT = e.boss ? 5 : e.elite ? 3.5 : 1.6;
+    e.stunT = Math.max(e.stunT, e.brokenT);
+    e.atkT = 0;
+    if (e.atkZone) {
+      e.atkZone.active = false;
+      e.atkZone = null;
+    }
+    e.boss?.onStagger();
+    const f = run.action.fx.add('break', e.x, e.z, 0.8, 0xffe080);
+    f.r = e.radius * 2 + 0.6;
+    f.y = e.scale * 1.6;
+    if (e.boss || e.elite) {
+      run.fx.text(e.x, e.z, run.tr('act_broken'), 0xffd040);
+      run.fx.shake(e.boss ? 0.4 : 0.2);
+      run.fx.sound('shield', 0.8);
+      run.stats.combos++;
+    }
+    run.action.addUlt(e.boss ? 8 : e.elite ? 3 : 0.3);
   }
 
   /** Damage over time / non-weapon damage without crit or knockback. */
@@ -167,7 +247,7 @@ export class Combat {
         run.fx.burst(e.x, 0.5, e.z, 0x9cff4f, 12, 3, 0.16, 0.6, 'smoke');
       }
     }
-    run.skills.onKill(e);
+    run.action.onKill(e);
     run.loot.onKill(e);
     run.stats.kills++;
     run.stats.killsBy[def.id] = (run.stats.killsBy[def.id] ?? 0) + 1;
@@ -187,7 +267,7 @@ export class Combat {
     if (e.elite) {
       run.stats.elites++;
       // chests are rare, but an elite is likely to carry one once a weapon is ready to evolve
-      const chance = run.weapons.evolvable().length ? BALANCE.evoChestChance : BALANCE.eliteChestChance;
+      const chance = BALANCE.eliteChestChance;
       if (Math.random() < chance * run.player.stats.luck) run.pickups.spawnChest(e.x, e.z, 0, 'elite');
     }
     if (def.id === 'treasure_sprite') {
@@ -215,7 +295,5 @@ export class Combat {
       run.hazards.telegraph(e.x, e.z, 3, 0.7);
       run.hazards.delayedExplosion(e.x, e.z, 3, e.damage, 0.7);
     }
-    run.weapons.onKill(e);
-    run.perks.onKill(e);
   }
 }

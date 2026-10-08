@@ -1,7 +1,7 @@
 import type { Loc, Rarity, StatMods } from '../../data/types';
 import { RARITIES } from '../../data/types';
 import type { DmgType } from '../types';
-import { MODS } from './kits';
+import { POWERS } from '../action/powers';
 
 /**
  * Loot: equipment slots, base items, affixes and item generation. Items are plain JSON so they
@@ -172,7 +172,7 @@ export function makeItem(rand: () => number, ilvl: number, rarity: Rarity, baseI
     prefix: Math.floor(rand() * PREFIX.length),
     suffix: Math.floor(rand() * SUFFIX.length),
   };
-  if (rarity === 'legendary') item.power = MODS[Math.floor(rand() * MODS.length)].id;
+  if (rarity === 'legendary') item.power = POWERS[Math.floor(rand() * POWERS.length)].id;
   return item;
 }
 

@@ -1,3 +1,4 @@
+import { CLASSES } from '../game/action/classes';
 import type { AchievementCategory, AchievementDef, AchievementRarity } from './types';
 
 type Raw = Omit<AchievementDef, 'category' | 'rarity' | 'icon' | 'color'>;
@@ -152,9 +153,24 @@ const META: Record<string, Meta> = {
   endless_w50: ['endless', 'legendary', 'skip', 0xff5d8f], endless_30m: ['endless', 'epic', 'hourglass', 0x9dffd6],
 };
 
-export const ACHIEVEMENTS: AchievementDef[] = RAW.map((a) => {
-  const m = META[a.id] ?? ['progress', 'common', 'star', 0xffd23d];
-  return { ...a, category: m[0], rarity: m[1], icon: m[2], color: m[3] };
+/** Stats of the removed auto-weapon / permanent-upgrade systems: their achievements no longer exist. */
+const GONE = new Set(['evolutions', 'maxedWeapons', 'weaponsFound', 'permSpent', 'permLevels', 'bestWeaponCount', 'bestRunEvos', 'herowin_bram', 'herowin_lyra', 'herowin_shen']);
+
+/** One victory achievement per action class. */
+const CLASS_WINS: Omit<AchievementDef, 'category' | 'rarity' | 'icon' | 'color'>[] = CLASSES.map((c) => ({
+  id: 'win_' + c.id,
+  name: c.title,
+  desc: { ru: `Победите на любой карте за класс «${c.name.ru}»`, en: `Win any map as the ${c.name.en}` },
+  cond: { stat: 'herowin_' + c.id, value: 1 },
+  gold: 40,
+}));
+
+export const ACHIEVEMENTS: AchievementDef[] = [...RAW.filter((a) => !GONE.has(a.cond.stat)), ...CLASS_WINS].map((a) => {
+  const m = META[a.id] ?? (a.id.startsWith('win_') ? (['progress', 'rare', 'crown', 0xffd23d] as const) : (['progress', 'common', 'star', 0xffd23d] as const));
+  // rewards that unlocked removed weapons / passives become gold
+  const reward = a.reward && (a.reward.kind === 'weapon' || a.reward.kind === 'passive') ? undefined : a.reward;
+  const gold = reward === a.reward ? a.gold : (a.gold ?? 0) + 50;
+  return { ...a, reward, gold, category: m[0], rarity: m[1], icon: m[2], color: m[3] };
 });
 
 export const ACHIEVEMENT_CATEGORIES: AchievementCategory[] = ['progress', 'combat', 'weapons', 'exploration', 'daynight', 'economy', 'survival', 'endless'];

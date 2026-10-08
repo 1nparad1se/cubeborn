@@ -254,8 +254,18 @@ export class EnemyManager {
       if (e.hasteT > 0) e.hasteT -= dt;
       if (e.boss) {
         if (!frozen) e.boss.update(dt);
-      } else if (!frozen) this.think(e, dt);
-      else {
+      } else if (!frozen) {
+        // a hidden hero (reaper stealth) is lost: foes stop advancing and do not start attacks
+        if (run.action.stealthT > 0 && e.atkT <= 0) {
+          e.atkCd = Math.max(e.atkCd, 0.4);
+          e.vx *= 0.9;
+          e.vz *= 0.9;
+        } else this.think(e, dt);
+      } else {
+        e.vx = 0;
+        e.vz = 0;
+      }
+      if (e.rootT > 0 && !e.boss) {
         e.vx = 0;
         e.vz = 0;
       }
@@ -324,7 +334,14 @@ export class EnemyManager {
       const sp = Math.hypot(e.vx, e.vz);
       if (sp > 0.05) {
         e.anim += dt * (2 + sp * 1.6);
-        e.yaw = Math.atan2(e.vx, e.vz);
+        // turn at a limited rate so heroes can slip behind (back attacks); stunned foes do not turn
+        if (e.stunT <= 0 && e.freezeT <= 0) {
+          const want = Math.atan2(e.vx, e.vz);
+          let d = want - e.yaw;
+          d = Math.atan2(Math.sin(d), Math.cos(d));
+          const rate = (e.boss ? 2.2 : 5) * dt;
+          e.yaw += Math.max(-rate, Math.min(rate, d));
+        }
       } else e.anim += dt;
     }
   }
@@ -346,6 +363,14 @@ export class EnemyManager {
     if (e.weakenT > 0) e.weakenT -= dt;
     if (e.markT > 0) e.markT -= dt;
     if (e.shieldT > 0) e.shieldT -= dt;
+    if (e.rootT > 0) e.rootT -= dt;
+    if (e.launchT > 0) e.launchT -= dt;
+    if (e.brokenT > 0) e.brokenT -= dt;
+    else if (e.stag > 0) {
+      // the stagger bar drains after a few seconds without stagger damage
+      e.stagIdle += dt;
+      if (e.stagIdle > 3) e.stag = Math.max(0, e.stag - e.stagMax * 0.12 * dt);
+    }
     if (e.poisonT > 0 || e.burnT > 0 || e.bleedT > 0) {
       e.dotTick -= dt;
       if (e.dotTick <= 0) {

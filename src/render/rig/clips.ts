@@ -28,6 +28,8 @@ export interface Clip {
   fadeOut?: number;
   /** Named moments for effects: 'impulse' (weapon release), 'charge', 'death', 'levelup', 'ability'. */
   events?: { t: number; ev: string }[];
+  /** Legs follow the clip even while the hero moves (leaps, spins, kicks, dodges). */
+  full?: boolean;
   /** Visibility group toggles (arrow nocked, flask thrown...). */
   show?: { t: number; grp: string; on: boolean }[];
 }

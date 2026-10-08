@@ -4,24 +4,21 @@ import { iconImg } from './icons';
 import { thumbImg } from '../render/Thumbnails';
 import { t, L } from '../i18n';
 import type { RunMode } from '../game/Waves';
-import { statModLines, weaponDeltaLines, fmtNum, fmtTime } from './format';
+import { statModLines, fmtNum, fmtTime } from './format';
 import type { Profile } from '../meta/Profile';
 import { HEROES, HERO_BY_ID } from '../data/heroes';
-import { WEAPONS, WEAPON_BY_ID, WEAPON_MAX_LEVEL } from '../data/weapons';
-import { PASSIVES, PASSIVE_BY_ID } from '../data/passives';
+import { CLASSES, classDef } from '../game/action/classes';
 import { ENEMIES, ENEMY_BY_ID } from '../data/enemies';
 import { MAP_LORE } from '../data/mapLore';
 import { WAVE_TYPE_COLOR, WaveDirector } from '../game/Waves';
 import { BOSSES, RELICS, BOSS_BY_ID } from '../data/bosses';
 import { MAPS } from '../data/maps';
 import { DIFFICULTIES } from '../data/difficulty';
-import { PERM_UPGRADES } from '../data/upgrades';
 import { ACHIEVEMENTS, ACHIEVEMENT_CATEGORIES } from '../data/achievements';
-import type { AchievementCategory, AchievementDef, UnlockRef, WeaponDef } from '../data/types';
+import type { AchievementCategory, AchievementDef } from '../data/types';
 import { settingsPanel } from './Settings';
 import { viewerScreen } from './ViewerScreen';
-import { weaponViewerScreen } from './WeaponViewerScreen';
-import { WEAPON_VISUALS } from '../config/weaponVisuals';
+import { classInfo, classStage, tr } from './ClassPreview';
 
 export interface MenuApi {
   profile: Profile;
@@ -45,13 +42,15 @@ export interface MenuApi {
   version: string;
 }
 
-type ScreenId = 'main' | 'armory' | 'heroes' | 'viewer' | 'wanims' | 'maps' | 'weapons' | 'collection' | 'upgrades' | 'achievements' | 'settings';
+type ScreenId = 'main' | 'armory' | 'heroes' | 'viewer' | 'maps' | 'collection' | 'achievements' | 'settings';
 
 const RARITY_COLOR: Record<string, string> = { common: '#c8ccd8', uncommon: '#6aff8a', rare: '#5ab4ff', epic: '#c77dff', legendary: '#ffb02e' };
 /** Tabs along the top bar of the menu screens (Q / E cycle through them). */
-const TABS: ScreenId[] = ['armory', 'viewer', 'weapons', 'wanims', 'maps', 'collection', 'upgrades', 'achievements', 'settings'];
+const TABS: ScreenId[] = ['armory', 'viewer', 'maps', 'collection', 'achievements', 'settings'];
 /** Screens where the 3D showcase stays visible on the right instead of an item preview. */
-const SHOWCASE: ScreenId[] = ['main', 'heroes', 'maps'];
+const SHOWCASE: ScreenId[] = ['main', 'maps'];
+/** Screens with their own 3D view (the menu backdrop stops drawing). */
+const OWN_3D: ScreenId[] = ['viewer', 'heroes'];
 
 function pill(text: string, color: string): HTMLElement {
   return h('span.pill', { style: `--pc:${color}` }, text);
@@ -62,11 +61,9 @@ export class Menus {
   readonly root: HTMLElement;
   private stack: ScreenId[] = [];
   private selectMode = false;
-  private selHero = 'bram';
+  private selHero: string = HEROES[0].id;
   private selMap = 'blightwood';
   private selDiff = 'normal';
-  /** Weapon the weapon-animation screen opens on. */
-  private selWeapon: string | null = null;
   private achStatus: 'all' | 'done' | 'locked' = 'all';
   private achCat: AchievementCategory | 'all' = 'all';
   /** Set by the Endless button: the map screen opens with Endless mode picked. */
@@ -78,7 +75,7 @@ export class Menus {
     this.root = h('div.menus');
     parent.appendChild(this.root);
     const last = api.profile.data.last;
-    this.selHero = last.hero;
+    this.selHero = HERO_BY_ID[last.hero] ? last.hero : HEROES[0].id;
     this.selMap = last.map;
     this.selDiff = last.diff;
     window.addEventListener('keydown', (e) => this.onKey(e));
@@ -90,10 +87,10 @@ export class Menus {
 
   private onKey(e: KeyboardEvent) {
     if (e.defaultPrevented || e.repeat || this.root.classList.contains('hidden')) return;
-    if (document.querySelector('.modal-back')) return;
+    if (modalOpen()) return;
     const id = this.current;
     if (id === 'main') return;
-    if ((id === 'viewer' || id === 'wanims') && e.code !== 'KeyQ' && e.code !== 'KeyE') return;
+    if (OWN_3D.includes(id) && e.code !== 'KeyQ' && e.code !== 'KeyE' && e.code !== 'Enter') return;
     if (e.code === 'KeyQ' || e.code === 'KeyE') {
       e.preventDefault();
       this.cycleTab(e.code === 'KeyQ' ? -1 : 1);
@@ -159,7 +156,7 @@ export class Menus {
     this.cleanup?.();
     this.cleanup = null;
     clear(this.root);
-    this.api.setBackdropPaused(id === 'viewer' || id === 'wanims');
+    this.api.setBackdropPaused(OWN_3D.includes(id));
     const el = this.build(id);
     el.classList.add('screen', 'screen-' + id);
     this.root.appendChild(el);
@@ -180,11 +177,6 @@ export class Menus {
         this.cleanup = () => v.dispose();
         return this.frame(v.el);
       }
-      case 'wanims': {
-        const v = weaponViewerScreen(this.selWeapon, (x) => this.api.sfx(x));
-        this.cleanup = () => v.dispose();
-        return this.frame(v.el);
-      }
       case 'armory': {
         const gold = h('div.gold-chip', h('i.ic-coin'), h('span', fmtNum(this.api.profile.data.gold)));
         const el = armoryScreen(this.api.profile, (x) => this.api.sfx(x), this.selHero, (hid) => (this.selHero = hid), () => ((gold.lastChild as HTMLElement).textContent = fmtNum(this.api.profile.data.gold)));
@@ -192,12 +184,8 @@ export class Menus {
       }
       case 'maps':
         return this.mapScreen();
-      case 'weapons':
-        return this.weaponScreen();
       case 'collection':
         return this.collectionScreen();
-      case 'upgrades':
-        return this.upgradeScreen();
       case 'achievements':
         return this.achievementScreen();
       case 'settings':
@@ -265,7 +253,7 @@ export class Menus {
   // ------------------------------------------------------------------ main
   private mainScreen(): HTMLElement {
     const p = this.api.profile;
-    this.api.setShowcase(HERO_BY_ID[this.selHero]?.model ?? 'bram');
+    this.api.setShowcase(HERO_BY_ID[this.selHero]?.model ?? HEROES[0].model);
     const newAch = ACHIEVEMENTS.length;
     return h(
       'div.main-menu',
@@ -274,7 +262,7 @@ export class Menus {
         'div.main-buttons',
         this.btn(t('menu_play'), () => {
           if (!p.data.seenIntro) {
-            this.api.startRun('bram', 'blightwood', 'normal');
+            this.api.startRun(this.selHero, MAPS[0].id, 'normal');
             return;
           }
           this.selectMode = true;
@@ -287,14 +275,11 @@ export class Menus {
             this.selectMode = false;
             this.open('viewer');
           }),
-          this.btn(t('menu_weapons'), () => this.open('weapons')),
-          this.btn(t('menu_wanims'), () => this.open('wanims')),
           this.btn(t('menu_maps'), () => {
             this.selectMode = false;
             this.open('maps');
           }),
           this.btn(t('menu_collection'), () => this.open('collection')),
-          this.btn(t('menu_upgrades'), () => this.open('upgrades')),
           this.btn(`${t('menu_achievements')} ${p.data.achievements.length}/${newAch}`, () => this.open('achievements')),
           this.btn(t('menu_endless'), () => {
             this.selectMode = true;
@@ -309,59 +294,90 @@ export class Menus {
   }
 
   // ------------------------------------------------------------------ heroes
+  /**
+   * Class select: the nine classes on the left, a large rotatable 3D preview with animation
+   * buttons in the middle, and the full class sheet on the right; "Choose map" moves on.
+   */
   private heroScreen(): HTMLElement {
     const p = this.api.profile;
-    if (!p.isHeroUnlocked(this.selHero)) this.selHero = 'bram';
-    const detail = h('div.detail');
-    const grid = h('div.hero-grid');
+    if (!p.isHeroUnlocked(this.selHero)) this.selHero = HEROES.find((x) => p.isHeroUnlocked(x.id))?.id ?? HEROES[0].id;
+    const st = classStage((x) => this.api.sfx(x), false);
+    const list = h('div.cs-list');
+    const info = h('div.detail.cs-info');
+    let cur = this.selHero;
     const show = (id: string) => {
-      const hero = HERO_BY_ID[id];
+      const c = classDef(id);
       const unlocked = p.isHeroUnlocked(id);
-      if (unlocked) {
-        this.selHero = id;
-        this.api.setShowcase(hero.model);
-      }
-      for (const c of grid.children) c.classList.toggle('sel', (c as HTMLElement).dataset.id === id);
-      clear(detail);
-      const w = WEAPON_BY_ID[hero.startWeapon];
+      cur = id;
+      if (unlocked) this.selHero = id;
+      for (const el of list.children) el.classList.toggle('sel', (el as HTMLElement).dataset.id === id);
+      st.setClass(c);
+      clear(info);
       const ach = ACHIEVEMENTS.find((a) => a.reward?.kind === 'hero' && a.reward.id === id);
-      put(detail, 
-        h('div.detail-title', h('h3', L(hero.name)), pill(L(hero.title), hex(hero.color))),
-        h('p', L(hero.desc)),
-        h('div.perk', h('b', L(hero.perkName)), h('span', L(hero.perkDesc))),
-        h('div.kv', h('span', t('start_weapon')), h('span.inline', iconImg(w.icon, w.color, 'icon sm'), L(w.name))),
-        h('div.kv', h('span', t('stat_maxHp')), h('span', String(hero.baseHp))),
-        h('div.kv', h('span', t('stat_moveSpeed')), h('span', String(hero.baseSpeed))),
-        ...statModLines(hero.stats).map((s) => h('div.mod', s)),
+      const wins = p.stat('herowin_' + id);
+      put(
+        info,
+        classInfo(c, p.data.settings.keybinds),
+        wins ? h('div.kv', h('span', t('cv_wins')), h('span', String(wins))) : null,
         unlocked ? null : h('div.locked-note', '🔒 ' + (ach ? t('unlock_by', { name: L(ach.name), desc: L(ach.desc) }) : t('locked'))),
       );
-      put(detail, this.btn(t('cv_open'), () => {
-        this.selHero = id;
-        this.open('viewer');
-      }));
-      if (this.selectMode && unlocked) put(detail, this.btn(t('btn_next'), () => this.open('maps'), '.primary'));
+      clear(foot);
+      if (this.selectMode && unlocked) foot.append(this.btn(tr('Выбрать карту', 'Choose map') + ' →', () => this.open('maps'), '.primary.big'));
+      else if (!this.selectMode)
+        foot.append(
+          this.btn(t('cv_open'), () => {
+            this.selHero = id;
+            this.open('viewer');
+          }),
+        );
     };
-    for (const hero of HEROES) {
-      const unlocked = p.isHeroUnlocked(hero.id);
-      const wins = p.stat('herowin_' + hero.id);
-      grid.append(
+    const foot = h('div.detail.cs-foot');
+    for (const c of CLASSES) {
+      const unlocked = p.isHeroUnlocked(c.id);
+      const wins = p.stat('herowin_' + c.id);
+      list.append(
         h(
-          'button.hero-card' + (unlocked ? '' : '.locked'),
+          'button.cs-card' + (unlocked ? '' : '.locked'),
           {
-            'data-id': hero.id,
+            'data-id': c.id,
+            style: `--hc:${hex(c.color)}`,
             onclick: () => {
               this.api.sfx('select');
-              show(hero.id);
+              show(c.id);
             },
           },
-          thumbImg(hero.model, 'thumb', !unlocked),
-          h('div.name', unlocked ? L(hero.name) : '???'),
+          thumbImg(c.id, 'thumb', !unlocked),
+          h('div.cs-card-txt', h('div.cs-card-name', L(c.name)), h('div.cs-card-role', L(c.role)), h('div.cs-card-diff', '★'.repeat(c.difficulty) + '☆'.repeat(Math.max(0, 3 - c.difficulty)))),
           wins ? h('div.badge', '★') : null,
         ),
       );
     }
-    setTimeout(() => show(this.selHero));
-    return this.frame(h('div.split', grid, detail));
+    const step = (dir: number) => {
+      const i = CLASSES.findIndex((c) => c.id === cur);
+      this.api.sfx('select');
+      show(CLASSES[(i + dir + CLASSES.length) % CLASSES.length].id);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.repeat || e.defaultPrevented || modalOpen()) return;
+      if (e.code === 'ArrowUp' || e.code === 'ArrowLeft') step(-1);
+      else if (e.code === 'ArrowDown' || e.code === 'ArrowRight') step(1);
+      else return;
+      e.preventDefault();
+    };
+    window.addEventListener('keydown', onKey);
+    this.cleanup = () => {
+      window.removeEventListener('keydown', onKey);
+      st.dispose();
+    };
+    show(cur);
+    st.viewer.play('idle');
+    st.viewer.start();
+    const center = h(
+      'div.cs-center',
+      h('div.cv-stage-wrap.cs-stage', st.stage, h('button.cv-nav.prev', { onclick: () => step(-1) }, '‹'), h('button.cv-nav.next', { onclick: () => step(1) }, '›'), h('div.cv-hint', tr('Тяните мышью — вращать · колесо — масштаб · ↑/↓ — класс', 'Drag to rotate · wheel to zoom · ↑/↓ — class'))),
+      st.anims,
+    );
+    return this.frame(h('div.cs', list, center, h('div.cs-right', info, foot)));
   }
 
   // ------------------------------------------------------------------ maps
@@ -508,70 +524,8 @@ export class Menus {
     return this.frame(h('div.split', list, detail));
   }
 
-  // ------------------------------------------------------------------ weapons
-  private weaponScreen(): HTMLElement {
-    const p = this.api.profile;
-    const grid = this.selectable(h('div.icon-grid'));
-    const detail = h('div.detail');
-    const preview = h('div.preview');
-    const show = (w: WeaponDef) => {
-      clear(detail);
-      clear(preview);
-      const known = !w.evolved || p.data.discovered.weapons.includes(w.id);
-      const unlocked = p.isWeaponUnlocked(w.id);
-      if (!known) {
-        const base = WEAPONS.find((x) => x.evolution?.into === w.id);
-        put(detail, h('h3', '???'), h('p', t('evo_unknown')), base ? h('div.recipe', recipe(base, w)) : null);
-        put(preview, h('span.q', '?'));
-        return;
-      }
-      put(preview, iconImg(w.icon, w.color, 'icon xl'));
-      preview.style.setProperty('--rc', RARITY_COLOR[w.rarity]);
-      put(detail, 
-        h('div.detail-title', h('h3', L(w.name)), pill(t('rarity_' + w.rarity), RARITY_COLOR[w.rarity]), w.evolved ? pill(t('evolution'), '#ffd23d') : null),
-        h('p', L(w.desc)),
-        !unlocked ? h('div.locked-note', '🔒 ' + lockText(w.id, 'weapon')) : null,
-        h('div.stats-table', ...baseStatRows(w)),
-        w.levels.length
-          ? h('div.levels', ...w.levels.map((d, i) => h('div.lv', h('b', i + 2 === WEAPON_MAX_LEVEL ? 'MAX' : t('lvl_short', { n: i + 2 })), h('span', weaponDeltaLines(d).join(', ')))))
-          : null,
-        w.evolution ? h('div.recipe', recipe(w, WEAPON_BY_ID[w.evolution.into])) : null,
-        WEAPON_VISUALS[w.id]
-          ? this.btn(t('wv_open'), () => {
-              this.selWeapon = w.id;
-              this.open('wanims');
-            })
-          : null,
-      );
-    };
-    const all = WEAPONS.filter((w) => !w.evolved);
-    for (const w of all) {
-      const evo = w.evolution ? WEAPON_BY_ID[w.evolution.into] : null;
-      for (const def of evo ? [w, evo] : [w]) {
-        const known = !def.evolved || p.data.discovered.weapons.includes(def.id);
-        const unlocked = p.isWeaponUnlocked(def.id);
-        grid.append(
-          h(
-            'button.icon-cell' + (def.evolved ? '.evo' : '') + (unlocked ? '' : '.locked'),
-            {
-              style: `--rc:${RARITY_COLOR[def.rarity]}`,
-              onclick: () => {
-                this.api.sfx('select');
-                show(def);
-              },
-            },
-            known ? iconImg(def.icon, def.color) : h('span.q', '?'),
-          ),
-        );
-      }
-    }
-    setTimeout(() => (grid.firstChild as HTMLElement | null)?.click());
-    const found = WEAPONS.filter((w) => !w.evolved || p.data.discovered.weapons.includes(w.id)).length;
-    return this.frame(h('div.split.tri', grid, detail, preview), { extra: h('div.count', `${found}/${WEAPONS.length}`) });
-  }
-
   // ------------------------------------------------------------------ collection
-  private tab = 'passives';
+  private tab = 'enemies';
   private collectionScreen(): HTMLElement {
     const p = this.api.profile;
     const tabs = h('div.tabs');
@@ -587,7 +541,7 @@ export class Menus {
     body.append(grid, detail, preview);
     const render = () => {
       clear(tabs);
-      for (const id of ['passives', 'enemies', 'bosses', 'relics']) {
+      for (const id of ['enemies', 'bosses', 'relics']) {
         tabs.append(
           h('button.tab' + (this.tab === id ? '.sel' : ''), {
             onclick: () => {
@@ -601,28 +555,7 @@ export class Menus {
       clear(grid);
       clear(detail);
       clear(preview);
-      if (this.tab === 'passives') {
-        for (const ps of PASSIVES) {
-          const ok = p.isPassiveUnlocked(ps.id);
-          grid.append(
-            h('button.icon-cell' + (ok ? '' : '.locked'), {
-              style: `--rc:${RARITY_COLOR.uncommon}`,
-              onclick: () => {
-                clear(detail);
-                look(iconImg(ps.icon, ps.color, 'icon xl'), RARITY_COLOR.uncommon);
-                const evo = WEAPONS.filter((w) => w.evolution?.passive === ps.id);
-                put(detail, 
-                  h('div.detail-title', h('h3', L(ps.name)), pill(t('max_level', { n: ps.maxLevel }), RARITY_COLOR.uncommon)),
-                  h('p', L(ps.desc)),
-                  h('div.mods', ...statModLines(ps.perLevel).map((s) => h('div.mod', s + ' ' + t('per_level')))),
-                  ...evo.map((w) => h('div.recipe', recipe(w, WEAPON_BY_ID[w.evolution!.into]))),
-                  ok ? null : h('div.locked-note', '🔒 ' + lockText(ps.id, 'passive')),
-                );
-              },
-            }, iconImg(ps.icon, ps.color), h('span.cell-n', String(ps.maxLevel))),
-          );
-        }
-      } else if (this.tab === 'enemies') {
+      if (this.tab === 'enemies') {
         grid.classList.add('thumbs');
         for (const e of ENEMIES) {
           if (e.behavior === 'prop' || e.id === 'shield_crystal') continue;
@@ -700,51 +633,6 @@ export class Menus {
     return this.frame(h('div.mcol', tabs, body));
   }
 
-  // ------------------------------------------------------------------ upgrades
-  private upgradeScreen(): HTMLElement {
-    const p = this.api.profile;
-    const list = h('div.upgrade-list');
-    const gold = h('div.gold-chip');
-    const render = () => {
-      clear(gold);
-      gold.append(h('i.ic-coin'), fmtNum(p.data.gold));
-      clear(list);
-      for (const u of PERM_UPGRADES) {
-        const lvl = p.permLevel(u.id);
-        const max = lvl >= u.maxLevel;
-        const cost = p.permNextCost(u.id);
-        const can = !max && p.data.gold >= cost;
-        list.append(
-          h(
-            'div.upgrade' + (max ? '.max' : ''),
-            iconImg(u.icon, 0xffd23d, 'icon'),
-            h('div.up-body', h('div.up-name', L(u.name)), h('div.up-desc', statModLines(u.perLevel).join(', ') + ' ' + t('per_level')), h('div.pips', ...Array.from({ length: u.maxLevel }, (_, i) => h('i' + (i < lvl ? '.on' : ''))))),
-            h(
-              'button.btn.buy' + (can ? '.primary' : '.disabled'),
-              {
-                onclick: () => {
-                  if (p.buyPerm(u.id)) {
-                    this.api.sfx('buy');
-                    render();
-                  } else this.api.sfx('denied');
-                },
-              },
-              max ? 'MAX' : h('span', h('i.ic-coin'), fmtNum(cost)),
-            ),
-          ),
-        );
-      }
-    };
-    render();
-    const refund = this.btn(t('btn_refund'), () => {
-      confirmBox(this.root, t('refund_confirm'), () => {
-        p.refundPerms();
-        render();
-      });
-    }, '.small');
-    return this.frame(h('div.mcol', list, h('div.center', refund)), { gold });
-  }
-
   // ------------------------------------------------------------------ achievements
   private achievementScreen(): HTMLElement {
     const p = this.api.profile;
@@ -812,46 +700,14 @@ export class Menus {
 
 // ------------------------------------------------------------------ shared helpers
 
-function recipe(base: WeaponDef, evo: WeaponDef): HTMLElement {
-  const ps = PASSIVE_BY_ID[base.evolution!.passive];
-  return h('div.recipe-row', iconImg(base.icon, base.color, 'icon sm'), h('span', 'MAX'), h('span.plus', '+'), iconImg(ps.icon, ps.color, 'icon sm'), h('span.arrow', '→'), iconImg(evo.icon, evo.color, 'icon sm'), h('span.recipe-text', `${L(base.name)} + ${L(ps.name)}`));
-}
-
-function baseStatRows(w: WeaponDef): HTMLElement[] {
-  const b = w.base;
-  const rows: [string, string][] = [
-    [t('ws_damage'), String(b.damage)],
-    [t('wd_cooldown_s'), b.cooldown + t('u_s')],
-    [t('stat_amount'), String(b.amount)],
-    [t('stat_area'), Math.round(b.area * 100) + '%'],
-    [t('stat_projSpeed'), String(b.projSpeed)],
-    [t('stat_duration'), b.duration + t('u_s')],
-    [t('stat_knockback'), String(b.knockback)],
-    [t('stat_pierce'), b.pierce < 0 ? '∞' : String(b.pierce)],
-    [t('stat_critChance'), Math.round(b.critChance * 100) + '%'],
-    [t('wd_critDamage'), '×' + b.critDamage],
-    [t('wd_attackSpeed'), Math.round(b.attackSpeed * 100) + '%'],
-    [t('wd_maxLevel'), String(WEAPON_MAX_LEVEL)],
-  ];
-  return rows.map(([k, v]) => h('div.kv', h('span', k), h('span', v)));
-}
-
-function unlockSource(id: string, kind: UnlockRef['kind']): AchievementDef | undefined {
-  return ACHIEVEMENTS.find((a) => a.reward?.kind === kind && a.reward.id === id);
-}
-
-function lockText(id: string, kind: UnlockRef['kind']): string {
-  const a = unlockSource(id, kind);
-  return a ? t('unlock_by', { name: L(a.name), desc: L(a.desc) }) : t('locked');
-}
-
 export function rewardText(a: AchievementDef): string {
   const parts: string[] = [];
   if (a.reward) {
     const r = a.reward;
     const name =
-      r.kind === 'hero' ? L(HERO_BY_ID[r.id]?.name) : r.kind === 'weapon' ? L(WEAPON_BY_ID[r.id]?.name) : r.kind === 'passive' ? L(PASSIVE_BY_ID[r.id]?.name) : L(MAPS.find((m) => m.id === r.id)?.name);
-    parts.push(t('unlock_' + r.kind, { name }));
+      r.kind === 'hero' ? L(HERO_BY_ID[r.id]?.name) : r.kind === 'map' ? L(MAPS.find((m) => m.id === r.id)?.name) : '';
+    // weapons and passives are gone with the class rework: their rewards show nothing
+    if (name) parts.push(t('unlock_' + r.kind, { name }));
   }
   if (a.gold) parts.push(`+${a.gold} ${t('gold')}`);
   return parts.join(' · ');
@@ -880,3 +736,8 @@ export function confirmBox(parent: HTMLElement, text: string, yes: () => void) {
 
 export { settingsPanel };
 export { fmtTime };
+
+/** True while a visible modal is open (hidden screens may keep their modal elements in the DOM). */
+function modalOpen(): boolean {
+  return [...document.querySelectorAll<HTMLElement>('.modal-back')].some((m) => m.getClientRects().length > 0);
+}

@@ -91,6 +91,14 @@ export class Enemy {
   hitT = 0;
   hitDx = 0;
   hitDz = 0;
+  /** Action combat stagger: accumulated stagger, bar size (0 = not computed yet), broken window, decay delay. */
+  stag = 0;
+  stagMax = 0;
+  brokenT = 0;
+  stagIdle = 0;
+  /** Rooted (cannot move, can still attack) and knock-up height/time. */
+  rootT = 0;
+  launchT = 0;
 
   constructor(index: number) {
     this.index = index;
@@ -142,6 +150,8 @@ export class Enemy {
     this.hitT = 0;
     this.hitDx = 0;
     this.hitDz = 0;
+    this.stag = this.stagMax = this.brokenT = this.stagIdle = 0;
+    this.rootT = this.launchT = 0;
   }
 
   get alive(): boolean {

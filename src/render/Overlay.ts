@@ -113,7 +113,50 @@ export class Overlay {
         ctx.fillRect(sx - 1, sy - 1, bw + 2, e.elite ? 6 : 4);
         ctx.fillStyle = e.elite ? hex(ELITE_MODS[e.elite].color) : '#ff4a5a';
         ctx.fillRect(sx, sy, Math.max(0, (bw * e.hp) / e.maxHp), e.elite ? 4 : 2);
+        // stagger bar: fills with stagger damage, flashes while the enemy is broken
+        if (e.elite && (e.stag > 0 || e.brokenT > 0)) {
+          ctx.fillStyle = 'rgba(0,0,0,0.65)';
+          ctx.fillRect(sx - 1, sy + 5, bw + 2, 4);
+          const k = e.brokenT > 0 ? 1 : Math.min(1, e.stag / Math.max(1, e.stagMax));
+          ctx.fillStyle = e.brokenT > 0 ? (Math.floor(run.time * 8) % 2 ? '#fff4c0' : '#ffd040') : '#f0c040';
+          ctx.fillRect(sx, sy + 6, Math.max(0, bw * k), 2);
+        }
         drawn++;
+      }
+    }
+
+    // boss stagger bar and the stagger check (break the boss before the timer runs out)
+    for (const bc of run.bosses) {
+      const e = bc.e;
+      if (!e.active || e.dying > 0 || e.boss !== bc) continue;
+      if (!this.project(camera, e.x, 2.4 + e.scale * 3.2, e.z)) continue;
+      const bw = 90;
+      const sx = Math.round(v.x - bw / 2);
+      const sy = Math.round(v.y);
+      if (e.stag > 0 || e.brokenT > 0) {
+        ctx.fillStyle = 'rgba(0,0,0,0.7)';
+        ctx.fillRect(sx - 1, sy - 1, bw + 2, 6);
+        const k = e.brokenT > 0 ? e.brokenT / 5 : Math.min(1, e.stag / Math.max(1, e.stagMax));
+        ctx.fillStyle = e.brokenT > 0 ? '#fff4c0' : '#f0c040';
+        ctx.fillRect(sx, sy, Math.max(0, bw * k), 4);
+      }
+      if (bc.checkT > 0) {
+        const cy = sy - 26;
+        ctx.font = '13px "Russo One", Rubik, sans-serif';
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = 'rgba(10,8,16,0.9)';
+        const label = run.tr('act_check');
+        ctx.strokeText(label, v.x, cy - 10);
+        ctx.fillStyle = '#ffb040';
+        ctx.fillText(label, v.x, cy - 10);
+        const cw = 150;
+        const cx = Math.round(v.x - cw / 2);
+        ctx.fillStyle = 'rgba(0,0,0,0.75)';
+        ctx.fillRect(cx - 2, cy - 2, cw + 4, 12);
+        ctx.fillStyle = '#ffd040';
+        ctx.fillRect(cx, cy, Math.max(0, cw * Math.min(1, bc.checkDone / bc.checkNeed)), 8);
+        ctx.fillStyle = '#ff3a3a';
+        ctx.fillRect(cx, cy + 9, Math.max(0, cw * (bc.checkT / bc.checkMax)), 2);
       }
     }
 

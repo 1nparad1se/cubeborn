@@ -1,5 +1,4 @@
 import type { EquipPos, Item } from '../game/arpg/Gear';
-import { PERM_UPGRADES, permCost } from '../data/upgrades';
 import type { Lang } from '../i18n';
 
 export type Quality = 'low' | 'medium' | 'high' | 'ultra' | 'custom';
@@ -11,7 +10,14 @@ export type DisplayMode = 'windowed' | 'fullscreen' | 'borderless';
 export type HealthBars = 'off' | 'elites' | 'all';
 
 /** Rebindable actions; each holds up to two KeyboardEvent.code values. */
-export type BindAction = 'up' | 'down' | 'left' | 'right' | 'jump' | 'skillQ' | 'skillW' | 'skillE' | 'skillR' | 'dodge' | 'attackHere' | 'stop' | 'potion' | 'inventory' | 'pause' | 'zoomIn' | 'zoomOut' | 'map' | 'devPanel' | 'devDebug' | 'devGod';
+export type BindAction =
+  | 'up' | 'down' | 'left' | 'right' | 'jump'
+  | 'skillQ' | 'skillW' | 'skillE' | 'skillR' | 'skillA' | 'skillS' | 'skillD' | 'skillF'
+  | 'ult' | 'identity' | 'special' | 'dodge' | 'attack' | 'attackHere' | 'stop' | 'potion' | 'inventory' | 'skills'
+  | 'pause' | 'zoomIn' | 'zoomOut' | 'map' | 'devPanel' | 'devDebug' | 'devGod';
+
+/** Skill slot order on the bar (Q W E R A S D F). */
+export const SKILL_BINDS: BindAction[] = ['skillQ', 'skillW', 'skillE', 'skillR', 'skillA', 'skillS', 'skillD', 'skillF'];
 export type Keybinds = Record<BindAction, string[]>;
 
 export function defaultKeybinds(): Keybinds {
@@ -25,11 +31,20 @@ export function defaultKeybinds(): Keybinds {
     skillW: ['KeyW'],
     skillE: ['KeyE'],
     skillR: ['KeyR'],
+    skillA: ['KeyA'],
+    skillS: ['KeyS'],
+    skillD: ['KeyD'],
+    skillF: ['KeyF'],
+    ult: ['KeyV'],
+    identity: ['KeyZ'],
+    special: ['KeyX'],
     dodge: ['Space'],
+    attack: ['KeyC'],
     attackHere: ['ShiftLeft'],
-    stop: ['KeyS'],
+    stop: ['KeyH'],
     potion: ['Digit1'],
-    inventory: ['KeyI', 'KeyC'],
+    inventory: ['KeyI'],
+    skills: ['KeyK'],
     pause: ['Escape', 'KeyP'],
     zoomIn: ['Equal', 'NumpadAdd'],
     zoomOut: ['Minus', 'NumpadSubtract'],
@@ -119,7 +134,7 @@ export interface SaveData {
 }
 
 const KEY = 'cubeborn.save.v1';
-const VERSION = 4;
+const VERSION = 5;
 
 export function defaultSettings(): Settings {
   const lang: Lang = (navigator.language || 'ru').toLowerCase().startsWith('ru') ? 'ru' : 'en';
@@ -163,7 +178,7 @@ export function defaultSave(): SaveData {
     endless: {},
     seenIntro: false,
     permSpent: 0,
-    last: { hero: 'bram', map: 'blightwood', diff: 'normal', mode: 'campaign' },
+    last: { hero: 'berserker', map: 'blightwood', diff: 'normal', mode: 'campaign' },
     gear: { bag: [], equipped: {} },
   };
 }
@@ -184,16 +199,8 @@ export function migrate(raw: any): SaveData {
     if (typeof rs.screenShake === 'boolean') rs.screenShake = rs.screenShake ? 1 : 0;
     delete rs.vibration;
   }
-  if (oldVersion < 4 && rs.keybinds) {
-    // v4 action-RPG controls: Q/W/E/R are skills, Space dodges, the mouse moves the hero.
-    // Old WASD/Space bindings would collide, so only the remaining custom keys survive.
-    const taken = new Set(['KeyQ', 'KeyW', 'KeyE', 'KeyR', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ShiftLeft', 'KeyI', 'KeyC', 'Digit1']);
-    const kb: Record<string, string[]> = {};
-    for (const [k, v] of Object.entries(rs.keybinds as Record<string, string[]>)) if (Array.isArray(v)) kb[k] = v.filter((c) => !taken.has(c));
-    delete kb.jump;
-    for (const k of ['up', 'down', 'left', 'right']) if (kb[k] && !kb[k].length) delete kb[k];
-    rs.keybinds = kb;
-  }
+  // v5 action combat: eight skill keys (Q W E R A S D F), Ultimate V, Identity Z — every old binding resets
+  if (oldVersion < 5) delete rs.keybinds;
   const settings: Settings = { ...d.settings, ...rs, keybinds: { ...defaultKeybinds(), ...(rs.keybinds || {}) } };
   for (const k of Object.keys(settings.keybinds) as BindAction[]) if (!Array.isArray(settings.keybinds[k])) settings.keybinds[k] = defaultKeybinds()[k];
   const out: SaveData = {
@@ -209,15 +216,25 @@ export function migrate(raw: any): SaveData {
     mapClears: { ...(raw.mapClears || {}) },
   };
   if (oldVersion < 2) out.gold = Math.floor((Number(raw.gold) || 0) / 4);
-  // v3: upgrade prices ×5; levels already bought stay, and their refund value is the old price paid
-  if (oldVersion < 3 || typeof raw.permSpent !== 'number') {
-    let spent = 0;
-    for (const u of PERM_UPGRADES) for (let i = 0; i < (out.perm[u.id] ?? 0); i++) spent += permCost(u, i, 1);
-    out.permSpent = spent;
+  // v5: permanent upgrades are gone — the gold paid for them comes back
+  if (oldVersion < 5) {
+    out.gold += Number(raw.permSpent) || 0;
+    out.perm = {};
+    out.permSpent = 0;
   }
   // gear: keep only well-formed items (older saves have none)
   const g = raw.gear && typeof raw.gear === 'object' ? raw.gear : {};
   out.gear = { bag: Array.isArray(g.bag) ? g.bag.filter((x: any) => x && typeof x.slot === 'string') : [], equipped: g.equipped && typeof g.equipped === 'object' ? g.equipped : {}, shop: Array.isArray(g.shop) ? g.shop.filter((x: any) => x && typeof x.slot === 'string') : [] };
+  if (oldVersion < 5) {
+    // the nine new classes replace the old heroes: their equipment returns to the stash
+    const known = ['berserker', 'paladin', 'steelfist', 'ranger', 'deathblade', 'reaper', 'summoner', 'sorceress', 'templar'];
+    for (const [hero, set] of Object.entries(out.gear.equipped)) {
+      if (known.includes(hero)) continue;
+      for (const it of Object.values(set || {})) if (it && typeof (it as Item).slot === 'string') out.gear.bag.push(it as Item);
+      delete out.gear.equipped[hero];
+    }
+    if (!known.includes(out.last.hero)) out.last.hero = 'berserker';
+  }
   out.version = VERSION;
   return out;
 }

@@ -7,8 +7,8 @@ import { DIFFICULTY_BY_ID } from '../../src/data/difficulty';
 import { BALANCE } from '../../src/config/balance';
 
 const run = new Run({
-  map: MAP_BY_ID.blightwood, diff: DIFFICULTY_BY_ID.normal, hero: HERO_BY_ID.lyra, permanent: {}, mode: 'campaign',
-  unlockedWeapons: new Set(), unlockedPassives: new Set(), fx: NullFx, settings: { damageNumbers: false }, tr: (k: string) => k, seed: 7,
+  map: MAP_BY_ID.blightwood, diff: DIFFICULTY_BY_ID.normal, hero: HERO_BY_ID.sorceress, permanent: {}, mode: 'campaign',
+  fx: NullFx, settings: { damageNumbers: false }, tr: (k: string) => k, seed: 7,
 });
 run.debug.god = true;
 const p = run.player;

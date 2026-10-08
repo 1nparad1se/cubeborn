@@ -2,12 +2,8 @@ import type { Run } from '../game/Run';
 import type { BossController } from '../game/bosses/Boss';
 import { CAMPAIGN_WAVES, MODIFIERS, WAVE_TYPE_COLOR, WaveDirector } from '../game/Waves';
 import { h, clear, hex } from './dom';
-import { iconImg } from './icons';
 import { t, L } from '../i18n';
 import { fmtTime, fmtNum } from './format';
-import { BALANCE } from '../config/balance';
-import { PASSIVE_BY_ID } from '../data/passives';
-import { WEAPON_BY_ID } from '../data/weapons';
 import { Minimap } from './Minimap';
 import { DAY_NIGHT } from '../config/dayNight';
 import { ArpgHud } from './ArpgHud';
@@ -32,8 +28,6 @@ export class Hud {
   private time: HTMLElement;
   private kills: HTMLElement;
   private gold: HTMLElement;
-  private slotsW: HTMLElement;
-  private slotsP: HTMLElement;
   private buffs: HTMLElement;
   private wavePanel: HTMLElement;
   /** Day/night dial: phase ring, sun/moon marker, period name and time to the next change. */
@@ -60,7 +54,6 @@ export class Hud {
   private hint: HTMLElement;
   private mapBox: HTMLElement;
   private last: Record<string, string | number> = {};
-  private buildKey = '';
   private bannerT = 0;
   private fpsAcc = 0;
   private fpsN = 0;
@@ -71,6 +64,10 @@ export class Hud {
   onPause: () => void = () => {};
   readonly arpg = new ArpgHud();
   private bossFx: HTMLElement;
+  /** Stagger bar under the boss health: fills gold, flashes while the boss is broken. */
+  private bossStag: HTMLElement;
+  private bossStagText: HTMLElement;
+  private bossStagBox: HTMLElement;
 
   constructor(parent: HTMLElement) {
     this.xpFill = h('div.xp-fill');
@@ -81,8 +78,6 @@ export class Hud {
     this.time = h('div.hud-time');
     this.kills = h('span');
     this.gold = h('span');
-    this.slotsW = h('div.slots');
-    this.slotsP = h('div.slots.passives');
     this.buffs = h('div.buffs');
     this.waveTitle = h('div.wave-title');
     this.waveType = h('div.wave-type');
@@ -132,7 +127,10 @@ export class Hud {
     this.bossFill = h('div.boss-fill');
     this.bossPhase = h('div.boss-phase');
     this.bossFx = h('div.boss-fx');
-    this.bossBox = h('div.boss-bar.hidden', this.bossName, h('div.boss-track', this.bossFill), this.bossPhase, this.bossFx);
+    this.bossStag = h('div.boss-stag-fill');
+    this.bossStagText = h('div.boss-stag-text');
+    this.bossStagBox = h('div.boss-stag', this.bossStag, this.bossStagText);
+    this.bossBox = h('div.boss-bar.hidden', this.bossName, h('div.boss-track', this.bossFill), this.bossStagBox, this.bossPhase, this.bossFx);
     this.banner = h('div.banner-main');
     this.bannerSub = h('div.banner-sub');
     const bannerBox = h('div.banner', this.banner, this.bannerSub);
@@ -160,11 +158,10 @@ export class Hud {
         h(
           'div.hb-mid',
           h('div.hb-kills', h('i.ic-skull'), this.kills),
-          this.slotsW,
           h('div.xp-row', this.xpText, h('div.xp-bar', this.xpFill, h('div.xp-seg'))),
         ),
         h('div.hb-hex', h('div.hb-hex-inner', h('small', t('hud_lv')), this.lvl)),
-        h('div.hb-wing.right', this.slotsP),
+        h('div.hb-wing.right'),
       ),
     );
     parent.appendChild(this.root);
@@ -175,7 +172,6 @@ export class Hud {
 
   reset(run: Run | null = null) {
     this.last = {};
-    this.buildKey = '';
     this.boss = null;
     this.bossBox.classList.add('hidden');
     this.bannerBox.classList.remove('show');
@@ -224,6 +220,7 @@ export class Hud {
       this.bossName.style.color = hex(b.def.color);
       this.last.bossHp = -1;
       this.last.bossPhase = -1;
+      this.last.bossStag = -2;
     }
   }
 
@@ -305,27 +302,6 @@ export class Hud {
       this.set('dnDeg', Math.round(dn.cycleProgress * 360), () => this.dnMark.setAttribute('transform', `rotate(${(dn.cycleProgress * 360).toFixed(1)})`));
     }
 
-    // build slots
-    const key = run.weapons.list.map((w) => w.def.id + w.level).join() + '|' + [...run.passives.levels].map(([id, l]) => id + l).join();
-    if (key !== this.buildKey) {
-      this.buildKey = key;
-      clear(this.slotsW);
-      clear(this.slotsP);
-      for (let i = 0; i < BALANCE.weaponSlots; i++) {
-        const w = run.weapons.list[i];
-        this.slotsW.append(
-          w
-            ? h('div.slot' + (w.def.evolved ? '.evo' : w.isMax ? '.max' : ''), { title: L(WEAPON_BY_ID[w.def.id].name) }, iconImg(w.def.icon, w.def.color), h('b', w.def.evolved ? '★' : w.isMax ? 'MAX' : String(w.level)), h('span.slot-n', String(i + 1)))
-            : h('div.slot.empty', h('span.slot-n', String(i + 1))),
-        );
-      }
-      const ps = [...run.passives.levels];
-      for (let i = 0; i < BALANCE.passiveSlots; i++) {
-        const e = ps[i];
-        const def = e && PASSIVE_BY_ID[e[0]];
-        this.slotsP.append(def ? h('div.slot.small', { title: L(def.name) }, iconImg(def.icon, def.color), h('b', String(e[1]))) : h('div.slot.small.empty'));
-      }
-    }
     // effects: buffs with remaining time, weather and map events
     const b = p.buffs;
     const wt = run.weather;
@@ -357,6 +333,13 @@ export class Hud {
         const k = Math.max(0, e.hp / e.maxHp);
         this.set('bossHp', Math.round(k * 500), () => (this.bossFill.style.transform = `scaleX(${k})`));
         this.set('bossInv', e.invuln ? 1 : 0, () => this.bossBox.classList.toggle('invuln', e.invuln));
+        const broken = e.brokenT > 0;
+        const sk = e.stagMax > 0 ? Math.min(1, e.stag / e.stagMax) : 0;
+        this.set('bossStag', broken ? -1 : Math.round(sk * 300), () => {
+          this.bossStag.style.transform = `scaleX(${broken ? 1 : sk})`;
+          this.bossStagBox.classList.toggle('broken', broken);
+          this.bossStagText.textContent = broken ? t('ak_broken') : t('ak_stagger');
+        });
         this.arpg.bossExtras(boss, this.bossPhase, this.bossFx);
       }
     }

@@ -176,7 +176,7 @@ export class Pickups {
         run.fx.sound('coin');
         break;
       case 'heart':
-        pl.heal((10 + pl.stats.maxHp * 0.2) * run.perks.healMul());
+        pl.heal(10 + pl.stats.maxHp * 0.2);
         run.fx.sound('heal');
         run.fx.burst(pl.x, 1, pl.z, 0x6bff8a, 12, 2.5, 0.14, 0.6, 'glow');
         break;

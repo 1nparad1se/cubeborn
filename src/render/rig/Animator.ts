@@ -2,9 +2,11 @@ import * as THREE from 'three';
 import { BONES, type BoneId, type HeroRig, type SpringDef } from './HeroRig';
 import type { AnimStyle, Gait, PoseMap } from './animTypes';
 import { clipsFor, ease, type Clip } from './clips';
+import { CLASS_CLIPS } from './classClips';
 
 const D2R = Math.PI / 180;
-type ActionName = 'attack' | 'death' | 'levelup' | 'ability' | 'victory';
+/** Action clip names: the shared ones plus every name in the hero's class library. */
+type ActionName = string;
 export type AnimName = 'idle' | 'walk' | 'run' | ActionName | 'hit';
 
 const LEG_BONES = new Set<string>(['legL', 'legR', 'shinL', 'shinR', 'footL', 'footR', 'root', 'rootPos']);
@@ -13,6 +15,10 @@ const DEFAULT_SPRINGS: Partial<Record<BoneId, SpringDef['kind']>> = { capeA: 'ca
 interface Playing {
   clip: Clip;
   t: number;
+  /** Playback rate (attack speed). */
+  rate: number;
+  /** A looping clip asked to finish: plays its tail once, then fades. */
+  ending: boolean;
   /** Fades out once the clip is over (or when replaced). */
   out: number;
   firedEvents: number;
@@ -47,7 +53,7 @@ function smooth(a: number, b: number, x: number): number {
  */
 export class HeroAnimator {
   readonly style: AnimStyle;
-  private clips: Record<ActionName, Clip>;
+  private clips: Record<string, Clip>;
   private pose = new Map<string, [number, number, number]>();
   private stance: PoseMap;
   private action: Playing | null = null;
@@ -90,7 +96,7 @@ export class HeroAnimator {
   constructor(readonly rig: HeroRig) {
     this.style = rig.def.anim;
     this.stance = this.style.stance;
-    this.clips = clipsFor(this.style, rig.def.id);
+    this.clips = { ...clipsFor(this.style, rig.def.id), ...(CLASS_CLIPS[rig.def.id] ?? {}) };
     for (const id of BONES) this.pose.set(id, [0, 0, 0]);
     this.pose.set('rootPos', [0, 0, 0]);
     this.pose.set('hipsPos', [0, 0, 0]);
@@ -106,14 +112,28 @@ export class HeroAnimator {
     return this.action?.clip.name ?? (this.walkW > 0.5 ? (this.runW > 0.5 ? 'run' : 'walk') : 'idle');
   }
 
-  /** Starts an action clip. Attacks restart only once the previous one is mostly done. */
-  play(name: ActionName | 'hit', opts: { force?: boolean } = {}) {
+  /** Whether the hero's library has a clip by this name. */
+  has(name: string): boolean {
+    return !!this.clips[name];
+  }
+
+  /** Name of the clip playing now (or ''). */
+  get playing(): string {
+    return this.action?.clip.name ?? '';
+  }
+
+  /**
+   * Starts an action clip. Attacks restart only once the previous one is mostly done; skill
+   * clips (`force`) always replace the current one. `rate` speeds the clip up (attack speed).
+   */
+  play(name: ActionName | 'hit', opts: { force?: boolean; rate?: number } = {}) {
     if (name === 'hit') {
       this.hit(0, 1);
       return;
     }
     if (this.dead.value && name !== 'death') return;
-    const clip = this.clips[name];
+    const clip = this.clips[name] ?? (name.startsWith('basic') || name.includes('_basic') ? this.clips.attack : this.clips.ability);
+    if (!clip) return;
     const cur = this.action;
     if (cur && !opts.force) {
       if (cur.clip.name === 'death') return;
@@ -125,8 +145,28 @@ export class HeroAnimator {
       this.fading = cur;
     }
     this.restoreGroups();
-    this.action = { clip, t: 0, out: 0, firedEvents: 0, firedShow: 0, lastLocal: 0 };
+    this.action = { clip, t: 0, rate: opts.rate ?? 1, ending: false, out: 0, firedEvents: 0, firedShow: 0, lastLocal: 0 };
     if (name === 'death') this.dead.value = true;
+  }
+
+  /** Ends a looping clip (hold / charge / channel released): its tail plays once, then it fades. */
+  endLoop() {
+    const a = this.action;
+    if (!a || a.clip.loopFrom === undefined || a.ending) return;
+    a.ending = true;
+    // continue from the current loop position so the tail does not jump
+    const c = a.clip;
+    if (a.t > c.dur) a.t = c.loopFrom! + ((a.t - c.loopFrom!) % (c.dur - c.loopFrom!));
+  }
+
+  /** Stops the current action at once (interrupted by a dodge or a stagger). */
+  cancel() {
+    const cur = this.action;
+    if (!cur || cur.clip.name === 'death') return;
+    cur.out = Math.max(cur.out, 0.0001);
+    this.fading = cur;
+    this.action = null;
+    this.restoreGroups();
   }
 
   /** Back to plain locomotion (viewer reset, revive). */
@@ -206,14 +246,15 @@ export class HeroAnimator {
     }
     if (this.action) {
       const a = this.action;
-      a.t += dt;
+      a.t += dt * a.rate;
       const c = a.clip;
       let local = a.t;
-      if (c.loopFrom !== undefined && a.t > c.dur) local = c.loopFrom + ((a.t - c.loopFrom) % (c.dur - c.loopFrom));
+      const looping = c.loopFrom !== undefined && !a.ending;
+      if (looping && a.t > c.dur) local = c.loopFrom! + ((a.t - c.loopFrom!) % (c.dur - c.loopFrom!));
       this.fireMoments(a, local);
       const fi = c.fadeIn ?? 0.08;
       let w = Math.min(1, a.t / fi);
-      if (!c.hold && c.loopFrom === undefined && a.t > c.dur) {
+      if (!c.hold && !looping && a.t > c.dur) {
         a.out += dt;
         w *= Math.max(0, 1 - a.out / (c.fadeOut ?? 0.14));
         if (w <= 0) {
@@ -406,7 +447,7 @@ export class HeroAnimator {
     const b = keys[Math.min(i + 1, keys.length - 1)];
     const span = b.t - a.t;
     const u = span > 0 ? ease(b.e, Math.min(1, Math.max(0, (t - a.t) / span))) : 1;
-    const legW = c.name === 'death' || c.name === 'victory' ? 1 : 1 - moveW;
+    const legW = c.name === 'death' || c.name === 'victory' || c.full ? 1 : 1 - moveW;
     for (const key in b.p) {
       const vb = b.p[key as BoneId]!;
       const va = a.p[key as BoneId] ?? vb;

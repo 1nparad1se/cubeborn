@@ -1,29 +1,31 @@
 import type { DayPeriod } from '../config/dayNight';
 import { BALANCE } from '../config/balance';
 import { HEROES } from '../data/heroes';
-import { WEAPONS, WEAPON_BY_ID } from '../data/weapons';
-import { PASSIVES, PASSIVE_BY_ID } from '../data/passives';
 import { MAPS } from '../data/maps';
-import { PERM_UPGRADES } from '../data/upgrades';
 import { ACHIEVEMENTS } from '../data/achievements';
-import { ENEMY_BY_ID } from '../data/enemies';
+import { ENEMY_BY_ID, ELITE_MODS, type EliteId } from '../data/enemies';
+import { BOSSES } from '../data/bosses';
 import type { Profile } from '../meta/Profile';
 import type { SaveData } from '../meta/Save';
 import type { Run } from '../game/Run';
+import type { Enemy } from '../game/Enemy';
 import type { PickupKind } from '../game/Pickups';
-import type { EliteId } from '../data/enemies';
 import { DEV_TOOLS_AVAILABLE } from './flags';
-import { BOSSES } from '../data/bosses';
 import { L, t } from '../i18n';
-import { MAX_LEVEL } from '../game/arpg/kits';
+import { MAX_LEVEL, TRIPOD_LEVELS, SLOT_KEYS, type ClassId } from '../game/action/types';
+import { CLASS_BY_ID } from '../game/action/classes';
+import { tripodsFor } from '../game/action/tripods';
+import { BossController } from '../game/bosses/Boss';
 import { EQUIP_POS, makeItem, slotOf, BASES, type GearSlot } from '../game/arpg/Gear';
+import { BAG_SIZE } from '../game/arpg/Loot';
 import type { Rarity, StatKey } from '../data/types';
-
-const wname = (id: string) => L(WEAPON_BY_ID[id]?.name) || id;
 
 export type DevToggle = 'god' | 'infHp' | 'infXp' | 'infGold' | 'infCoins' | 'freeze' | 'infRes' | 'noCd';
 
-/** XP multiplier used by "Infinite XP" (a true infinite would open a level-up every frame). */
+/** Where spawns and drops land: at the cursor or around the hero. */
+export type DevPlace = 'cursor' | 'hero';
+
+/** XP multiplier used by "Infinite XP" (a true infinite would level up every frame). */
 export const INF_XP_MUL = 25;
 
 const clone = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
@@ -42,6 +44,14 @@ class Rate {
     this.samples.length = 0;
     this.value = 0;
   }
+}
+
+/** A named teleport destination on the current map. */
+export interface DevPoint {
+  id: string;
+  label: string;
+  x: number;
+  z: number;
 }
 
 /**
@@ -67,6 +77,11 @@ export class DevMode {
   private listeners = new Set<() => void>();
   /** Called after test data changed so menus can redraw. */
   onProfileChange: (() => void) | null = null;
+  /**
+   * Provided by the App: starts a new run with the given class on the current map (the map,
+   * difficulty and mode of the running or last run). The run it starts goes through applyRun as usual.
+   */
+  onStartClass: ((id: ClassId) => void) | null = null;
   // debug info
   readonly dps = new Rate();
   readonly dtps = new Rate();
@@ -198,31 +213,56 @@ export class DevMode {
     }
   }
 
+  // ---------------------------------------------------------------- class
+  /** Starts a new test run with the chosen class on the current map (needs App's onStartClass). */
+  startClass(id: ClassId) {
+    if (!this.enabled) return;
+    if (!this.onStartClass) return this.changed(t('dvm_no_start'));
+    const name = L(CLASS_BY_ID[id]?.name) || id;
+    this.onStartClass(id);
+    this.changed(t('dvm_class', { name }));
+  }
+
   // ---------------------------------------------------------------- player
   private need(): Run | null {
     if (!this.run) this.changed(t('dvm_need_run'));
     return this.run;
   }
 
-  maxLevel() {
+  /** Sets the hero level (1..30). Raising it grants the skill points and skills those levels give. */
+  setLevel(level: number) {
     const run = this.need();
     if (!run) return;
     const p = run.player;
-    // walk the levels so Ultimate upgrades at 12/18/22 are granted; choices are skipped
-    while (p.level < MAX_LEVEL) {
-      p.level++;
-      run.skills.onLevel(p.level);
+    const a = run.action;
+    level = Math.max(1, Math.min(MAX_LEVEL, Math.round(level)));
+    if (level > p.level) {
+      a.points += level - p.level;
+      a.unlockSkills(level);
     }
+    p.level = level;
     p.pendingLevels = 0;
     p.xp = 0;
     p.xpNext = BALANCE.xpForLevel(p.level);
-    this.changed(t('dvm_level'));
+    run.recomputeStats();
+    this.changed(t('dvm_level', { n: level }));
+  }
+
+  maxLevel() {
+    this.setLevel(MAX_LEVEL);
+  }
+
+  addPoints(n: number) {
+    const run = this.need();
+    if (!run) return;
+    run.action.points = Math.max(0, run.action.points + n);
+    this.changed(t('dvm_points', { n: run.action.points }));
   }
 
   addXp(v: number) {
     const run = this.need();
     if (!run) return;
-    run.player.addXp(v / run.debug.xpMul / run.player.stats.growth);
+    run.player.addXp(v / run.debug.xpMul / 1.35 / run.player.stats.growth);
     this.changed(t('dvm_xp', { v }));
   }
 
@@ -244,6 +284,7 @@ export class DevMode {
     const run = this.need();
     if (!run) return;
     run.player.heal(run.player.stats.maxHp * 10, true);
+    run.player.hp = run.player.stats.maxHp;
     this.changed(t('dvm_healed'));
   }
 
@@ -258,82 +299,142 @@ export class DevMode {
     p.invulnT = 0;
     p.buffs.aegis = 0;
     p.shield = false;
+    run.action.shield = 0;
     p.hurt(p.hp + 99999, null, true);
     run.debug.god = wasGod;
     run.debug.infHp = wasInf;
     this.changed(t('dvm_killed_player'));
   }
 
-  /** Max level, full slots of maxed (and evolved where possible) weapons, maxed passives, full HP. */
+  /** Level 30, every skill at level 10 with both tripods, full HP, resource, Ultimate gauge and cooldowns. */
   maxPlayer() {
     const run = this.need();
     if (!run) return;
-    this.maxLevel();
-    const ws = run.weapons;
-    // fill weapon slots: evolvable weapons first so their evolutions can be shown off
-    const candidates = WEAPONS.filter((w) => !w.evolved && !ws.has(w.id) && !ws.list.some((x) => x.def.evolution?.into === w.id)).sort((a, b) => Number(!!b.evolution) - Number(!!a.evolution));
-    for (const w of candidates) {
-      if (ws.list.length >= BALANCE.weaponSlots) break;
-      ws.add(w.id);
-    }
-    for (const w of [...ws.list]) {
-      while (!w.isMax) w.levelUp();
-      const evo = w.def.evolution;
-      if (!evo) continue;
-      if (!run.passives.has(evo.passive) && run.passives.count < BALANCE.passiveSlots) run.passives.levels.set(evo.passive, PASSIVE_BY_ID[evo.passive]?.maxLevel ?? 1);
-      if (run.passives.has(evo.passive)) this.evolve(run, w.def.id);
-    }
-    for (const ps of PASSIVES) {
-      if (run.passives.count >= BALANCE.passiveSlots) break;
-      if (!run.passives.has(ps.id)) run.passives.levels.set(ps.id, ps.maxLevel);
-    }
-    for (const id of [...run.passives.levels.keys()]) run.passives.levels.set(id, PASSIVE_BY_ID[id].maxLevel);
-    run.recomputeStats();
+    this.setLevel(MAX_LEVEL);
+    const a = run.action;
+    a.devMaxAll();
+    a.resetCooldowns();
+    a.fillResource();
+    a.fillUlt();
     run.player.hp = run.player.stats.maxHp;
     this.changed(t('dvm_max_player'));
   }
 
-  // ---------------------------------------------------------------- action-RPG tools
-  /** Level 22, every skill at max, the Ultimate learned and maxed. */
-  arpgMax() {
+  // ---------------------------------------------------------------- action combat
+  resetCooldowns() {
     const run = this.need();
     if (!run) return;
-    this.maxLevel();
-    run.skills.devMaxAll();
-    run.skills.resetCooldowns();
-    this.changed(t('dvm_arpg_max'));
+    run.action.resetCooldowns();
+    this.changed(t('dvm_cd_reset'));
+  }
+
+  fillResource() {
+    const run = this.need();
+    if (!run) return;
+    run.action.fillResource();
+    this.changed(t('dvm_res_full', { res: L(run.action.cls.res.name) }));
+  }
+
+  fillUlt() {
+    const run = this.need();
+    if (!run) return;
+    run.action.fillUlt();
+    const a = run.action;
+    this.changed(run.player.level >= a.cls.ult.unlock ? t('dvm_ult_full') : t('dvm_ult_locked', { n: a.cls.ult.unlock }));
+  }
+
+  /** Fills the class resource so the Identity (Z) can be triggered at once. */
+  readyIdentity() {
+    const run = this.need();
+    if (!run) return;
+    const a = run.action;
+    a.identityT = Math.min(a.identityT, 0);
+    a.fillResource();
+    this.changed(t('dvm_identity', { name: L(a.cls.identity.name) }));
+  }
+
+  unlockSkills() {
+    const run = this.need();
+    if (!run) return;
+    run.action.devUnlockAll();
+    this.changed(t('dvm_skills_open'));
+  }
+
+  maxSkills() {
+    const run = this.need();
+    if (!run) return;
+    run.action.devMaxAll();
+    this.changed(t('dvm_skills_max'));
   }
 
   setSkillLevel(slot: number, level: number) {
     const run = this.need();
     if (!run) return;
-    const sk = run.skills;
-    if (slot < 3) sk.levels[slot] = Math.max(1, Math.min(6, level));
-    else sk.ultLevel = Math.max(0, Math.min(4, level));
-    this.changed(t('dvm_skill_lv', { s: ['Q', 'W', 'E', 'R'][slot], n: sk.level(slot) }));
+    const a = run.action;
+    if (slot < 0 || slot > 7) return;
+    a.devSetLevel(slot, level);
+    this.changed(t('dvm_skill_level', { s: SLOT_KEYS[slot], name: L(a.cls.skills[slot].name), n: a.levels[slot] }));
   }
 
-  resetCooldowns() {
+  /** Picks a tripod (index 0..2, -1 clears) of a tier; raises the skill to the tier's level when needed. */
+  setTripod(slot: number, tier: number, i: number) {
     const run = this.need();
     if (!run) return;
-    run.skills.resetCooldowns();
-    this.changed(t('dvm_cd_reset'));
+    const a = run.action;
+    if (slot < 0 || slot > 7 || tier < 0 || tier > 1) return;
+    if (a.levels[slot] < TRIPOD_LEVELS[tier]) a.devSetLevel(slot, TRIPOD_LEVELS[tier]);
+    a.setTripod(slot, tier, i);
+    const tp = i >= 0 ? tripodsFor(a.cls.skills[slot])[tier][i] : null;
+    this.changed(tp ? t('dvm_tripod', { s: SLOT_KEYS[slot], name: L(tp.name) }) : t('dvm_tripod_off', { s: SLOT_KEYS[slot] }));
   }
 
-  /** Casts a skill toward the nearest enemy (or ahead) ignoring cooldown and cost. */
+  /** Presses a skill key for the hero (cooldown and resource reset first). Slot 8 is the Ultimate. */
   testSkill(slot: number) {
     const run = this.need();
     if (!run) return;
-    const sk = run.skills;
+    const a = run.action;
+    if (slot < 8 && a.levels[slot] <= 0) a.devSetLevel(slot, 1);
+    a.cds[slot] = 0;
+    a.fillResource();
+    if (slot === 8) a.fillUlt();
+    run.ctl.casts.push(slot);
+    const def = a.skill(slot);
+    this.changed(t('dvm_cast', { name: L(def?.name) }));
+  }
+
+  // ---------------------------------------------------------------- places
+  /** The point a spawn lands on: the cursor (when walkable) or a ring around the hero. */
+  private placeFor(run: Run, place: DevPlace, i = 0, n = 1, r = 4): { x: number; z: number } {
     const p = run.player;
-    if (sk.level(slot) <= 0) sk.ultLevel = slot === 3 ? 1 : sk.ultLevel;
-    const e = run.enemies.nearest(p.x, p.z, 14, undefined, true);
-    const ax = e ? e.x : p.x + p.fx * 5;
-    const az = e ? e.z : p.z + p.fz * 5;
-    sk.cds[slot] = 0;
-    sk.res = run.skills.kit.res.id === 'heat' ? 0 : sk.resMax;
-    sk.cast(slot, ax, az);
-    this.changed(t('dvm_skill_test', { s: ['Q', 'W', 'E', 'R'][slot] }));
+    const cx = place === 'cursor' ? run.ctl.aimX : p.x;
+    const cz = place === 'cursor' ? run.ctl.aimZ : p.z;
+    const ring = place === 'cursor' ? (n > 1 ? 1.2 + Math.sqrt(n) * 0.4 : 0) : r;
+    const a = (i / n) * Math.PI * 2 + Math.random() * 0.6;
+    return this.walkable(run, cx + Math.cos(a) * ring, cz + Math.sin(a) * ring) ?? { x: p.x + 4, z: p.z };
+  }
+
+  /** Nearest walkable point to (x, z) on a small spiral search, or null. */
+  private walkable(run: Run, x: number, z: number): { x: number; z: number } | null {
+    const tr = run.terrain;
+    const ok = (px: number, pz: number) => tr.inBounds(Math.floor(px), Math.floor(pz)) && !tr.blocksWalker(Math.floor(px), Math.floor(pz));
+    if (ok(x, z)) return { x, z };
+    for (let r = 1; r <= 8; r++) {
+      for (let k = 0; k < 12; k++) {
+        const a = (k / 12) * Math.PI * 2;
+        const px = x + Math.cos(a) * r;
+        const pz = z + Math.sin(a) * r;
+        if (ok(px, pz)) return { x: px, z: pz };
+      }
+    }
+    return null;
+  }
+
+  private moveHero(run: Run, x: number, z: number) {
+    const p = run.player;
+    p.x = x;
+    p.z = z;
+    p.clearPath();
+    run.nav.update(0, x, z, true);
   }
 
   /** Moves the hero to the last cursor point on the ground. */
@@ -343,28 +444,75 @@ export class DevMode {
     const t2 = run.terrain;
     const x = run.ctl.aimX;
     const z = run.ctl.aimZ;
-    if (!t2.inBounds(Math.floor(x), Math.floor(z)) || t2.blocksWalker(Math.floor(x), Math.floor(z))) {
-      this.changed(t('dvm_tp_blocked'));
-      return;
-    }
-    run.player.x = x;
-    run.player.z = z;
-    run.player.clearPath();
-    run.nav.update(0, x, z, true);
+    if (!t2.inBounds(Math.floor(x), Math.floor(z)) || t2.blocksWalker(Math.floor(x), Math.floor(z))) return this.changed(t('dvm_tp_blocked'));
+    this.moveHero(run, x, z);
     this.changed(t('dvm_tp'));
   }
 
-  createItem(slot: GearSlot | 'any', rarity: Rarity) {
+  /** Named destinations of the current map: centre, the living boss and the map's landmarks. */
+  points(): DevPoint[] {
+    const run = this.run;
+    if (!run) return [];
+    const c = run.terrain.size / 2;
+    const out: DevPoint[] = [{ id: 'centre', label: t('dv_pt_centre'), x: c, z: c }];
+    const boss = run.bosses.find((b) => b.e.alive);
+    if (boss) out.push({ id: 'boss', label: t('dv_pt_boss', { name: L(boss.def.name) }), x: boss.e.x, z: boss.e.z });
+    const s = run.terrain.size;
+    out.push(
+      { id: 'nw', label: t('dv_pt_nw'), x: s * 0.15, z: s * 0.15 },
+      { id: 'ne', label: t('dv_pt_ne'), x: s * 0.85, z: s * 0.15 },
+      { id: 'sw', label: t('dv_pt_sw'), x: s * 0.15, z: s * 0.85 },
+      { id: 'se', label: t('dv_pt_se'), x: s * 0.85, z: s * 0.85 },
+    );
+    run.terrain.markers.forEach((m, i) => {
+      const kind = m.kind === 'poi' ? 'poi_' + (m.sub ?? '') : m.kind;
+      out.push({ id: 'm' + i, label: `${t('dv_pt_' + kind)} ${i + 1}`, x: m.x, z: m.z });
+    });
+    return out;
+  }
+
+  teleportTo(id: string) {
+    const run = this.need();
+    if (!run) return;
+    const pt = this.points().find((p) => p.id === id);
+    if (!pt) return;
+    // next to a boss, not inside it
+    const dx = id === 'boss' ? -4 : 0;
+    const pos = this.walkable(run, pt.x + dx, pt.z);
+    if (!pos) return this.changed(t('dvm_tp_blocked'));
+    this.moveHero(run, pos.x, pos.z);
+    this.changed(t('dvm_tp_to', { name: pt.label }));
+  }
+
+  // ---------------------------------------------------------------- gear
+  /** A random item of the slot and rarity straight into the bag. */
+  giveItem(slot: GearSlot | 'any', rarity: Rarity, count = 1) {
+    const run = this.need();
+    if (!run) return;
+    const loot = run.loot;
+    const bases = slot === 'any' ? BASES : BASES.filter((b) => b.slot === slot);
+    let n = 0;
+    for (let i = 0; i < count; i++) {
+      if (loot.bag.length >= BAG_SIZE) break;
+      const base = bases[Math.floor(Math.random() * bases.length)];
+      loot.give(makeItem(Math.random, loot.ilvl, rarity, base.id));
+      n++;
+    }
+    this.changed(n ? t('dvm_give', { n, rar: t('rar_' + rarity) }) : t('dvm_bag_full'));
+  }
+
+  /** Drops a random item of the slot and rarity on the ground near the hero. */
+  dropItem(slot: GearSlot | 'any', rarity: Rarity) {
     const run = this.need();
     if (!run) return;
     const bases = slot === 'any' ? BASES : BASES.filter((b) => b.slot === slot);
     const base = bases[Math.floor(Math.random() * bases.length)];
-    const it = makeItem(Math.random, run.loot.ilvl, rarity, base.id);
-    run.loot.drop(it, run.player.x + run.player.fx * 1.5, run.player.z + run.player.fz * 1.5);
-    this.changed(t('dvm_item'));
+    const p = run.player;
+    run.loot.drop(makeItem(Math.random, run.loot.ilvl, rarity, base.id), p.x + 1.5, p.z);
+    this.changed(t('dvm_item_drop'));
   }
 
-  /** A full equipped set of one rarity (replaces what is worn). */
+  /** A full equipped set of one rarity (replaces what is worn; the old pieces go to the bag while it has room). */
   giveGearSet(rarity: Rarity) {
     const run = this.need();
     if (!run) return;
@@ -374,10 +522,16 @@ export class DevMode {
       const it = makeItem(Math.random, loot.ilvl, rarity, opts[Math.floor(Math.random() * opts.length)].id);
       loot.bag.push(it);
       loot.equip(it, pos);
-      const i = loot.bag.length;
-      if (i > 30) loot.bag.length = 30;
+      if (loot.bag.length > BAG_SIZE) loot.bag.length = BAG_SIZE;
     }
     this.changed(t('dvm_gear_set'));
+  }
+
+  clearBag() {
+    const run = this.need();
+    if (!run) return;
+    run.loot.bag.length = 0;
+    this.changed(t('dvm_bag_clear'));
   }
 
   /** Adds a flat developer bonus to a stat (fractions for % stats). */
@@ -398,7 +552,7 @@ export class DevMode {
   }
 
   // ---------------------------------------------------------------- unlocks (test save only)
-  unlock(what: 'heroes' | 'weapons' | 'maps' | 'upgrades' | 'achievements' | 'evolutions' | 'all') {
+  unlock(what: 'heroes' | 'maps' | 'achievements' | 'all') {
     const p = this.profile;
     if (!p || !this.enabled) return;
     const d: SaveData = p.data;
@@ -407,118 +561,95 @@ export class DevMode {
     };
     const all = what === 'all';
     if (all || what === 'heroes') add(d.unlocked.heroes, HEROES.map((h) => h.id));
-    if (all || what === 'weapons') {
-      add(d.unlocked.weapons, WEAPONS.map((w) => w.id));
-      add(d.unlocked.passives, PASSIVES.map((x) => x.id));
-      add(d.discovered.weapons, WEAPONS.filter((w) => !w.evolved).map((w) => w.id));
-      add(d.discovered.passives, PASSIVES.map((x) => x.id));
-    }
     if (all || what === 'maps') {
       add(d.unlocked.maps, MAPS.map((m) => m.id));
       for (const m of MAPS) d.mapClears[m.id] = Math.max(d.mapClears[m.id] ?? -1, 3);
     }
-    if (all || what === 'upgrades') for (const u of PERM_UPGRADES) d.perm[u.id] = u.maxLevel;
     if (all || what === 'achievements') add(d.achievements, ACHIEVEMENTS.map((a) => a.id));
-    if (all || what === 'evolutions') add(d.discovered.weapons, WEAPONS.filter((w) => w.evolved).map((w) => w.id));
     d.seenIntro = true;
     this.changed(t('dvm_unlocked', { what: t('dvm_what_' + what) }));
     this.onProfileChange?.();
   }
 
-  // ---------------------------------------------------------------- weapons
-  addWeapon(id: string) {
-    const run = this.need();
-    if (!run) return;
-    const def = WEAPON_BY_ID[id];
-    if (!def) return;
-    if (def.evolved) return this.addEvolution(id);
-    if (run.weapons.has(id)) return this.changed(t('dvm_owned'));
-    if (run.weapons.list.length >= BALANCE.weaponSlots) return this.changed(t('dvm_slots'));
-    run.weapons.add(id);
-    run.stats.discovered.add(id);
-    this.changed(t('dvm_added', { name: wname(id) }));
-  }
-
-  setWeaponLevel(id: string, level: number) {
-    const run = this.need();
-    if (!run) return;
-    run.weapons.devSetLevel(id, level);
-    this.changed();
-  }
-
-  removeWeapon(id: string) {
-    const run = this.need();
-    if (!run) return;
-    run.weapons.devRemove(id);
-    this.changed(t('dvm_removed', { name: wname(id) }));
-  }
-
-  /** Gives an evolved weapon: evolves its base weapon when owned, otherwise adds it to a free slot. */
-  addEvolution(id: string) {
-    const run = this.need();
-    if (!run) return;
-    if (run.weapons.has(id)) return this.changed(t('dvm_owned'));
-    const base = run.weapons.list.find((w) => w.def.evolution?.into === id);
-    if (base) {
-      while (!base.isMax) base.levelUp();
-      this.evolve(run, base.def.id);
-    } else if (run.weapons.list.length < BALANCE.weaponSlots) {
-      run.weapons.add(id);
-      run.stats.evolutions.push(id);
-      run.stats.discovered.add(id);
-    } else return this.changed(t('dvm_slots'));
-    this.changed(t('dvm_evolved', { name: wname(id) }));
-  }
-
-  private evolve(run: Run, id: string) {
-    const w = run.weapons.get(id);
-    if (!w) return;
-    const nw = run.weapons.evolve(w);
-    if (!nw) return;
-    run.stats.evolutions.push(nw.def.id);
-    run.stats.discovered.add(nw.def.id);
-    run.events.emit('evolution', nw.def.id);
-  }
-
-  addPassive(id: string) {
-    const run = this.need();
-    if (!run) return;
-    if (!run.passives.has(id) && run.passives.count >= BALANCE.passiveSlots) return this.changed(t('dvm_pslots'));
-    this.setPassiveLevel(id, run.passives.level(id) + 1);
-  }
-
-  setPassiveLevel(id: string, level: number) {
-    const run = this.need();
-    if (!run) return;
-    const def = PASSIVE_BY_ID[id];
-    if (!def) return;
-    level = Math.max(0, Math.min(def.maxLevel, level));
-    if (level === 0) run.passives.levels.delete(id);
-    else run.passives.levels.set(id, level);
-    run.stats.discovered.add(id);
-    run.recomputeStats();
-    this.changed();
-  }
-
   // ---------------------------------------------------------------- enemies
-  spawnEnemy(id: string, elite: boolean | EliteId = false, count = 1) {
+  spawnEnemy(id: string, elite: boolean | EliteId = false, count = 1, place: DevPlace = 'cursor') {
     const run = this.need();
     if (!run) return;
     const def = ENEMY_BY_ID[id];
     if (!def) return;
     for (let i = 0; i < count; i++) {
-      const pos = run.spawner.findSpawnPos(!!def.flying, 5, 9) ?? { x: run.player.x + 6, z: run.player.z };
+      const pos = this.placeFor(run, place, i, count, 6);
       const el = elite === true ? run.spawner.randomElite() : elite || null;
       run.enemies.spawn(def, pos.x, pos.z, { elite: el });
     }
-    this.changed(t('dvm_spawned', { name: L(ENEMY_BY_ID[id]?.name) || id, n: count, elite: elite ? t('dvm_elite') : '' }));
+    const eliteName = typeof elite === 'string' ? ` (${L(ELITE_MODS[elite].name)})` : elite ? t('dvm_elite') : '';
+    this.changed(t('dvm_spawned', { name: L(def.name) || id, n: count, elite: eliteName }));
   }
 
-  spawnBoss(id: string) {
+  spawnBoss(id: string, place: DevPlace = 'cursor') {
     const run = this.need();
     if (!run) return;
-    run.spawner.devSpawnBoss(id);
-    this.changed(t('dvm_boss', { name: L(BOSSES.find((b) => b.id === id)?.name) || id }));
+    const def = BOSSES.find((b) => b.id === id);
+    if (!def) return;
+    const pos = this.placeFor(run, place, 0, 1, 10);
+    const b = BossController.spawn(run, id, pos.x, pos.z, false);
+    if (!b) return this.changed(t('dvm_boss_fail'));
+    run.stats.bossesSeen++;
+    run.events.emit('bossSpawn', b);
+    run.fx.sound('bossRoar');
+    run.fx.shake(0.5);
+    this.changed(t('dvm_boss', { name: L(def.name) || id }));
+  }
+
+  /** The current boss, or else the enemy nearest the hero. */
+  private target(run: Run): Enemy | null {
+    const b = run.bosses.find((x) => x.e.alive);
+    if (b) return b.e;
+    let best: Enemy | null = null;
+    let bd = 1e9;
+    const p = run.player;
+    for (const e of run.enemies.list) {
+      if (!e.alive || e.isAlly || e.def.category === 'prop') continue;
+      const d = (e.x - p.x) ** 2 + (e.z - p.z) ** 2;
+      if (d < bd) {
+        bd = d;
+        best = e;
+      }
+    }
+    return best;
+  }
+
+  /** Fills the stagger bar of the current boss (or the nearest enemy): it breaks at once. */
+  breakStagger() {
+    const run = this.need();
+    if (!run) return;
+    const e = this.target(run);
+    if (!e) return this.changed(t('dvm_no_target'));
+    run.combat.breakStagger(e);
+    this.changed(t('dvm_stagger', { name: e.boss ? L(e.boss.def.name) : L(e.def.name) }));
+  }
+
+  /** Breaks the stagger of every enemy on the map. */
+  breakAll() {
+    const run = this.need();
+    if (!run) return;
+    let n = 0;
+    for (const e of run.enemies.list) {
+      if (!e.alive || e.isAlly || e.def.category === 'prop') continue;
+      run.combat.breakStagger(e);
+      n++;
+    }
+    this.changed(t('dvm_stagger_all', { n }));
+  }
+
+  /** Drops the current boss (or the nearest enemy) to 10% health. */
+  lowTarget() {
+    const run = this.need();
+    if (!run) return;
+    const e = this.target(run);
+    if (!e) return this.changed(t('dvm_no_target'));
+    e.hp = Math.max(1, Math.min(e.hp, e.maxHp * 0.1));
+    this.changed(t('dvm_low', { name: e.boss ? L(e.boss.def.name) : L(e.def.name) }));
   }
 
   killAll() {
@@ -557,7 +688,7 @@ export class DevMode {
   spawnWaveBoss() {
     const run = this.need();
     if (!run) return;
-    this.spawnBoss(run.waves.wave.boss ?? run.map.midBoss);
+    this.spawnBoss(run.waves.wave.boss ?? run.map.midBoss, 'hero');
   }
 
   eliteWave() {

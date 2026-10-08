@@ -11,7 +11,7 @@ import { Overlay } from './Overlay';
 import { LightPool } from './LightPool';
 import { makeBlobTexture, makeBlockTexture } from './Textures';
 import { ArticulatedModel } from './ArticulatedModel';
-import { heroRig } from '../models/heroRigs';
+import { heroRig } from '../models/rigs';
 import { HeroRig } from './rig/HeroRig';
 import { HeroAnimator } from './rig/Animator';
 import { makeHeroTexture } from './Textures';
