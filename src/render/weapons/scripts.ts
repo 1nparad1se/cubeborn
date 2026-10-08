@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { EmitKind, EmitLayer } from '../../config/vfx';
 import type { WeaponActor, FxPort, WeaponScript } from './actor';
+import type { Lightning } from './fxkit';
 
 /**
  * Motion scripts: one per weapon object. Each poses the model's nodes every frame (idle sway,
@@ -402,19 +403,50 @@ const ROD_SPARK = L('spark', 1, 0xe8f8ff, 2.2, 0.05, 0.22, PI, 0.5, 0x8ad0ff);
 const ROD_GATHER = L('gather', 1, 0xd8f0ff, 1.2, 0.07, 0.3, PI, 0, 0x8ad0ff);
 const ROD_FLASH = [L('spark', 16, 0xffffff, 8, 0.06, 0.25, PI, 3, 0xfff27a), L('glow', 6, 0xd8f0ff, 3, 0.25, 0.25, PI)];
 const ROD_HIT = [
-  L('spark', 22, 0xffffff, 10, 0.07, 0.3, PI, 3, 0xfff27a),
-  L('glow', 8, 0xb3f0ff, 4, 0.3, 0.3, PI, 1),
+  L('spark', 14, 0xffffff, 9, 0.045, 0.28, PI, 3, 0xbfe4ff),
+  L('glow', 5, 0xb3f0ff, 3, 0.2, 0.25, PI, 1),
   L('debris', 5, 0x6a6458, 3.5, 0.09, 0.6, PI),
   L('smoke', 3, 0x8a90a8, 0.8, 0.5, 0.7, PI, 0.5),
 ];
+const ROD_RESTRIKE = L('spark', 10, 0xffffff, 7, 0.05, 0.22, PI, 2.5, 0xbfe4ff);
 const ROD_SHARDS = [L('shard', 18, 0xbfeaff, 5, 0.09, 0.8, PI, 2.5, 0xffffff), L('spark', 12, 0xffffff, 6, 0.05, 0.3, PI, 1)];
+
+/** Sky point a strike on `to` comes from: high up, leaning away so the channel reads on screen. */
+export function strikeSource(to: THREE.Vector3, out: THREE.Vector3, lean = 2.5, height = 11): THREE.Vector3 {
+  const ang = Math.random() * TAU;
+  return out.set(to.x + Math.cos(ang) * lean, to.y + height, to.z + Math.sin(ang) * lean - lean * 0.6);
+}
+/** Strike options by upgrade tier: wider, more branched and more restrokes as the rod grows. */
+export function strikeOpts(tier: number) {
+  return { width: 0.06 + tier * 0.015, branches: 3 + tier, restrokes: tier >= 3 ? 2 : -1, color: tier >= 4 ? 0xd8c8ff : 0xbfe4ff };
+}
+function rodStrike(a: WeaponActor, to: THREE.Vector3) {
+  a.strike(strikeSource(to, v3, 0.9, 4.2), to, strikeOpts(a.tier));
+}
+/** Lights and impact bursts that follow each strike's strokes (shared with the game's strikes). */
+export function strikeFx(bolts: readonly Lightning[], fx: FxPort, q: number) {
+  for (const b of bolts) {
+    if (!b.alive || b.brightness < 0.02) continue;
+    const up = b.to.y > b.from.y;
+    const end = up ? b.from : b.to;
+    fx.light(end.x, end.y + 0.6, end.z, 0xdfeeff, Math.min(7, 4.5 * b.brightness), 7);
+    if (!up) {
+      v1.lerpVectors(b.from, b.to, 0.6);
+      fx.light(v1.x, v1.y, v1.z, 0xb8c8ff, Math.min(5, 2.5 * b.brightness), 9);
+    }
+    if (!up && b.strokes > b.handled) {
+      const first = !b.handled;
+      b.handled = b.strokes;
+      if (first) for (const l of ROD_HIT) emitAt(fx, b.to, l, q);
+      else emitAt(fx, b.to, ROD_RESTRIKE, q);
+    }
+  }
+}
 
 const rod: WeaponScript = {
   trailNode: 'core',
   init(a) {
     for (let i = 0; i < 4; i++) a.addArc(0xbfe8ff, 0.035, 0.12, 5);
-    // the bolt that leaves the rod / strikes the target
-    a.addArc(0xfff6c0, 0.12, 0.5, 10).intensity = 0;
     a.facing = 'fixed';
   },
   start(a) {
@@ -477,23 +509,20 @@ const rod: WeaponScript = {
       arc.a.copy(core);
       a.nodePoint('head', ROD_TIPS[i][0], 7.3, ROD_TIPS[i][1], arc.b);
     }
-    const bolt = a.arcs[4];
     if (a.mode === 'attack') {
       const p = a.modeT / a.def.attackTime;
-      bolt.intensity = bump(p, 0.15, 0.55) * 1.6;
-      bolt.a.copy(core);
-      bolt.b.set(core.x + Math.sin(a.t * 30) * 0.2, core.y + 9, core.z);
-      if (at(a, dt, a.def.attackTime * 0.17)) for (const l of ROD_FLASH) emitAt(fx, core, l, q);
+      // the rod discharges upward into the sky: a thin bolt climbs from the crystal
+      if (at(a, dt, a.def.attackTime * 0.17)) {
+        for (const l of ROD_FLASH) emitAt(fx, core, l, q);
+        v2.set(core.x + (Math.random() - 0.5) * 2.4, core.y + 8 + Math.random() * 2, core.z + (Math.random() - 0.5) * 2.4);
+        a.strike(core, v2, { width: 0.05 + a.tier * 0.012, branches: 1 + a.tier, restrokes: 0, leader: 0.05 });
+      }
       if (p < 0.5) fx.light(core.x, core.y, core.z, 0xd8f0ff, 3.5 * (1 - p * 2), 5);
-    } else if (a.mode === 'hit') {
-      // the strike lands on the target
-      const p = a.modeT / a.def.hitTime;
-      bolt.intensity = (1 - p) * 1.8;
-      bolt.a.set(a.target.x, a.target.y + 9, a.target.z);
-      bolt.b.copy(a.target);
-      if (at(a, dt, 0)) for (const l of ROD_HIT) emitAt(fx, a.target, l, q);
-      fx.light(a.target.x, a.target.y + 0.5, a.target.z, 0xfff6c0, 4 * (1 - p), 5);
-    } else bolt.intensity = 0;
+    } else if (a.mode === 'hit' && at(a, dt, 0)) {
+      // a natural cloud-to-ground strike lands on the target
+      rodStrike(a, a.target);
+    }
+    strikeFx(a.bolts, fx, q);
     if (a.mode === 'destroy' && at(a, dt, 0)) for (const l of ROD_SHARDS) emitAt(fx, core, l, q);
     if (!live) return;
     stream(a, fx, 's', ROD_SPARK, a.def.particles * (0.6 + c * 2), dt, core, false);

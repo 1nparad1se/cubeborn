@@ -637,6 +637,17 @@ export class EntityRenderer {
           this.glowDisc.push(e.x2, 0.06, e.z2, 0, 2.2, 1, 2.2, c, 0, 0, 0, k * 0.7);
           break;
         }
+        case 'strike': {
+          // the channel itself is drawn by the weapon visuals; here: the ground flash and shock ring
+          const age = (1 - k) * e.maxLife;
+          if (age < 0.06) break;
+          const f = Math.exp(-(age - 0.06) * 7);
+          const rr = e.r * (0.5 + (1 - f) * 0.9);
+          this.glowDisc.push(e.x, 0.07, e.z, 0, e.r * 2, 1, e.r * 2, 0xbfe4ff, 0, 0, 0, f * 0.45);
+          this.glowDisc.push(e.x, 0.08, e.z, 0, e.r * 0.8, 1, e.r * 0.8, 0xffffff, 0, 0, 0, f * f * 0.6);
+          this.glowRing.push(e.x, 0.1, e.z, 0, rr, 1, rr, c, 0, 0, 0, f * 0.8);
+          break;
+        }
         case 'lance': {
           const yaw = Math.PI / 2 - e.angle;
           const ext = Math.min(1, (1 - k) * 4);

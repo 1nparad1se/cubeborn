@@ -3,7 +3,7 @@ import type { EmitLayer } from '../../config/vfx';
 import type { WeaponAnim, WeaponVisualDef } from '../../config/weaponVisuals';
 import { WeaponModel } from './build';
 import { MODELS } from './models';
-import { ArcLine, Ribbon, RuneCircle } from './fxkit';
+import { ArcLine, Lightning, Ribbon, RuneCircle, type StrikeOpts } from './fxkit';
 import { SCRIPTS } from './scripts';
 
 /** Where an actor sends particles and lights: the game's particle system or the viewer's own. */
@@ -28,6 +28,7 @@ export class WeaponActor {
   readonly model: WeaponModel;
   readonly ribbon: Ribbon | null;
   readonly arcs: ArcLine[] = [];
+  readonly bolts: Lightning[] = [];
   circle: RuneCircle | null = null;
   readonly pos = new THREE.Vector3();
   readonly vel = new THREE.Vector3();
@@ -85,6 +86,18 @@ export class WeaponActor {
     return a;
   }
 
+  /** Fires a natural lightning strike (reusing a finished one). */
+  strike(from: THREE.Vector3, to: THREE.Vector3, o?: StrikeOpts): Lightning {
+    let b = this.bolts.find((x) => !x.alive);
+    if (!b) {
+      b = new Lightning();
+      this.world.add(b.mesh);
+      this.bolts.push(b);
+    }
+    b.strike(from, to, o);
+    return b;
+  }
+
   addCircle(color: number, size: number): RuneCircle {
     this.circle = new RuneCircle(color, size);
     this.world.add(this.circle.mesh);
@@ -113,6 +126,7 @@ export class WeaponActor {
     this.model.body.scale.setScalar(1);
     this.ribbon?.reset();
     for (const a of this.arcs) a.intensity = 0;
+    for (const b of this.bolts) b.stop();
     if (this.circle) this.circle.mat.opacity = 0;
     this.setVisible(true);
     SCRIPTS[this.def.script]?.start?.(this, 'fly');
@@ -122,6 +136,7 @@ export class WeaponActor {
     this.model.root.visible = v;
     if (this.ribbon) this.ribbon.mesh.visible = v;
     for (const a of this.arcs) a.mesh.visible = v && a.intensity > 0.01;
+    for (const b of this.bolts) b.mesh.visible = v && b.alive;
     if (this.circle) this.circle.mesh.visible = v && this.circle.mat.opacity > 0.01;
   }
 
@@ -197,6 +212,7 @@ export class WeaponActor {
       this.ribbon.update(dt, this.trailHead(), camera, moving);
     }
     for (const a of this.arcs) a.update(dt, camera);
+    for (const b of this.bolts) b.update(dt, camera);
     if (this.circle) this.circle.mesh.visible = this.circle.mat.opacity > 0.01;
   }
 
@@ -224,6 +240,10 @@ export class WeaponActor {
     for (const a of this.arcs) {
       a.mesh.removeFromParent();
       a.dispose();
+    }
+    for (const b of this.bolts) {
+      b.mesh.removeFromParent();
+      b.dispose();
     }
     if (this.circle) {
       this.circle.mesh.removeFromParent();

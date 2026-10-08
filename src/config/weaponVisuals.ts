@@ -137,7 +137,8 @@ const ROD: WeaponVisualDef = {
   script: 'rod',
   kind: 'artifact',
   scale: 1,
-  spin: 1.2,
+  // artifacts hover beside the hero without spinning
+  spin: 0,
   spinAxis: 'yaw',
   bob: 0.09,
   bobSpeed: 2.2,
@@ -151,6 +152,7 @@ const ROD: WeaponVisualDef = {
   color: 0xfff27a,
   extra: ['charge'],
   attackTime: 1.1,
+  hitTime: 0.8,
 };
 
 const TOME: WeaponVisualDef = {
@@ -159,7 +161,7 @@ const TOME: WeaponVisualDef = {
   script: 'tome',
   kind: 'artifact',
   scale: 1,
-  spin: 0.5,
+  spin: 0,
   spinAxis: 'yaw',
   bob: 0.08,
   bobSpeed: 1.8,

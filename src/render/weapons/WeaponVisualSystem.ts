@@ -6,6 +6,8 @@ import type { Ally } from '../../game/Allies';
 import type { WeaponInstance } from '../../game/weapons/Weapon';
 import type { LightPool } from '../LightPool';
 import { WeaponActor, type FxPort } from './actor';
+import { Lightning } from './fxkit';
+import { strikeFx, strikeOpts } from './scripts';
 
 /**
  * Draws the reworked weapons in a run: projectiles (fireballs, flasks, pools, tornadoes, falling
@@ -80,6 +82,9 @@ const ARTIFACT: Record<string, { sub?: string; at: [number, number, number]; siz
 };
 /** How long before firing the tome starts opening (its cast lands on the shot). */
 const TOME_LEAD = 1.15;
+const FROM = new THREE.Vector3();
+const TO = new THREE.Vector3();
+const HZ = new THREE.Vector3();
 const ROD_LEAD = 0.9;
 const MAX_ACTORS = 90;
 
@@ -91,6 +96,9 @@ export class WeaponVisualSystem {
   private chains = new Map<number, ChainSpark>();
   private artifacts = new Map<WeaponInstance, Artifact>();
   private ghosts: Ghost[] = [];
+  /** Storm Rod strikes: effect → its seed when first seen, so a pooled effect is never replayed. */
+  private strikes = new Map<object, number>();
+  private bolts: Lightning[] = [];
   private live = 0;
   private port: FxPort;
   private camX = 0;
@@ -157,7 +165,10 @@ export class WeaponVisualSystem {
     this.updateChains();
     this.updateFlyers();
     this.updateArtifacts(dt);
+    this.updateStrikes(camera);
     const port = this.port;
+    for (const b of this.bolts) b.update(dt, camera);
+    strikeFx(this.bolts, port, [0.35, 0.65, 1][port.quality]);
     for (const t of this.shots.values()) t.actor.update(dt, camera, port);
     for (const c of this.chains.values()) c.actor.update(dt, camera, port);
     for (const f of this.flyers.values()) f.actor.update(dt, camera, port);
@@ -215,6 +226,34 @@ export class WeaponVisualSystem {
     if (p.vis === 'tornado') return 0.02;
     if (p.vis === 'pool') return 0.03;
     return p.y;
+  }
+
+  // ---------------------------------------------------------------- storm rod strikes
+  private updateStrikes(camera: THREE.Camera) {
+    for (const [e, seed] of this.strikes) if (!(e as { active: boolean }).active || (e as { seed: number }).seed !== seed) this.strikes.delete(e);
+    let rod: WeaponInstance | undefined;
+    for (const w of this.run.weapons.list) if (w.def.behavior === 'strike') rod = w;
+    const tier = rod ? visualTier(rod.level, rod.maxLevel, !!rod.def.evolved) : 1;
+    for (const e of this.run.effects.list) {
+      if (!e.active || e.kind !== 'strike' || this.strikes.get(e) === e.seed) continue;
+      this.strikes.set(e, e.seed);
+      let b = this.bolts.find((x) => !x.alive);
+      if (!b) {
+        if (this.bolts.length >= 12) continue;
+        b = new Lightning();
+        this.group.add(b.mesh);
+        this.bolts.push(b);
+      }
+      TO.set(e.x, 0.05, e.z);
+      if (e.y > 0) FROM.set(e.x2, e.y, e.z2);
+      else {
+        // from high up and a little beyond the target, so the channel stretches across the screen
+        HZ.set(e.x - camera.position.x, 0, e.z - camera.position.z).normalize();
+        const side = (Math.random() - 0.5) * 3;
+        FROM.set(e.x + HZ.x * 3 - HZ.z * side, 12 + Math.random() * 2, e.z + HZ.z * 3 + HZ.x * side);
+      }
+      b.strike(FROM, TO, strikeOpts(tier));
+    }
   }
 
   // ---------------------------------------------------------------- chain spark
@@ -388,6 +427,7 @@ export class WeaponVisualSystem {
     for (const a of this.artifacts.values()) all.push(a.actor);
     for (const g of this.ghosts) all.push(g.actor);
     for (const a of all) a.dispose();
+    for (const b of this.bolts) b.dispose();
     this.group.removeFromParent();
   }
 }

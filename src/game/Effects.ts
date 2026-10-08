@@ -1,5 +1,5 @@
 /** Purely visual effects created by gameplay and drawn by the renderer. */
-export type EffectKind = 'slash' | 'ring' | 'beam' | 'bolt' | 'lance' | 'aura' | 'flash' | 'warn' | 'punch' | 'cloud' | 'fall' | 'spark';
+export type EffectKind = 'slash' | 'ring' | 'beam' | 'bolt' | 'lance' | 'aura' | 'flash' | 'warn' | 'punch' | 'cloud' | 'fall' | 'spark' | 'strike';
 /* 'spark': one hop of a travelling Chain Spark from (x, z) to (x2, z2) over `w` seconds; `r` = chain id, `r2` = hop index. */
 
 export class Effect {

@@ -298,3 +298,289 @@ export class RuneCircle {
     this.mat.dispose();
   }
 }
+
+// ------------------------------------------------------------------ natural lightning
+interface BoltPath {
+  pts: THREE.Vector3[];
+  /** Distance down the channel (0 = cloud, 1 = ground) of each point, for the stepped leader. */
+  u: number[];
+  /** Half-width scale of each point. */
+  w: number[];
+  /** 0 = main channel, 1 = branch, 2 = twig. */
+  depth: number;
+}
+export interface StrikeOpts {
+  /** Channel width in world units. */
+  width?: number;
+  /** Glow colour of the channel (the core is always white). */
+  color?: number;
+  /** Number of side branches. */
+  branches?: number;
+  /** Restrokes after the main one (0–3); -1 picks one or two at random. */
+  restrokes?: number;
+  /** Seconds the stepped leader takes to reach the ground. */
+  leader?: number;
+}
+const MAX_PTS = 420;
+const AFTERGLOW = new THREE.Color(0x8a6aff);
+const tmpE = new THREE.Vector3();
+const tmpF = new THREE.Vector3();
+
+/** Midpoint displacement: a jagged path from a to b with kinks at every scale, like a real channel. */
+function fractalPath(a: THREE.Vector3, b: THREE.Vector3, levels: number, rough: number): THREE.Vector3[] {
+  let pts = [a.clone(), b.clone()];
+  let amp = a.distanceTo(b) * rough;
+  for (let l = 0; l < levels; l++) {
+    const next: THREE.Vector3[] = [pts[0]];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p = pts[i];
+      const q = pts[i + 1];
+      const m = p.clone().lerp(q, 0.4 + Math.random() * 0.2);
+      tmpE.subVectors(q, p).normalize();
+      tmpF.set(Math.random() * 2 - 1, Math.random() * 2 - 1, Math.random() * 2 - 1);
+      tmpF.addScaledVector(tmpE, -tmpF.dot(tmpE));
+      if (tmpF.lengthSq() < 1e-6) tmpF.set(1, 0, 0);
+      tmpF.normalize().multiplyScalar(amp * (Math.random() * 2 - 1));
+      m.add(tmpF);
+      next.push(m, q);
+    }
+    pts = next;
+    amp *= 0.58;
+  }
+  return pts;
+}
+
+/**
+ * A single lightning strike shaped and timed like the real thing: a fractal channel with forked,
+ * tapering branches, drawn top to bottom by a stepped leader in a few hundredths of a second, then
+ * the blinding return stroke, one or two flickering restrokes down the same channel, and a short
+ * violet afterglow. The channel keeps its shape for the whole strike (only the restrokes shift it a
+ * little). `strokes` counts strokes so owners can fire impact effects and lights on each one.
+ */
+export class Lightning {
+  readonly mesh: THREE.Mesh;
+  private geo = new THREE.BufferGeometry();
+  private pos = new Float32Array(MAX_PTS * 4 * 3);
+  private col = new Float32Array(MAX_PTS * 4 * 3);
+  private paths: BoltPath[] = [];
+  private restrokeAt: number[] = [];
+  private leaderT = 0.06;
+  readonly from = new THREE.Vector3();
+  readonly to = new THREE.Vector3();
+  color = new THREE.Color(0xbfe4ff);
+  width = 0.12;
+  t = 0;
+  dur = 0;
+  /** Current brightness of the main channel (0 when idle); drives lights. */
+  brightness = 0;
+  /** Strokes that have landed so far (the return stroke and each restroke). */
+  strokes = 0;
+  /** Strokes the owner has already answered with impact effects. */
+  handled = 0;
+  constructor() {
+    this.geo.setAttribute('position', new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage));
+    this.geo.setAttribute('color', new THREE.BufferAttribute(this.col, 3).setUsage(THREE.DynamicDrawUsage));
+    // across-the-strip coordinate: the soft profile makes the glow fall off instead of ending in an edge
+    const uv = new Float32Array(MAX_PTS * 4 * 2);
+    for (let i = 0; i < MAX_PTS * 2; i++) uv.set([0, 0, 1, 0], i * 4);
+    this.geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    const mat = additive();
+    mat.map = strokeTexture();
+    this.mesh = new THREE.Mesh(this.geo, mat);
+    this.mesh.frustumCulled = false;
+    this.mesh.renderOrder = 9;
+    this.mesh.visible = false;
+  }
+
+  get alive(): boolean {
+    return this.t < this.dur;
+  }
+
+  strike(from: THREE.Vector3, to: THREE.Vector3, o: StrikeOpts = {}) {
+    this.from.copy(from);
+    this.to.copy(to);
+    this.width = o.width ?? 0.12;
+    this.color.setHex(o.color ?? 0xbfe4ff);
+    this.leaderT = o.leader ?? 0.06;
+    this.t = 0;
+    this.strokes = 0;
+    this.handled = 0;
+    this.brightness = 0;
+    const len = from.distanceTo(to);
+    // main channel
+    const lv = Math.max(4, Math.min(7, Math.round(Math.log2(len / 0.12))));
+    const main = fractalPath(from, to, lv, 0.2);
+    this.paths = [{ pts: main, u: main.map((_, i) => i / (main.length - 1)), w: main.map((_, i) => 0.8 + 0.2 * (i / (main.length - 1))), depth: 0 }];
+    // branches fork downward and outward from the upper two thirds and taper to nothing
+    const nb = o.branches ?? 5;
+    for (let b = 0; b < nb; b++) {
+      const i = Math.floor((0.08 + Math.random() * 0.62) * (main.length - 1));
+      const p = main[i];
+      const u0 = i / (main.length - 1);
+      tmpE.subVectors(main[Math.min(main.length - 1, i + 2)], p).normalize();
+      tmpF.set(Math.random() * 2 - 1, -Math.random() * 0.3, Math.random() * 2 - 1).normalize();
+      const dir = tmpE.clone().multiplyScalar(0.6).add(tmpF).normalize();
+      const bl = len * (0.12 + Math.random() * 0.26) * (1 - u0 * 0.6);
+      const end = p.clone().addScaledVector(dir, bl);
+      const br = fractalPath(p, end, Math.max(3, lv - 2), 0.24);
+      const k = bl / len;
+      this.paths.push({ pts: br, u: br.map((_, j) => u0 + (j / (br.length - 1)) * k * 1.4), w: br.map((_, j) => 0.55 * (1 - j / (br.length - 1)) + 0.05), depth: 1 });
+      // a twig off some branches
+      if (Math.random() < 0.55) {
+        const j = Math.floor((0.3 + Math.random() * 0.4) * (br.length - 1));
+        const q = br[j];
+        tmpF.set(Math.random() * 2 - 1, -0.4 - Math.random() * 0.4, Math.random() * 2 - 1).normalize();
+        const tend = q.clone().addScaledVector(tmpF, bl * (0.3 + Math.random() * 0.3));
+        const tw = fractalPath(q, tend, 3, 0.25);
+        const tu = u0 + (j / (br.length - 1)) * k * 1.4;
+        this.paths.push({ pts: tw, u: tw.map((_, m) => tu + (m / (tw.length - 1)) * k * 0.6), w: tw.map((_, m) => 0.3 * (1 - m / (tw.length - 1)) + 0.03), depth: 2 });
+      }
+    }
+    // restrokes reuse the channel a beat later
+    const nr = o.restrokes === undefined || o.restrokes < 0 ? 1 + (Math.random() < 0.5 ? 1 : 0) : o.restrokes;
+    this.restrokeAt = [];
+    let at = this.leaderT;
+    for (let r = 0; r < nr; r++) {
+      at += 0.07 + Math.random() * 0.07;
+      this.restrokeAt.push(at);
+    }
+    this.dur = at + 0.35;
+    // index buffer: glow strips then core strips
+    let n = 0;
+    const idx: number[] = [];
+    const starts: number[] = [];
+    for (const p of this.paths) {
+      if (n + p.pts.length > MAX_PTS) break;
+      starts.push(n);
+      n += p.pts.length;
+    }
+    this.paths.length = starts.length;
+    for (let pass = 0; pass < 2; pass++) {
+      const base = pass * n * 2;
+      this.paths.forEach((p, k) => {
+        for (let i = 0; i < p.pts.length - 1; i++) {
+          const a = base + (starts[k] + i) * 2;
+          idx.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+        }
+      });
+    }
+    this.geo.setIndex(idx);
+    this.mesh.visible = true;
+  }
+
+  /** Brightness envelope: dim leader, blinding return stroke, decaying restrokes, faint afterglow. */
+  private envelope(t: number): { main: number; branch: number; reveal: number } {
+    if (t < this.leaderT) {
+      const steps = 9;
+      const reveal = Math.ceil((t / this.leaderT) * steps) / steps;
+      return { main: 0.35 + Math.random() * 0.2, branch: 0.45, reveal };
+    }
+    const s = t - this.leaderT;
+    let main = 1.5 * Math.exp(-s * 14);
+    let branch = 1.1 * Math.exp(-s * 18);
+    for (const r of this.restrokeAt) {
+      if (t < r) continue;
+      const d = t - r;
+      main += 0.95 * Math.exp(-d * 15);
+      branch += 0.35 * Math.exp(-d * 20);
+    }
+    const tail = 1 - s / Math.max(0.01, this.dur - this.leaderT);
+    main += 0.22 * tail * tail;
+    main *= 0.85 + Math.random() * 0.3;
+    return { main, branch, reveal: 1 };
+  }
+
+  update(dt: number, camera: THREE.Camera) {
+    if (!this.alive) {
+      this.mesh.visible = false;
+      this.brightness = 0;
+      return;
+    }
+    const prevT = this.t;
+    this.t += dt;
+    if (prevT < this.leaderT && this.t >= this.leaderT) this.strokes++;
+    for (const r of this.restrokeAt)
+      if (prevT < r && this.t >= r) {
+        this.strokes++;
+        // the channel shifts a little between strokes
+        for (const p of this.paths) for (let i = 1; i < p.pts.length - 1; i++) p.pts[i].addScaledVector(tmpF.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5), this.width * 0.8);
+      }
+    const env = this.envelope(this.t);
+    this.brightness = env.reveal < 1 ? env.main * 0.3 : env.main;
+    const s = Math.max(0, this.t - this.leaderT);
+    // glow drifts from cold white-blue to violet as the channel cools
+    const glowC = tmpCol.copy(this.color).lerp(AFTERGLOW, Math.min(1, s / 0.3));
+    const stroke = Math.min(1, env.main);
+    let v = 0;
+    for (let pass = 0; pass < 2; pass++) {
+      const glow = pass === 0;
+      for (const p of this.paths) {
+        const lvl = p.depth === 0 ? env.main : env.branch * (p.depth === 1 ? 1 : 0.7);
+        for (let i = 0; i < p.pts.length; i++) {
+          const pt = p.pts[i];
+          const prev = p.pts[Math.max(0, i - 1)];
+          const next = p.pts[Math.min(p.pts.length - 1, i + 1)];
+          tmpA.subVectors(next, prev);
+          tmpB.subVectors(camera.position, pt);
+          tmpC.crossVectors(tmpA, tmpB);
+          if (tmpC.lengthSq() < 1e-10) tmpC.set(1, 0, 0);
+          tmpC.normalize();
+          const shown = p.u[i] <= env.reveal ? 1 : 0;
+          // the leader tip glows a little brighter than the path behind it
+          const tip = env.reveal < 1 && env.reveal - p.u[i] < 0.12 ? 1.8 : 1;
+          const w = this.width * p.w[i] * (glow ? 2.2 + stroke * 1.6 : 0.45 + stroke * 0.2) * shown;
+          const k = lvl * shown * tip * (glow ? 0.6 : 1.6);
+          const c = glow ? glowC : WHITE;
+          const j = v * 6;
+          this.pos[j] = pt.x + tmpC.x * w;
+          this.pos[j + 1] = pt.y + tmpC.y * w;
+          this.pos[j + 2] = pt.z + tmpC.z * w;
+          this.pos[j + 3] = pt.x - tmpC.x * w;
+          this.pos[j + 4] = pt.y - tmpC.y * w;
+          this.pos[j + 5] = pt.z - tmpC.z * w;
+          this.col[j] = this.col[j + 3] = c.r * k;
+          this.col[j + 1] = this.col[j + 4] = c.g * k;
+          this.col[j + 2] = this.col[j + 5] = c.b * k;
+          v++;
+        }
+      }
+    }
+    this.geo.setDrawRange(0, Infinity);
+    this.geo.attributes.position.needsUpdate = true;
+    this.geo.attributes.color.needsUpdate = true;
+    this.mesh.visible = true;
+  }
+
+  stop() {
+    this.t = this.dur;
+    this.mesh.visible = false;
+    this.brightness = 0;
+  }
+
+  dispose() {
+    this.geo.dispose();
+    (this.mesh.material as THREE.Material).dispose();
+  }
+}
+const tmpCol = new THREE.Color();
+
+let strokeTex: THREE.Texture | null = null;
+/** 1D soft profile across a lightning strip: bright centre, smooth falloff to the edges. */
+function strokeTexture(): THREE.Texture {
+  if (strokeTex) return strokeTex;
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 2;
+  const g = c.getContext('2d')!;
+  const grd = g.createLinearGradient(0, 0, 64, 0);
+  grd.addColorStop(0, 'rgba(255,255,255,0)');
+  grd.addColorStop(0.3, 'rgba(255,255,255,0.45)');
+  grd.addColorStop(0.5, 'rgba(255,255,255,1)');
+  grd.addColorStop(0.7, 'rgba(255,255,255,0.45)');
+  grd.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 64, 2);
+  strokeTex = new THREE.CanvasTexture(c);
+  strokeTex.colorSpace = THREE.SRGBColorSpace;
+  return strokeTex;
+}

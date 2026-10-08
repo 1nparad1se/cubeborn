@@ -6,14 +6,16 @@ import type { Effect } from '../../Effects';
 import { clipShot, explosionFx, hitCircle, hitLine } from './util';
 import { TAU } from '../../../core/math';
 
-function strikeAt(w: WeaponInstance, run: Run, x: number, z: number) {
+/** A lightning strike on (x, z); `from` is the storm cloud it falls from (else the open sky). */
+function strikeAt(w: WeaponInstance, run: Run, x: number, z: number, from?: Projectile) {
   const r = w.p('radius', 1.3) * w.area(run);
   hitCircle(run, w, x, z, r);
-  const ef = run.effects.add('bolt', x, z, 0.22, w.def.color);
-  ef.x2 = x + (run.rng.next() - 0.5) * 2;
-  ef.z2 = z - 2;
-  ef.y = 12;
-  ef.w = 0.25;
+  // drawn by the weapon visuals as a natural strike; x2/z2/y name the cloud when there is one
+  const ef = run.effects.add('strike', x, z, 0.8, w.def.color);
+  ef.x2 = from ? from.x : x;
+  ef.z2 = from ? from.z : z;
+  ef.y = from ? from.y + 0.6 : 0;
+  ef.r = r;
   explosionFx(run, x, z, r, w.def.color, 0.05, w.def.id);
   run.fx.sound('zap', 0.5);
 }
@@ -41,7 +43,7 @@ registerBehavior('strike', {
     if (w.evo) {
       for (const c of (w.state.clouds ?? []) as Projectile[]) {
         const t = run.enemies.randomInRadius(c.x, c.z, 5);
-        if (t) strikeAt(w, run, t.x, t.z);
+        if (t) strikeAt(w, run, t.x, t.z, c);
       }
       return;
     }
