@@ -74,7 +74,7 @@ export function buildVoxelGeometry(m: VoxelModel, opts: BuildOptions = {}): THRE
     const y1 = (y + h) * s;
     const z0 = (z - d / 2) * s;
     const z1 = (z + d / 2) * s;
-    const round = opts.round ?? 0.4;
+    const round = opts.round ?? 0.12;
     // edge radius in voxels: thin parts get nearly round, big slabs keep their volume
     const rv = round > 0 ? Math.min(Math.min(w, h, d) * 0.5 * round, 1.1) : 0;
     if (rv < 0.05) {

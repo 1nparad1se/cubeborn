@@ -15,7 +15,7 @@ import type { LightPool } from './LightPool';
 import { heroRig } from '../models/heroRigs';
 import { HeroRig } from './rig/HeroRig';
 import { HeroAnimator } from './rig/Animator';
-import { makeHeroTexture } from './Textures';
+import { makeCreatureTexture, makeHeroTexture } from './Textures';
 
 const TAU = Math.PI * 2;
 
@@ -80,7 +80,7 @@ export class EntityRenderer {
   ) {
     scene.add(this.group);
     // creatures use a soft painted texture instead of the block grid, so rounded bodies read as sculpted
-    this.creatureTex = makeHeroTexture();
+    this.creatureTex = makeCreatureTexture();
     this.voxMat = makeVoxelMaterial({ map: this.creatureTex, instanced: true });
     this.enemyShadows = quality === 'high';
     const rigDef = heroRig(run.hero.model) ?? heroRig(run.hero.id);

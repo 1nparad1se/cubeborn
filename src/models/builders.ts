@@ -49,7 +49,12 @@ export function humanoid(o: HumanoidOpts): VoxBox[] {
   const hy = legH + bodyH;
   b.push([0, hy, 0, head, head, head, o.skin, 'head']);
   const eye = o.eyes ?? 0x1a1a2a;
-  b.push([-head * 0.22, hy + head * 0.4, head / 2, 1, 1, 0.3, eye, 'head'], [head * 0.22, hy + head * 0.4, head / 2, 1, 1, 0.3, eye, 'head']);
+  // Minecraft-mob face: wide square eyes over dark sockets, a nose and a mouth line
+  const dark = (c: number, k: number) => (Math.round(((c >> 16) & 255) * k) << 16) | (Math.round(((c >> 8) & 255) * k) << 8) | Math.round((c & 255) * k);
+  b.push([-head * 0.25, hy + head * 0.38, head / 2, head * 0.3, head * 0.22, 0.25, dark(o.skin, 0.55), 'head'], [head * 0.25, hy + head * 0.38, head / 2, head * 0.3, head * 0.22, 0.25, dark(o.skin, 0.55), 'head']);
+  b.push([-head * 0.22, hy + head * 0.4, head / 2 + 0.05, 1, 1, 0.3, eye, 'head'], [head * 0.22, hy + head * 0.4, head / 2 + 0.05, 1, 1, 0.3, eye, 'head']);
+  b.push([0, hy + head * 0.25, head / 2 + 0.05, head * 0.18, head * 0.2, 0.4, dark(o.skin, 0.8), 'head']);
+  b.push([0, hy + head * 0.1, head / 2, head * 0.45, head * 0.1, 0.25, dark(o.skin, 0.45), 'head']);
   if (o.hair !== undefined && !o.noHair) {
     b.push([0, hy + head - 1, -0.3, head + 0.4, 1.4, head + 0.2, o.hair, 'head']);
     b.push([0, hy + head * 0.35, -head / 2 + 0.6, head + 0.4, head * 0.65, 1.4, o.hair, 'head']);
