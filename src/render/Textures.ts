@@ -139,7 +139,7 @@ export function makeGroundAtlas(tileNames: string[], palette: Record<string, num
       for (let y = 0; y < TILE_PX; y++)
         for (let x = 0; x < TILE_PX; x++) {
           col.setHex(base);
-          const shade = tileShade(name, x, y, v, ti);
+          const shade = 0.93 + (tileShade(name, x, y, v, ti) - 0.93) * 0.45; // soft, painted look
           const i = ((v * TILE_PX + y) * canvas.width + ti * TILE_PX + x) * 4;
           img.data[i] = Math.min(255, col.r * 255 * shade);
           img.data[i + 1] = Math.min(255, col.g * 255 * shade);
@@ -183,7 +183,8 @@ export function makeBlockAtlas(): THREE.DataTexture {
   const data = new Uint8Array(W * px * 4);
   const set = (t: number, x: number, y: number, v: number, a = 255) => {
     const i = (y * W + t * px + x) * 4;
-    data[i] = data[i + 1] = data[i + 2] = Math.round(Math.min(1, Math.max(0, v)) * 255);
+    const sv = 0.86 + (v - 0.8) * 0.45; // low contrast: soft, painted Minecraft Dungeons look
+    data[i] = data[i + 1] = data[i + 2] = Math.round(Math.min(1, Math.max(0, sv)) * 255);
     data[i + 3] = a;
   };
   for (let y = 0; y < px; y++)
@@ -197,7 +198,7 @@ export function makeBlockAtlas(): THREE.DataTexture {
       set(0, x, y, v);
       // 1 leaves: dense two-tone clumps with holes
       const leaf = hash2(x, y, 63);
-      const hole = leaf > 0.86 && hash2(x >> 1, y >> 1, 64) > 0.4;
+      const hole = leaf > 0.93 && hash2(x >> 1, y >> 1, 64) > 0.5;
       const lv = hash2(x, y, 65) > 0.55 ? 0.95 + n * 0.05 : hash2(x, y, 66) > 0.4 ? 0.74 : 0.56;
       set(1, x, y, lv, hole ? 0 : 255);
       // 2 bark: vertical grooves

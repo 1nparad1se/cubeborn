@@ -38,15 +38,8 @@ const forest: Gen = (g) => {
       tree(g, tx, tz, 'trunk', 'leaves', rng.int(3, 5), rng.chance(0.18) ? 3 : rng.int(0, 2));
       t.spots.push({ x: tx, z: tz });
     }
-  // giant mushrooms
-  for (let i = 0; i < 26 * g.k; i++) {
-    const x = rng.int(6, t.size - 6);
-    const z = rng.int(6, t.size - 6);
-    if (!t.areaFree(x, z, 1) || distToCenter(g, x, z) < 10) continue;
-    if (t.solidCell(x, z, 2)) t.trees.push({ x, z, h: rng.int(2, 3), kind: 'mushroom', leaf: 'mushroom', trunk: 'mushroom', v: 0 });
-  }
   // abandoned wooden huts (narrow interiors)
-  for (let i = 0; i < 7 * g.k; i++) {
+  for (let i = 0; i < 3 * g.k; i++) {
     const x = rng.int(15, t.size - 22);
     const z = rng.int(15, t.size - 22);
     if (distToCenter(g, x + 3, z + 3) < 16) continue;
@@ -299,7 +292,7 @@ const volcano: Gen = (g) => {
     for (let k = -5; k <= 5; k++) for (let w = 0; w < 3; w++) t.setTile(horiz ? x + k : x + w, horiz ? z + w : z + k, 'basalt', CELL.floor);
   }
   // lava lakes
-  for (let i = 0; i < 7 * g.k; i++) {
+  for (let i = 0; i < 3 * g.k; i++) {
     const x = rng.int(15, t.size - 15);
     const z = rng.int(15, t.size - 15);
     if (distToCenter(g, x, z) < 22) continue;

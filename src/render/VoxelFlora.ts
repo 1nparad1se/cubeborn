@@ -69,7 +69,7 @@ export function treeVoxels(tr: TreeInst, map: MapDef, out: Vox[]) {
   }
   if (tr.kind === 'pine') {
     // spruce: tall trunk, layered rings that shrink and widen again like the Minecraft ones
-    const H = tr.h + 2;
+    const H = tr.h + 1;
     for (let y = 0; y < H; y++) put(0, y, 0, trunkC, TILE.bark);
     const snow = !!pal.snow;
     let rad = 0;
@@ -87,7 +87,7 @@ export function treeVoxels(tr: TreeInst, map: MapDef, out: Vox[]) {
   }
   // broadleaf: thick trunk with a root flare, branches and a wide lumpy crown
   const big = tr.h >= 4;
-  const H = tr.h + (big ? 2 : 1);
+  const H = tr.h + (big ? 1 : 0);
   const tw = big ? 2 : 1;
   const ox = big ? -0.5 : 0;
   for (let y = 0; y < H; y++)
@@ -100,7 +100,7 @@ export function treeVoxels(tr: TreeInst, map: MapDef, out: Vox[]) {
     put(dx * off, 0, dz * off, shade(trunkC, 0.85), TILE.bark, 0.5);
   }
   // branches climbing diagonally out of the trunk
-  const branches = big ? 3 : 2;
+  const branches = big ? 2 : 0;
   const crowns: [number, number, number][] = [[0, H + 1, 0]];
   for (let b = 0; b < branches; b++) {
     const a = r(800 + b) * Math.PI * 2 + (b / branches) * Math.PI * 2;
@@ -120,7 +120,7 @@ export function treeVoxels(tr: TreeInst, map: MapDef, out: Vox[]) {
   }
   // crown: overlapping leafy ellipsoids around the trunk top and branch tips
   const seen = new Set<string>();
-  const R = big ? 2.6 : 1.9;
+  const R = big ? 1.9 : 1.4;
   crowns.forEach(([bx, by, bz], ci) => {
     const rx = ci === 0 ? R : R * 0.72;
     const ry = ci === 0 ? R * 0.7 : R * 0.55;

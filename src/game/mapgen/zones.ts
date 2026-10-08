@@ -218,7 +218,7 @@ function decorRing(g: GenCtx, p: Poi, colors: number[], count: number, size = 0.
 function village(g: GenCtx, p: Poi, th: Theme) {
   const { t, rng } = g;
   paint(g, p.x, p.z, p.r, th.floor);
-  const huts = rng.int(3, 5);
+  const huts = rng.int(2, 3);
   for (let i = 0; i < huts; i++) {
     const a = (i / huts) * Math.PI * 2 + rng.range(-0.3, 0.3);
     const hx = Math.round(p.x + Math.cos(a) * 6.5) - 2;

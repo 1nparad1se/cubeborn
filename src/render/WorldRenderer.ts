@@ -218,13 +218,6 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
   vec4 cd = cellAt(cell);
   bool liquid = cd.b > 0.05;
   vec2 pxc = (floor(xz * 16.0) + 0.5) / 16.0;
-  if (!side && !liquid) {
-    // organic, pixel-stepped borders between neighbouring ground tiles
-    vec2 jit = vec2(vnoise(pxc * 2.7), vnoise(pxc * 2.7 + 17.3)) - 0.5;
-    vec2 sc = floor(pxc + jit * 0.6);
-    vec4 jd = cellAt(sc);
-    if (jd.b < 0.05 && sc.x >= 0.0 && sc.y >= 0.0 && sc.x < uSize && sc.y < uSize) cd = jd;
-  }
   float tile = floor(cd.r * 255.0 + 0.5);
   float variant = floor(cd.g * 255.0 + 0.5);
   float anim = animOf(tile);
