@@ -44,7 +44,7 @@ export class DevUi {
   inRun = false;
 
   constructor(parent: HTMLElement, private keys: () => { panel: string; debug: string; god: string }) {
-    put(this.panel, h('div.dev-head', h('b', 'DEVELOPER TOOLS'), h('span.dev-test', 'TEST MODE'), h('button.dev-x', { onclick: () => this.setPanel(false) }, '✕')), this.body, this.msg);
+    put(this.panel, h('div.dev-head', h('b', t('dv_title')), h('span.dev-test', t('dv_test')), h('button.dev-x', { title: t('dv_close'), onclick: () => this.setPanel(false) }, '✕')), this.body, this.msg);
     parent.append(this.panel, this.info, this.badge);
     // keep game keys and wheel zoom away from the panel's inputs
     this.panel.addEventListener('wheel', (e) => e.stopPropagation(), { passive: true });
@@ -74,9 +74,9 @@ export class DevUi {
     this.badge.classList.toggle('in-run', this.inRun);
     if (on) {
       clear(this.badge);
-      this.badge.append(h('span.dev-badge-main', { onclick: () => this.setPanel(!dev.panelOpen), title: 'Developer Tools' }, 'DEVELOPER MODE · TEST'));
-      if (dev.toggles.god) this.badge.append(h('span.dev-badge-god', 'GOD MODE ON'));
-      if (dev.paused) this.badge.append(h('span.dev-badge-god', 'PAUSED'));
+      this.badge.append(h('span.dev-badge-main', { onclick: () => this.setPanel(!dev.panelOpen), title: t('dv_title') }, t('dv_badge')));
+      if (dev.toggles.god) this.badge.append(h('span.dev-badge-god', t('dv_god_on')));
+      if (dev.paused) this.badge.append(h('span.dev-badge-god', t('dv_paused')));
       else if (dev.timeScale !== 1) this.badge.append(h('span.dev-badge-time', '×' + dev.timeScale));
     }
     this.info.classList.toggle('hidden', !(on && dev.debugOpen));
@@ -99,7 +99,7 @@ export class DevUi {
     if (this.infoT > 0) return;
     this.infoT = 0.25;
     const run = dev.run;
-    const rows: [string, string][] = [['FPS', this.fps.toFixed(0)]];
+    const rows: [string, string][] = [[t('dv_i_fps'), this.fps.toFixed(0)]];
     if (run) {
       const p = run.player;
       const w = run.waves.wave;
@@ -109,22 +109,22 @@ export class DevUi {
       let picks = 0;
       for (const x of run.pickups.list) if (x.active) picks++;
       rows.push(
-        ['Enemies', String(run.enemies.aliveCount)],
-        ['Projectiles', String(proj)],
-        ['Pickups', String(picks)],
-        ['Wave', `${w.n} (${w.type})`],
-        ['Game time', `${Math.floor(tm / 60)}:${String(Math.floor(tm % 60)).padStart(2, '0')}`],
-        ['Player DPS', dev.dps.value.toFixed(0)],
-        ['Damage taken', `${Math.round(run.stats.damageTaken)} (${dev.dtps.value.toFixed(1)}/s)`],
-        ['Spawn rate', dev.spawnRate.value.toFixed(1) + '/s'],
-        ['XP', `Lv ${p.level} · ${Math.floor(p.xp)}/${Math.floor(p.xpNext)}`],
-        ['HP', `${Math.ceil(p.hp)}/${Math.round(p.stats.maxHp)}`],
-        ['Gold', String(Math.floor(run.stats.gold))],
+        [t('dv_i_enemies'), String(run.enemies.aliveCount)],
+        [t('dv_i_proj'), String(proj)],
+        [t('dv_i_pickups'), String(picks)],
+        [t('dv_i_wave'), `${w.n} (${t('wave_' + w.type)})`],
+        [t('dv_i_time'), `${Math.floor(tm / 60)}:${String(Math.floor(tm % 60)).padStart(2, '0')}`],
+        [t('dv_i_dps'), dev.dps.value.toFixed(0)],
+        [t('dv_i_taken'), `${Math.round(run.stats.damageTaken)} (${dev.dtps.value.toFixed(1)}${t('dv_per_s')})`],
+        [t('dv_i_spawn'), dev.spawnRate.value.toFixed(1) + t('dv_per_s')],
+        [t('dv_i_xp'), `${t('dv_lv', { n: p.level })} · ${Math.floor(p.xp)}/${Math.floor(p.xpNext)}`],
+        [t('dv_i_hp'), `${Math.ceil(p.hp)}/${Math.round(p.stats.maxHp)}`],
+        [t('dv_i_gold'), String(Math.floor(run.stats.gold))],
       );
     }
-    rows.push(['Coins', String(dev.profile?.data.gold ?? 0)]);
+    rows.push([t('dv_i_coins'), String(dev.profile?.data.gold ?? 0)]);
     clear(this.info);
-    this.info.append(h('div.dev-info-head', 'DEBUG INFO'), ...rows.map(([k, v]) => h('div.dev-row', h('span', k), h('b', v))));
+    this.info.append(h('div.dev-info-head', t('dv_info_head')), ...rows.map(([k, v]) => h('div.dev-row', h('span', k), h('b', v))));
   }
 
   // ---------------------------------------------------------------- panel
@@ -133,81 +133,81 @@ export class DevUi {
     clear(this.body);
     const run = dev.run;
     const k = this.keys();
-    const noRun = run ? null : h('div.dev-note', 'Эти инструменты работают во время забега / Available during a run');
+    const noRun = run ? null : h('div.dev-note', t('dv_need_run'));
     this.body.append(
-      h('div.dev-keys', `${keyName(k.panel)} — панель · ${keyName(k.debug)} — debug info · ${keyName(k.god)} — god mode`),
-      h('div.dev-row2', btn('MAX PLAYER', () => dev.maxPlayer(), '.gold', !run), btn('RESET TEST STATE', () => dev.resetTestState(), '.red')),
-      sec('player', 'Player', [
-        tog('God Mode', 'god'),
-        tog('Infinite HP', 'infHp'),
-        tog(`Infinite XP (×${INF_XP_MUL})`, 'infXp'),
-        tog('Infinite Gold', 'infGold'),
-        tog('Infinite Coins', 'infCoins'),
-        h('div.dev-grid', btn('Max Level', () => dev.maxLevel(), '', !run), btn('Heal', () => dev.heal(), '', !run), btn('Kill Player', () => dev.killPlayer(), '.red', !run)),
-        numRow('Add XP', 'xp', () => dev.addXp(sel.xp), !run),
-        numRow('Add Gold', 'gold', () => dev.addGold(sel.gold), !run),
-        numRow('Add Coins', 'coins', () => dev.addCoins(sel.coins)),
+      h('div.dev-keys', t('dv_keys', { panel: keyName(k.panel), debug: keyName(k.debug), god: keyName(k.god) })),
+      h('div.dev-row2', btn(t('dv_max_player'), () => dev.maxPlayer(), '.gold', !run), btn(t('dv_reset_state'), () => dev.resetTestState(), '.red')),
+      sec('player', t('dv_sec_player'), [
+        tog(t('dv_god'), 'god'),
+        tog(t('dv_infHp'), 'infHp'),
+        tog(t('dv_infXp', { n: INF_XP_MUL }), 'infXp'),
+        tog(t('dv_infGold'), 'infGold'),
+        tog(t('dv_infCoins'), 'infCoins'),
+        h('div.dev-grid', btn(t('dv_max_level'), () => dev.maxLevel(), '', !run), btn(t('dv_heal'), () => dev.heal(), '', !run), btn(t('dv_kill_player'), () => dev.killPlayer(), '.red', !run)),
+        numRow(t('dv_add_xp'), 'xp', () => dev.addXp(sel.xp), !run),
+        numRow(t('dv_add_gold'), 'gold', () => dev.addGold(sel.gold), !run),
+        numRow(t('dv_add_coins'), 'coins', () => dev.addCoins(sel.coins)),
         noRun,
       ]),
-      sec('unlock', 'Unlock', [
+      sec('unlock', t('dv_sec_unlock'), [
         h(
           'div.dev-grid',
-          btn('Characters', () => dev.unlock('heroes')),
-          btn('Weapons', () => dev.unlock('weapons')),
-          btn('Maps', () => dev.unlock('maps')),
-          btn('Upgrades', () => dev.unlock('upgrades')),
-          btn('Achievements', () => dev.unlock('achievements')),
-          btn('Evolutions', () => dev.unlock('evolutions')),
+          btn(t('dv_unlock_heroes'), () => dev.unlock('heroes')),
+          btn(t('dv_unlock_weapons'), () => dev.unlock('weapons')),
+          btn(t('dv_unlock_maps'), () => dev.unlock('maps')),
+          btn(t('dv_unlock_upgrades'), () => dev.unlock('upgrades')),
+          btn(t('dv_unlock_achievements'), () => dev.unlock('achievements')),
+          btn(t('dv_unlock_evolutions'), () => dev.unlock('evolutions')),
         ),
-        btn('UNLOCK EVERYTHING', () => dev.unlock('all'), '.gold.wide'),
-        h('div.dev-note', 'Только в тестовом состоянии, обычное сохранение не меняется'),
+        btn(t('dv_unlock_all'), () => dev.unlock('all'), '.gold.wide'),
+        h('div.dev-note', t('dv_unlock_note')),
       ]),
-      sec('weapons', 'Weapons', run ? this.weaponsSec() : [noRun]),
-      sec('enemies', 'Enemies', [
+      sec('weapons', t('dv_sec_weapons'), run ? this.weaponsSec() : [noRun]),
+      sec('enemies', t('dv_sec_enemies'), [
         pick(ENEMIES.filter((e) => e.behavior !== 'prop').map((e) => [e.id, L(e.name)]), () => sel.enemy, (v) => (sel.enemy = v)),
-        h('div.dev-grid', ...[1, 10, 50].map((n) => btn(`Spawn ×${n}`, () => dev.spawnEnemy(sel.enemy, false, n), '', !run)), btn('Spawn Elite', () => dev.spawnEnemy(sel.enemy, true), '', !run)),
+        h('div.dev-grid', ...[1, 10, 50].map((n) => btn(t('dv_spawn_n', { n }), () => dev.spawnEnemy(sel.enemy, false, n), '', !run)), btn(t('dv_spawn_elite'), () => dev.spawnEnemy(sel.enemy, true), '', !run)),
         pick(BOSSES.map((b) => [b.id, L(b.name)]), () => sel.boss, (v) => (sel.boss = v)),
-        h('div.dev-grid', btn('Spawn Boss', () => dev.spawnBoss(sel.boss), '', !run), btn('Kill All', () => dev.killAll(), '.red', !run)),
-        tog('Freeze Enemies', 'freeze'),
-        mulRow('Enemy HP', () => dev.enemyHp, (v) => dev.setEnemyMul(v, dev.enemyDmg)),
-        mulRow('Enemy Damage', () => dev.enemyDmg, (v) => dev.setEnemyMul(dev.enemyHp, v)),
-        h('div.dev-note', 'Множители действуют на новых врагов'),
+        h('div.dev-grid', btn(t('dv_spawn_boss'), () => dev.spawnBoss(sel.boss), '', !run), btn(t('dv_kill_all'), () => dev.killAll(), '.red', !run)),
+        tog(t('dv_freeze'), 'freeze'),
+        mulRow(t('dv_enemy_hp'), () => dev.enemyHp, (v) => dev.setEnemyMul(v, dev.enemyDmg)),
+        mulRow(t('dv_enemy_dmg'), () => dev.enemyDmg, (v) => dev.setEnemyMul(dev.enemyHp, v)),
+        h('div.dev-note', t('dv_mul_note')),
         noRun,
       ]),
-      sec('waves', 'Waves', [
-        run ? h('div.dev-cur', `Wave ${run.waves.wave.n} / ${run.waves.total === Infinity ? '∞' : run.waves.total} · ${t('wave_' + run.waves.wave.type)}`) : noRun,
-        h('div.dev-grid', btn('◀ Prev', () => dev.prevWave(), '', !run), btn('Next ▶', () => dev.nextWave(), '', !run), btn('Skip Wave', () => dev.nextWave(), '', !run), btn('Restart Wave', () => dev.restartWave(), '', !run)),
-        numRow('Set Wave', 'wave', () => dev.setWave(sel.wave), !run, 'Go'),
-        h('div.dev-grid', btn('Spawn Boss', () => dev.spawnWaveBoss(), '', !run), btn('Elite Wave', () => dev.eliteWave(), '', !run)),
+      sec('waves', t('dv_sec_waves'), [
+        run ? h('div.dev-cur', t('dv_wave_cur', { n: run.waves.wave.n, total: run.waves.total === Infinity ? '∞' : run.waves.total, type: t('wave_' + run.waves.wave.type) })) : noRun,
+        h('div.dev-grid', btn('◀ ' + t('dv_prev_wave'), () => dev.prevWave(), '', !run), btn(t('dv_next_wave') + ' ▶', () => dev.nextWave(), '', !run), btn(t('dv_skip_wave'), () => dev.nextWave(), '', !run), btn(t('dv_restart_wave'), () => dev.restartWave(), '', !run)),
+        numRow(t('dv_set_wave'), 'wave', () => dev.setWave(sel.wave), !run, t('dv_go')),
+        h('div.dev-grid', btn(t('dv_boss_wave'), () => dev.spawnWaveBoss(), '', !run), btn(t('dv_elite_wave'), () => dev.eliteWave(), '', !run)),
       ]),
-      sec('daynight', 'Day / Night', [
-        run ? h('div.dev-cur', run.dayNight.enabled ? `${run.dayNight.period}${run.dayNight.bloodMoon ? ' (blood moon)' : ''} · night ${run.dayNight.nights} · next in ${Math.ceil(run.dayNight.timeToNext)}s` : 'cycle off (Settings → Gameplay)') : noRun,
-        h('div.dev-grid', ...(['dawn', 'day', 'dusk', 'night'] as const).map((p) => btn(p[0].toUpperCase() + p.slice(1), () => dev.setDayPeriod(p), run?.dayNight.period === p ? '.on' : '', !run))),
-        h('div.dev-grid', btn('Blood Moon', () => dev.bloodMoon(), '.red', !run), btn('Night Pack', () => dev.nightPack(), '', !run), btn('Night Boss', () => dev.nightBoss(), '', !run)),
+      sec('daynight', t('dv_sec_daynight'), [
+        run ? h('div.dev-cur', run.dayNight.enabled ? t('dv_dn_cur', { period: t('period_' + run.dayNight.period), blood: run.dayNight.bloodMoon ? t('dv_dn_blood') : '', n: run.dayNight.nights, s: Math.ceil(run.dayNight.timeToNext) }) : t('dv_dn_off')) : noRun,
+        h('div.dev-grid', ...(['dawn', 'day', 'dusk', 'night'] as const).map((p) => btn(t('period_' + p), () => dev.setDayPeriod(p), run?.dayNight.period === p ? '.on' : '', !run))),
+        h('div.dev-grid', btn(t('dv_blood_moon'), () => dev.bloodMoon(), '.red', !run), btn(t('dv_night_pack'), () => dev.nightPack(), '', !run), btn(t('dv_night_boss'), () => dev.nightBoss(), '', !run)),
       ]),
-      sec('time', 'Time', [
-        h('div.dev-grid', btn(dev.paused ? 'Resume' : 'Pause', () => dev.setPaused(!dev.paused), dev.paused ? '.on' : '', !run)),
-        h('div.dev-seg', ...[0.5, 1, 2, 5].map((v) => btn('×' + v, () => dev.setTimeScale(v), dev.timeScale === v ? '.on' : ''))),
-        numRow('Set Time (sec)', 'time', () => dev.setTime(sel.time), !run, 'Go'),
+      sec('time', t('dv_sec_time'), [
+        h('div.dev-grid', btn(dev.paused ? t('dv_resume') : t('dv_pause'), () => dev.setPaused(!dev.paused), dev.paused ? '.on' : '', !run)),
+        h('div.dev-numrow', h('span', t('dv_speed')), h('div.dev-seg', ...[0.5, 1, 2, 5].map((v) => btn('×' + v, () => dev.setTimeScale(v), dev.timeScale === v ? '.on' : '')))),
+        numRow(t('dv_set_time'), 'time', () => dev.setTime(sel.time), !run, t('dv_go')),
       ]),
-      sec('spawn', 'Spawn', [
+      sec('spawn', t('dv_sec_spawn'), [
         h(
           'div.dev-grid',
-          btn('Enemy', () => dev.spawnEnemy(sel.enemy), '', !run),
-          btn('Elite', () => dev.spawnEnemy(sel.enemy, true), '', !run),
-          btn('Boss', () => dev.spawnBoss(sel.boss), '', !run),
-          btn('Chest', () => dev.spawnPickup('chest'), '', !run),
-          btn('XP', () => dev.spawnPickup('xp', 200), '', !run),
-          btn('Gold', () => dev.spawnPickup('pouch', 25), '', !run),
-          btn('Coins', () => dev.spawnPickup('coins'), '', !run),
+          btn(t('dv_sp_enemy'), () => dev.spawnEnemy(sel.enemy), '', !run),
+          btn(t('dv_sp_elite'), () => dev.spawnEnemy(sel.enemy, true), '', !run),
+          btn(t('dv_sp_boss'), () => dev.spawnBoss(sel.boss), '', !run),
+          btn(t('dv_sp_chest'), () => dev.spawnPickup('chest'), '', !run),
+          btn(t('dv_sp_xp'), () => dev.spawnPickup('xp', 200), '', !run),
+          btn(t('dv_sp_gold'), () => dev.spawnPickup('pouch', 25), '', !run),
+          btn(t('dv_sp_coins'), () => dev.spawnPickup('coins'), '', !run),
         ),
-        pick((['fury', 'haste', 'aegis', 'frenzy', 'chrono', 'nuke', 'heart', 'magnet', 'star'] as PickupKind[]).map((p) => [p, p]), () => sel.power, (v) => (sel.power = v as PickupKind)),
-        btn('Spawn Power-Up', () => dev.spawnPickup(sel.power), '.wide', !run),
+        pick((['fury', 'haste', 'aegis', 'frenzy', 'chrono', 'nuke', 'heart', 'magnet', 'star'] as PickupKind[]).map((p) => [p, t('dv_pu_' + p)]), () => sel.power, (v) => (sel.power = v as PickupKind)),
+        btn(t('dv_sp_power'), () => dev.spawnPickup(sel.power), '.wide', !run),
       ]),
-      sec('clear', 'Clear', [
-        h('div.dev-grid', btn('Kill All Enemies', () => dev.killAll(), '.red', !run), btn('Projectiles', () => dev.clearProjectiles(), '', !run), btn('Pickups', () => dev.clearPickups(), '', !run), btn('Effects', () => dev.clearEffects(), '', !run)),
+      sec('clear', t('dv_sec_clear'), [
+        h('div.dev-grid', btn(t('dv_clear_enemies'), () => dev.killAll(), '.red', !run), btn(t('dv_clear_proj'), () => dev.clearProjectiles(), '', !run), btn(t('dv_clear_pickups'), () => dev.clearPickups(), '', !run), btn(t('dv_clear_fx'), () => dev.clearEffects(), '', !run)),
       ]),
-      sec('debug', 'Debug', [btn(dev.debugOpen ? 'Hide Debug Info' : 'Show Debug Info', () => this.setDebug(!dev.debugOpen), dev.debugOpen ? '.on.wide' : '.wide')]),
+      sec('debug', t('dv_sec_debug'), [btn(dev.debugOpen ? t('dv_hide_debug') : t('dv_show_debug'), () => this.setDebug(!dev.debugOpen), dev.debugOpen ? '.on.wide' : '.wide')]),
     );
     this.body.scrollTop = this.scroll;
   }
@@ -221,10 +221,10 @@ export class DevUi {
           'div.dev-item',
           h('span.dev-item-name', { style: `color:#${w.def.color.toString(16).padStart(6, '0')}` }, L(w.def.name)),
           h('span.dev-lv', `${w.level}/${w.maxLevel}`),
-          btn('−', () => dev.setWeaponLevel(w.def.id, w.level - 1), '.sq'),
-          btn('+', () => dev.setWeaponLevel(w.def.id, w.level + 1), '.sq'),
-          btn('MAX', () => dev.setWeaponLevel(w.def.id, w.maxLevel), '.sq'),
-          btn('✕', () => dev.removeWeapon(w.def.id), '.sq.red'),
+          btn('−', () => dev.setWeaponLevel(w.def.id, w.level - 1), '.sq', false, t('dv_level_down')),
+          btn('+', () => dev.setWeaponLevel(w.def.id, w.level + 1), '.sq', false, t('dv_level_up')),
+          btn(t('dv_max_short'), () => dev.setWeaponLevel(w.def.id, w.maxLevel), '.sq', false, t('dv_max_weapon')),
+          btn('✕', () => dev.removeWeapon(w.def.id), '.sq.red', false, t('dv_remove_weapon')),
         ),
       );
     }
@@ -236,22 +236,22 @@ export class DevUi {
           'div.dev-item',
           h('span.dev-item-name', L(def.name)),
           h('span.dev-lv', `${lvl}/${def.maxLevel}`),
-          btn('−', () => dev.setPassiveLevel(id, lvl - 1), '.sq'),
-          btn('+', () => dev.setPassiveLevel(id, lvl + 1), '.sq'),
-          btn('MAX', () => dev.setPassiveLevel(id, def.maxLevel), '.sq'),
-          btn('✕', () => dev.setPassiveLevel(id, 0), '.sq.red'),
+          btn('−', () => dev.setPassiveLevel(id, lvl - 1), '.sq', false, t('dv_passive_down')),
+          btn('+', () => dev.setPassiveLevel(id, lvl + 1), '.sq', false, t('dv_passive_up')),
+          btn(t('dv_max_short'), () => dev.setPassiveLevel(id, def.maxLevel), '.sq', false, t('dv_passive_max')),
+          btn('✕', () => dev.setPassiveLevel(id, 0), '.sq.red', false, t('dv_passive_remove')),
         ),
       );
     }
     return [
-      h('div.dev-sub', `Weapons ${run.weapons.list.length}/${BALANCE.weaponSlots}`),
+      h('div.dev-sub', t('dv_weapons_n', { n: run.weapons.list.length, max: BALANCE.weaponSlots })),
       list,
-      h('div.dev-pickrow', pick(WEAPONS.filter((w) => !w.evolved).map((w) => [w.id, L(w.name)]), () => sel.weapon, (v) => (sel.weapon = v)), btn('Add', () => dev.addWeapon(sel.weapon))),
-      h('div.dev-pickrow', pick(WEAPONS.filter((w) => w.evolved).map((w) => [w.id, L(w.name)]), () => sel.evo, (v) => (sel.evo = v)), btn('Evolve', () => dev.addEvolution(sel.evo))),
-      h('div.dev-sub', `Passives ${run.passives.count}/${BALANCE.passiveSlots}`),
+      h('div.dev-pickrow', pick(WEAPONS.filter((w) => !w.evolved).map((w) => [w.id, L(w.name)]), () => sel.weapon, (v) => (sel.weapon = v)), btn(t('dv_add_weapon'), () => dev.addWeapon(sel.weapon))),
+      h('div.dev-pickrow', pick(WEAPONS.filter((w) => w.evolved).map((w) => [w.id, L(w.name)]), () => sel.evo, (v) => (sel.evo = v)), btn(t('dv_evolve'), () => dev.addEvolution(sel.evo))),
+      h('div.dev-sub', t('dv_passives_n', { n: run.passives.count, max: BALANCE.passiveSlots })),
       plist,
-      h('div.dev-pickrow', pick(PASSIVES.map((x) => [x.id, L(x.name)]), () => sel.passive, (v) => (sel.passive = v)), btn('Add', () => dev.addPassive(sel.passive))),
-      h('div.dev-note', WEAPON_BY_ID[sel.evo]?.evolved ? 'Evolve: эволюционирует базовое оружие или добавляет эволюцию в свободный слот' : ''),
+      h('div.dev-pickrow', pick(PASSIVES.map((x) => [x.id, L(x.name)]), () => sel.passive, (v) => (sel.passive = v)), btn(t('dv_add_passive'), () => dev.addPassive(sel.passive))),
+      h('div.dev-note', WEAPON_BY_ID[sel.evo]?.evolved ? t('dv_evolve_note') : ''),
     ];
   }
 }
@@ -261,15 +261,15 @@ function put(el: HTMLElement, ...kids: (HTMLElement | null)[]) {
   for (const k of kids) if (k) el.append(k);
 }
 
-function btn(label: string, fn: () => void, cls = '', disabled = false): HTMLElement {
-  const b = h('button.dev-btn' + cls, { onclick: () => !disabled && fn() }, label);
+function btn(label: string, fn: () => void, cls = '', disabled = false, title?: string): HTMLElement {
+  const b = h('button.dev-btn' + cls, { onclick: () => !disabled && fn(), title: title ?? (disabled ? t('dv_need_run') : label) }, label);
   if (disabled) b.classList.add('off');
   return b;
 }
 
 function tog(label: string, key: DevToggle): HTMLElement {
   const on = dev.toggles[key];
-  return h('button.dev-tog' + (on ? '.on' : ''), { onclick: () => dev.toggle(key) }, h('span', label), h('b', on ? 'ON' : 'OFF'));
+  return h('button.dev-tog' + (on ? '.on' : ''), { onclick: () => dev.toggle(key) }, h('span', label), h('b', on ? t('dv_on') : t('dv_off')));
 }
 
 function sec(id: string, title: string, kids: (HTMLElement | null)[]): HTMLElement {

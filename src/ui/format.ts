@@ -3,7 +3,7 @@ import type { StatMods, WeaponStats } from '../data/types';
 
 const PCT_STATS = new Set(['might', 'area', 'cooldown', 'projSpeed', 'duration', 'luck', 'growth', 'greed', 'critChance', 'critDamage', 'moveSpeed', 'magnet', 'lifesteal', 'thorns', 'curse', 'dodge', 'knockback']);
 
-function num(v: number): string {
+export function num(v: number): string {
   const r = Math.round(v * 100) / 100;
   return String(r);
 }

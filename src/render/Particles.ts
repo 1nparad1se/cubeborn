@@ -39,6 +39,8 @@ export class Particles {
   private smoke: InstancedBatch;
   private max: number;
   private ambientAcc = 0;
+  /** Ambient map particles (the weapon viewer can switch them off). */
+  ambientOn = true;
 
   constructor(scene: THREE.Scene, blockTex: THREE.Texture, blobTex: THREE.Texture, quality: string, private ambient: AmbientKind, private ambientColor: number) {
     this.max = quality === 'low' ? 900 : quality === 'medium' ? 1800 : 3000;
@@ -198,7 +200,7 @@ export class Particles {
   }
 
   update(dt: number, cx: number, cz: number, blizzard: number, camYaw = 0) {
-    this.spawnAmbient(cx, cz, dt, blizzard);
+    if (this.ambientOn) this.spawnAmbient(cx, cz, dt, blizzard);
     this.glow.begin();
     this.debris.begin();
     this.smoke.begin();

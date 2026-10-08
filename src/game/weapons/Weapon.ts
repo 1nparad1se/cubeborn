@@ -45,6 +45,8 @@ export class WeaponInstance {
   /** Behaviour scratch state. */
   state: Record<string, any> = {};
   kills = 0;
+  /** How many times it has fired (renderers play the cast animation when it changes). */
+  fires = 0;
   /** Last aimed direction (set by aim() when a target was found) and when. */
   aimX = 0;
   aimZ = 1;
@@ -185,6 +187,7 @@ export class WeaponSystem {
       if (w.cdT <= 0) {
         w.cdT += w.cooldown(run);
         if (w.cdT < 0) w.cdT = w.cooldown(run);
+        w.fires++;
         w.behavior.fire(w, run);
         if (w.def.id === this.heroWeapon || w.def.id === this.heroEvolved) this.heroAttackCue(w);
         this.releaseFx(w);

@@ -236,7 +236,7 @@ export function settingsPanel(api: MenuApi, rerender: () => void, inRun = false)
         if (on) {
           const k = s.keybinds;
           body.append(
-            h('div.dev-enabled', '✓ Developer Mode Enabled'),
+            h('div.dev-enabled', '✓ ' + t('dv_enabled')),
             h('div.set-hint', t('dev_test_note')),
             h(
               'div.dev-set-btns',
@@ -247,7 +247,7 @@ export function settingsPanel(api: MenuApi, rerender: () => void, inRun = false)
                   dev.resetTestState();
                   renderTab();
                 },
-              }, 'RESET TEST STATE'),
+              }, t('dv_reset_state')),
             ),
             h('div.set-sub', t('dev_hotkeys')),
             bindRow('devPanel'),

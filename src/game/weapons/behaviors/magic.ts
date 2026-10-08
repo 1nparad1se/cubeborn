@@ -66,8 +66,42 @@ registerBehavior('strike', {
   },
 });
 
-// Chain Spark / Thunderweb: lightning hopping between enemies.
-const visited = new Set<number>();
+// Chain Spark / Thunderweb: a spark of lightning that hops from enemy to enemy. Each hop takes
+// HOP seconds, so the spark is seen travelling and the damage lands as it arrives.
+const HOP = 0.065;
+let chainSerial = 1;
+function chainHop(w: WeaponInstance, run: Run, id: number, k: number, fx: number, fz: number, cur: Enemy, left: number, range: number, seen: Set<number>, fork: boolean) {
+  const los = !w.passWalls;
+  seen.add(cur.uid);
+  const ef = run.effects.add('spark', fx, fz, HOP + 0.28, fork ? 0xffffff : w.def.color);
+  ef.x2 = cur.x;
+  ef.z2 = cur.z;
+  ef.y = 0.9;
+  ef.r = id;
+  ef.r2 = k;
+  ef.w = HOP;
+  ef.arc = fork ? 1 : 0;
+  run.later(HOP, () => {
+    const x = cur.alive ? cur.x : ef.x2;
+    const z = cur.alive ? cur.z : ef.z2;
+    if (cur.alive) run.combat.hit(cur, w.dmg, fork ? 0.6 : 1, x - fx, z - fz);
+    // the path it took stays lit for a moment so the chain reads among many enemies
+    const b = run.effects.add('bolt', fx, fz, 0.24, fork ? 0xffffff : w.def.color);
+    b.x2 = x;
+    b.z2 = z;
+    b.y = 0.9;
+    b.w = fork ? 0.07 : 0.1;
+    if (fork) return;
+    if (w.evo) {
+      const f = run.enemies.nearest(x, z, range, seen, los);
+      if (f) chainHop(w, run, chainSerial++, 0, x, z, f, 1, range, seen, true);
+    }
+    if (left > 1) {
+      const next = run.enemies.nearest(x, z, range, seen, los);
+      if (next) chainHop(w, run, id, k + 1, x, z, next, left - 1, range, seen, false);
+    }
+  });
+}
 registerBehavior('chain', {
   fire(w, run) {
     const pl = run.player;
@@ -76,35 +110,10 @@ registerBehavior('chain', {
     const range = w.p('range', 4.5) * w.area(run);
     for (let i = 0; i < n; i++) {
       run.later(i * 0.12, () => {
-        visited.clear();
-        let from = { x: pl.x, z: pl.z };
-        const los = !w.passWalls;
-        let cur: Enemy | null = run.enemies.nearest(pl.x, pl.z, 9, visited, los);
-        let left = hops;
-        while (cur && left-- > 0) {
-          visited.add(cur.uid);
-          const ef = run.effects.add('bolt', from.x, from.z, 0.2, w.def.color);
-          ef.x2 = cur.x;
-          ef.z2 = cur.z;
-          ef.y = 0.9;
-          ef.w = 0.12;
-          run.combat.hit(cur, w.dmg, 1, cur.x - from.x, cur.z - from.z);
-          run.fx.burst(cur.x, 0.9, cur.z, w.def.color, 4, 3, 0.1, 0.25, 'glow');
-          if (w.evo) {
-            const fork = run.enemies.nearest(cur.x, cur.z, range, visited, los);
-            if (fork) {
-              visited.add(fork.uid);
-              const ef2 = run.effects.add('bolt', cur.x, cur.z, 0.2, 0xffffff);
-              ef2.x2 = fork.x;
-              ef2.z2 = fork.z;
-              ef2.y = 0.9;
-              ef2.w = 0.08;
-              run.combat.hit(fork, w.dmg, 0.6, fork.x - cur.x, fork.z - cur.z);
-            }
-          }
-          from = { x: cur.x, z: cur.z };
-          cur = run.enemies.nearest(cur.x, cur.z, range, visited, los);
-        }
+        const seen = new Set<number>();
+        const first = run.enemies.nearest(pl.x, pl.z, 9, seen, !w.passWalls);
+        if (!first) return;
+        chainHop(w, run, chainSerial++, 0, pl.x, pl.z, first, hops, range, seen, false);
         run.fx.light(pl.x, pl.z, w.def.color, 1.5, 6, 0.15);
         run.fx.sound('zap', 0.4);
       });

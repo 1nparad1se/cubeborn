@@ -4,6 +4,7 @@ import { BALANCE } from '../config/balance';
 import * as THREE from 'three';
 import type { Run } from '../game/Run';
 import type { VoxelModel } from '../data/types';
+import { WeaponVisualSystem } from './weapons/WeaponVisualSystem';
 import { getModel, PROJECTILE_MODELS, PICKUP_MODELS, BOSS_MODELS } from '../models';
 import { ELITE_MODS } from '../data/enemies';
 import { InstancedBatch } from './InstancedBatch';
@@ -65,6 +66,8 @@ export class EntityRenderer {
   private heroWalk = 0;
   private time = 0;
   private enemyShadows: boolean;
+  /** Reworked weapon objects (models with their own animation, trails and effects). */
+  private weaponVis: WeaponVisualSystem;
 
   constructor(
     scene: THREE.Scene,
@@ -108,6 +111,7 @@ export class EntityRenderer {
     this.darkDisc = new InstancedBatch(flatPlane(), darkMat, this.group, 16);
     for (const b of [this.glowBox, this.glowDisc, this.glowRing, this.glowRingThin, this.glowPlane]) b.mesh.renderOrder = 5;
     this.glowBoxTop.mesh.renderOrder = 6;
+    this.weaponVis = new WeaponVisualSystem(this.group, run, lights);
   }
 
   private batchesFor(id: string, model: VoxelModel | undefined, frames: number): ModelBatches | null {
@@ -135,7 +139,7 @@ export class EntityRenderer {
     return m;
   }
 
-  update(dt: number, camX: number, camZ: number) {
+  update(dt: number, camX: number, camZ: number, camera: THREE.Camera) {
     this.time += dt;
     const time = this.time;
     for (const b of this.models.values()) for (const f of b.frames) f.begin();
@@ -147,6 +151,7 @@ export class EntityRenderer {
 
     this.drawHero(dt, time);
     this.drawEnemies(time, visible);
+    this.weaponVis.update(dt, camera, camX, camZ);
     this.drawAllies(visible);
     this.drawProjectiles(time, visible);
     this.drawPickups(time, visible);
@@ -413,6 +418,10 @@ export class EntityRenderer {
   private drawAllies(visible: (x: number, z: number) => boolean) {
     for (const a of this.run.allies.list) {
       if (!a.active || !visible(a.x, a.z)) continue;
+      if (this.weaponVis.handlesAlly(a)) {
+        this.shadows.push(a.x, 0.02, a.z, 0, 0.6 * a.scale, 1, 0.6 * a.scale);
+        continue;
+      }
       const mb = this.batchesFor(a.model, getModel(a.model), 2);
       if (!mb) continue;
       const fi = Math.floor(a.anim * 1.2) & 1;
@@ -431,6 +440,10 @@ export class EntityRenderer {
     const trailLv = run.fx.level();
     for (const p of run.projectiles.list) {
       if (!p.active || !visible(p.x, p.z)) continue;
+      if (this.weaponVis.handles(p)) {
+        if (p.vis !== 'pool' && p.vis !== 'tornado') this.shadows.push(p.x, 0.02, p.z, 0, 0.5 * Math.min(2, p.scale), 1, 0.5 * Math.min(2, p.scale));
+        continue;
+      }
       const model = PROJECTILE_MODELS[p.vis];
       const fadeIn = Math.min(1, p.age * 12);
       const s = p.scale * (0.4 + fadeIn * 0.6);
@@ -692,6 +705,7 @@ export class EntityRenderer {
     this.hero?.dispose();
     this.rig?.dispose();
     this.heroTex?.dispose();
+    this.weaponVis.dispose();
     this.group.parent?.remove(this.group);
   }
 }

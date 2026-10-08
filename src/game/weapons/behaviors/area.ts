@@ -384,12 +384,17 @@ registerBehavior('meteor', {
         const fall = w.p('duration', 0.9);
         const ef = run.effects.add('warn', g.x, g.z, fall, w.def.color);
         ef.r = r;
-        const p = run.projectiles.spawn(w, g.x - 3, g.z - 3, 0, 0, fall, 'meteor', w.def.color);
+        // the star rises from the tome beside the hero, arcs over and falls on the target
+        const pl = run.player;
+        const p = run.projectiles.spawn(w, pl.x - 0.9, pl.z - 0.3, 0, 0, fall, 'meteor', w.def.color);
         p.custom = true;
         p.collide = false;
         p.a = g.x;
         p.b = g.z;
         p.c = fall;
+        p.d = p.x;
+        p.e = p.z;
+        p.y = 2.2;
         p.glow = 2;
         p.scale = 0.8 + r * 0.25;
       });
@@ -397,10 +402,16 @@ registerBehavior('meteor', {
   },
   projectileUpdate(w, run, p) {
     const t = Math.min(1, p.age / p.c);
-    p.x = p.a - 3 * (1 - t);
-    p.z = p.b - 3 * (1 - t);
-    p.y = 14 * (1 - t) + 0.3;
-    if (run.rng.chance(0.5)) run.fx.burst(p.x, p.y, p.z, 0xffa040, 1, 1, 0.2, 0.4, 'glow');
+    // quadratic Bézier: tome → high above a third of the way → target, falling faster at the end
+    const u = t * t * (1.6 - 0.6 * t);
+    const mx = p.d + (p.a - p.d) * 0.3;
+    const mz = p.e + (p.b - p.e) * 0.3;
+    const k0 = (1 - u) * (1 - u);
+    const k1 = 2 * u * (1 - u);
+    const k2 = u * u;
+    p.x = k0 * p.d + k1 * mx + k2 * p.a;
+    p.z = k0 * p.e + k1 * mz + k2 * p.b;
+    p.y = k0 * 2.2 + k1 * 14 + k2 * 0.3;
     if (t >= 1) {
       const r = w.p('radius', 2.8) * w.area(run);
       hitCircle(run, w, p.a, p.b, r);
@@ -423,7 +434,9 @@ registerBehavior('summon', {
     const scale = (w.evo ? 1.25 : 1) * Math.sqrt(w.area(run));
     for (let i = 0; i < toSpawn; i++) {
       const a = run.rng.next() * TAU;
-      run.allies.spawn(pl.x + Math.cos(a) * 1.5, pl.z + Math.sin(a) * 1.5, w.evo ? 1e9 : w.duration(run), w.speed(run), w.dmg, w.p('hitEvery', 0.6), w.evo ? 'ally_knight' : 'ally_skeleton', w.source, scale);
+      const al = run.allies.spawn(pl.x + Math.cos(a) * 1.5, pl.z + Math.sin(a) * 1.5, w.evo ? 1e9 : w.duration(run), w.speed(run), w.dmg, w.p('hitEvery', 0.6), w.evo ? 'ally_knight' : 'ally_skeleton', w.source, scale);
+      // familiars fly: they circle the hero, dash at enemies and come back
+      al.fly = true;
     }
     if (toSpawn > 0) run.fx.sound('bones', 0.5);
   },

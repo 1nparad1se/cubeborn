@@ -19,6 +19,8 @@ import { ACHIEVEMENTS, ACHIEVEMENT_CATEGORIES } from '../data/achievements';
 import type { AchievementCategory, AchievementDef, UnlockRef, WeaponDef } from '../data/types';
 import { settingsPanel } from './Settings';
 import { viewerScreen } from './ViewerScreen';
+import { weaponViewerScreen } from './WeaponViewerScreen';
+import { WEAPON_VISUALS } from '../config/weaponVisuals';
 
 export interface MenuApi {
   profile: Profile;
@@ -42,11 +44,11 @@ export interface MenuApi {
   version: string;
 }
 
-type ScreenId = 'main' | 'heroes' | 'viewer' | 'maps' | 'weapons' | 'collection' | 'upgrades' | 'achievements' | 'settings';
+type ScreenId = 'main' | 'heroes' | 'viewer' | 'wanims' | 'maps' | 'weapons' | 'collection' | 'upgrades' | 'achievements' | 'settings';
 
 const RARITY_COLOR: Record<string, string> = { common: '#c8ccd8', uncommon: '#6aff8a', rare: '#5ab4ff', epic: '#c77dff', legendary: '#ffb02e' };
 /** Tabs along the top bar of the menu screens (Q / E cycle through them). */
-const TABS: ScreenId[] = ['viewer', 'weapons', 'maps', 'collection', 'upgrades', 'achievements', 'settings'];
+const TABS: ScreenId[] = ['viewer', 'weapons', 'wanims', 'maps', 'collection', 'upgrades', 'achievements', 'settings'];
 /** Screens where the 3D showcase stays visible on the right instead of an item preview. */
 const SHOWCASE: ScreenId[] = ['main', 'heroes', 'maps'];
 
@@ -62,6 +64,8 @@ export class Menus {
   private selHero = 'bram';
   private selMap = 'blightwood';
   private selDiff = 'normal';
+  /** Weapon the weapon-animation screen opens on. */
+  private selWeapon: string | null = null;
   private achStatus: 'all' | 'done' | 'locked' = 'all';
   private achCat: AchievementCategory | 'all' = 'all';
   /** Set by the Endless button: the map screen opens with Endless mode picked. */
@@ -88,7 +92,7 @@ export class Menus {
     if (document.querySelector('.modal-back')) return;
     const id = this.current;
     if (id === 'main') return;
-    if (id === 'viewer' && e.code !== 'KeyQ' && e.code !== 'KeyE') return;
+    if ((id === 'viewer' || id === 'wanims') && e.code !== 'KeyQ' && e.code !== 'KeyE') return;
     if (e.code === 'KeyQ' || e.code === 'KeyE') {
       e.preventDefault();
       this.cycleTab(e.code === 'KeyQ' ? -1 : 1);
@@ -154,7 +158,7 @@ export class Menus {
     this.cleanup?.();
     this.cleanup = null;
     clear(this.root);
-    this.api.setBackdropPaused(id === 'viewer');
+    this.api.setBackdropPaused(id === 'viewer' || id === 'wanims');
     const el = this.build(id);
     el.classList.add('screen', 'screen-' + id);
     this.root.appendChild(el);
@@ -172,6 +176,11 @@ export class Menus {
         const v = viewerScreen(this.api.profile, this.selHero, (x) => this.api.sfx(x), (hid) => {
           if (this.api.profile.isHeroUnlocked(hid)) this.selHero = hid;
         });
+        this.cleanup = () => v.dispose();
+        return this.frame(v.el);
+      }
+      case 'wanims': {
+        const v = weaponViewerScreen(this.selWeapon, (x) => this.api.sfx(x));
         this.cleanup = () => v.dispose();
         return this.frame(v.el);
       }
@@ -272,6 +281,7 @@ export class Menus {
             this.open('viewer');
           }),
           this.btn(t('menu_weapons'), () => this.open('weapons')),
+          this.btn(t('menu_wanims'), () => this.open('wanims')),
           this.btn(t('menu_maps'), () => {
             this.selectMode = false;
             this.open('maps');
@@ -519,6 +529,12 @@ export class Menus {
           ? h('div.levels', ...w.levels.map((d, i) => h('div.lv', h('b', i + 2 === WEAPON_MAX_LEVEL ? 'MAX' : t('lvl_short', { n: i + 2 })), h('span', weaponDeltaLines(d).join(', ')))))
           : null,
         w.evolution ? h('div.recipe', recipe(w, WEAPON_BY_ID[w.evolution.into])) : null,
+        WEAPON_VISUALS[w.id]
+          ? this.btn(t('wv_open'), () => {
+              this.selWeapon = w.id;
+              this.open('wanims');
+            })
+          : null,
       );
     };
     const all = WEAPONS.filter((w) => !w.evolved);

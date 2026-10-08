@@ -2604,12 +2604,14 @@ h2.glow {
 }
 
 /* ------------------------------------------------------------------ character viewer */
-.screen-viewer .mbody {
+.screen-viewer .mbody,
+.screen-wanims .mbody {
   padding: 14px calc(20px + var(--sar)) 14px calc(20px + var(--sal));
   display: flex;
   min-height: 0;
 }
-.screen-viewer.mframe {
+.screen-viewer.mframe,
+.screen-wanims.mframe {
   height: 100%;
 }
 .cv {
@@ -3397,4 +3399,74 @@ h2.glow {
 .ach-toast-desc {
   font: 400 var(--fs-min) var(--font-ui);
   color: var(--dim);
+}
+
+/* ------------------------------------------------------------------ weapon animations (v2.3) */
+.wv {
+  grid-template-columns: 150px minmax(0, 1fr) minmax(260px, 360px);
+}
+.wv-card {
+  gap: 2px;
+  padding: 8px 4px;
+}
+.wv-card .icon {
+  width: 42px;
+  height: 42px;
+}
+.wv-card.evo {
+  margin-top: -4px;
+  background: linear-gradient(to top, rgba(255, 210, 61, 0.18), transparent 60%), linear-gradient(#2c2a24, #211f1b);
+}
+.wv-rar {
+  font: 700 11px var(--font-ui);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.wv-stage {
+  background: radial-gradient(ellipse at 50% 40%, #3c424e 0%, #262a32 55%, #16181d 100%);
+}
+.cv-anim.extra {
+  background: #3a3350;
+}
+.cv-anim.extra.sel {
+  background: var(--accent);
+}
+.wv-levels {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.wv-levels .cv-tool {
+  min-width: 40px;
+}
+.wv-levels .cv-tool.evo {
+  background: #4a3d1a;
+  color: #ffd23d;
+}
+.wv-play {
+  background: var(--accent) !important;
+  color: #1a1408;
+}
+.wv-tags {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.wv-look {
+  color: var(--dim);
+  margin: 0 0 8px;
+}
+@media (max-width: 900px) {
+  .wv {
+    grid-template-columns: 1fr;
+  }
+  .wv-strip {
+    flex-direction: row;
+    overflow-x: auto;
+  }
+  .wv-card {
+    min-width: 96px;
+  }
 }

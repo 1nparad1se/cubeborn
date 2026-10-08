@@ -13,6 +13,10 @@ import type { Run } from '../game/Run';
 import type { PickupKind } from '../game/Pickups';
 import type { EliteId } from '../data/enemies';
 import { DEV_TOOLS_AVAILABLE } from './flags';
+import { BOSSES } from '../data/bosses';
+import { L, t } from '../i18n';
+
+const wname = (id: string) => L(WEAPON_BY_ID[id]?.name) || id;
 
 export type DevToggle = 'god' | 'infHp' | 'infXp' | 'infGold' | 'infCoins' | 'freeze';
 
@@ -104,7 +108,7 @@ export class DevMode {
       this.debugOpen = false;
       this.resetSwitches();
     }
-    this.changed(on ? 'Developer Mode Enabled' : '');
+    this.changed(on ? t('dvm_enabled') : '');
     this.onProfileChange?.();
   }
 
@@ -114,7 +118,7 @@ export class DevMode {
     this.restoreSave();
     this.resetSwitches();
     if (this.run) this.applyRun(this.run);
-    this.changed('RESET TEST STATE');
+    this.changed(t('dvm_reset'));
     this.onProfileChange?.();
   }
 
@@ -191,7 +195,7 @@ export class DevMode {
 
   // ---------------------------------------------------------------- player
   private need(): Run | null {
-    if (!this.run) this.changed('Нужен активный забег / Start a run first');
+    if (!this.run) this.changed(t('dvm_need_run'));
     return this.run;
   }
 
@@ -202,27 +206,27 @@ export class DevMode {
     p.level = 99;
     p.xp = 0;
     p.xpNext = BALANCE.xpForLevel(p.level);
-    this.changed('Level 99');
+    this.changed(t('dvm_level'));
   }
 
   addXp(v: number) {
     const run = this.need();
     if (!run) return;
     run.player.addXp(v / run.debug.xpMul / run.player.stats.growth);
-    this.changed(`+${v} XP`);
+    this.changed(t('dvm_xp', { v }));
   }
 
   addGold(v: number) {
     const run = this.need();
     if (!run) return;
     run.stats.gold += v;
-    this.changed(`+${v} gold`);
+    this.changed(t('dvm_gold', { v }));
   }
 
   addCoins(v: number) {
     if (!this.profile) return;
     this.profile.data.gold += v;
-    this.changed(`+${v} coins`);
+    this.changed(t('dvm_coins', { v }));
     this.onProfileChange?.();
   }
 
@@ -230,7 +234,7 @@ export class DevMode {
     const run = this.need();
     if (!run) return;
     run.player.heal(run.player.stats.maxHp * 10, true);
-    this.changed('HP full');
+    this.changed(t('dvm_healed'));
   }
 
   killPlayer() {
@@ -247,7 +251,7 @@ export class DevMode {
     p.hurt(p.hp + 99999, null, true);
     run.debug.god = wasGod;
     run.debug.infHp = wasInf;
-    this.changed('Player killed');
+    this.changed(t('dvm_killed_player'));
   }
 
   /** Max level, full slots of maxed (and evolved where possible) weapons, maxed passives, full HP. */
@@ -276,7 +280,7 @@ export class DevMode {
     for (const id of [...run.passives.levels.keys()]) run.passives.levels.set(id, PASSIVE_BY_ID[id].maxLevel);
     run.recomputeStats();
     run.player.hp = run.player.stats.maxHp;
-    this.changed('MAX PLAYER');
+    this.changed(t('dvm_max_player'));
   }
 
   // ---------------------------------------------------------------- unlocks (test save only)
@@ -303,7 +307,7 @@ export class DevMode {
     if (all || what === 'achievements') add(d.achievements, ACHIEVEMENTS.map((a) => a.id));
     if (all || what === 'evolutions') add(d.discovered.weapons, WEAPONS.filter((w) => w.evolved).map((w) => w.id));
     d.seenIntro = true;
-    this.changed('Unlocked: ' + what);
+    this.changed(t('dvm_unlocked', { what: t('dvm_what_' + what) }));
     this.onProfileChange?.();
   }
 
@@ -314,11 +318,11 @@ export class DevMode {
     const def = WEAPON_BY_ID[id];
     if (!def) return;
     if (def.evolved) return this.addEvolution(id);
-    if (run.weapons.has(id)) return this.changed('Already owned');
-    if (run.weapons.list.length >= BALANCE.weaponSlots) return this.changed('Weapon slots full — remove one first');
+    if (run.weapons.has(id)) return this.changed(t('dvm_owned'));
+    if (run.weapons.list.length >= BALANCE.weaponSlots) return this.changed(t('dvm_slots'));
     run.weapons.add(id);
     run.stats.discovered.add(id);
-    this.changed('+ ' + id);
+    this.changed(t('dvm_added', { name: wname(id) }));
   }
 
   setWeaponLevel(id: string, level: number) {
@@ -332,14 +336,14 @@ export class DevMode {
     const run = this.need();
     if (!run) return;
     run.weapons.devRemove(id);
-    this.changed('- ' + id);
+    this.changed(t('dvm_removed', { name: wname(id) }));
   }
 
   /** Gives an evolved weapon: evolves its base weapon when owned, otherwise adds it to a free slot. */
   addEvolution(id: string) {
     const run = this.need();
     if (!run) return;
-    if (run.weapons.has(id)) return this.changed('Already owned');
+    if (run.weapons.has(id)) return this.changed(t('dvm_owned'));
     const base = run.weapons.list.find((w) => w.def.evolution?.into === id);
     if (base) {
       while (!base.isMax) base.levelUp();
@@ -348,8 +352,8 @@ export class DevMode {
       run.weapons.add(id);
       run.stats.evolutions.push(id);
       run.stats.discovered.add(id);
-    } else return this.changed('Weapon slots full — remove one first');
-    this.changed('Evolution: ' + id);
+    } else return this.changed(t('dvm_slots'));
+    this.changed(t('dvm_evolved', { name: wname(id) }));
   }
 
   private evolve(run: Run, id: string) {
@@ -365,7 +369,7 @@ export class DevMode {
   addPassive(id: string) {
     const run = this.need();
     if (!run) return;
-    if (!run.passives.has(id) && run.passives.count >= BALANCE.passiveSlots) return this.changed('Passive slots full');
+    if (!run.passives.has(id) && run.passives.count >= BALANCE.passiveSlots) return this.changed(t('dvm_pslots'));
     this.setPassiveLevel(id, run.passives.level(id) + 1);
   }
 
@@ -393,14 +397,14 @@ export class DevMode {
       const el = elite === true ? run.spawner.randomElite() : elite || null;
       run.enemies.spawn(def, pos.x, pos.z, { elite: el });
     }
-    this.changed(`Spawned ${count}× ${id}${elite ? ' (elite)' : ''}`);
+    this.changed(t('dvm_spawned', { name: L(ENEMY_BY_ID[id]?.name) || id, n: count, elite: elite ? t('dvm_elite') : '' }));
   }
 
   spawnBoss(id: string) {
     const run = this.need();
     if (!run) return;
     run.spawner.devSpawnBoss(id);
-    this.changed('Boss: ' + id);
+    this.changed(t('dvm_boss', { name: L(BOSSES.find((b) => b.id === id)?.name) || id }));
   }
 
   killAll() {
@@ -412,7 +416,7 @@ export class DevMode {
       run.combat.killEnemy(e, true);
       n++;
     }
-    this.changed(`Killed ${n}`);
+    this.changed(t('dvm_killed', { n }));
   }
 
   // ---------------------------------------------------------------- waves & time
@@ -421,7 +425,7 @@ export class DevMode {
     if (!run) return;
     run.waves.jumpTo(n);
     run.spawner.devWaveStart();
-    this.changed('Wave ' + run.waves.wave.n);
+    this.changed(t('dvm_wave', { n: run.waves.wave.n }));
   }
 
   nextWave() {
@@ -446,7 +450,7 @@ export class DevMode {
     const run = this.need();
     if (!run) return;
     run.spawner.devEliteWave();
-    this.changed('Elite wave');
+    this.changed(t('dvm_elite_wave'));
   }
 
   /** Day/night: jump to a period, force a blood moon, call the night events. */
@@ -454,7 +458,7 @@ export class DevMode {
     const run = this.need();
     if (!run || !run.dayNight.enabled) return;
     run.dayNight.devSet(p);
-    this.changed('Day period: ' + p);
+    this.changed(t('dvm_period', { p: t('period_' + p) }));
   }
 
   bloodMoon() {
@@ -462,21 +466,21 @@ export class DevMode {
     if (!run || !run.dayNight.enabled) return;
     run.dayNight.bloodAhead = true;
     run.dayNight.devSet('night');
-    this.changed('Blood moon');
+    this.changed(t('dvm_blood'));
   }
 
   nightPack() {
     const run = this.need();
     if (!run) return;
     run.dayNight.elitePack();
-    this.changed('Night pack');
+    this.changed(t('dvm_pack'));
   }
 
   nightBoss() {
     const run = this.need();
     if (!run) return;
     run.dayNight.nightBoss();
-    this.changed('Night boss');
+    this.changed(t('dvm_nboss'));
   }
 
   /** Moves the clock: the wave that would be running at that time starts now. */
@@ -490,7 +494,7 @@ export class DevMode {
     run.waves.jumpTo(n, Math.min(sec, (n - 1) * len));
     run.spawner.devSkipEventsTo(sec);
     run.spawner.devWaveStart();
-    this.changed(`Time ${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`);
+    this.changed(t('dvm_time', { t: `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}` }));
   }
 
   setTimeScale(v: number) {
@@ -514,7 +518,7 @@ export class DevMode {
     if (kind === 'chest') run.pickups.spawnChest(x, z, 0, 'elite');
     else if (kind === 'coins') for (let i = 0; i < 12; i++) run.pickups.spawn('gold', p.x + Math.cos((i / 12) * Math.PI * 2) * 2.4, p.z + Math.sin((i / 12) * Math.PI * 2) * 2.4, 1);
     else run.pickups.spawn(kind, x, z, value, true);
-    this.changed('Spawned ' + kind);
+    this.changed(t('dvm_pickup', { name: t('dv_' + (kind === 'chest' ? 'sp_chest' : kind === 'coins' ? 'sp_coins' : kind === 'xp' ? 'sp_xp' : kind === 'pouch' ? 'sp_gold' : 'pu_' + kind)) }));
   }
 
   clearProjectiles() {
@@ -522,7 +526,7 @@ export class DevMode {
     if (!run) return;
     run.projectiles.clear();
     run.hazards.clearAll();
-    this.changed('Projectiles cleared');
+    this.changed(t('dvm_proj'));
   }
 
   clearPickups() {
@@ -530,7 +534,7 @@ export class DevMode {
     if (!run) return;
     run.pickups.clear();
     run.pickups.gemCount = 0;
-    this.changed('Pickups cleared');
+    this.changed(t('dvm_pickups'));
   }
 
   clearEffects() {
@@ -538,7 +542,7 @@ export class DevMode {
     if (!run) return;
     run.effects.clear();
     run.hazards.clearAll();
-    this.changed('Effects cleared');
+    this.changed(t('dvm_fx'));
   }
 }
 

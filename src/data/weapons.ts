@@ -251,7 +251,7 @@ export const WEAPONS: WeaponDef[] = [
   {
     id: 'bone_familiars',
     name: { ru: 'Костяные фамильяры', en: 'Bone Familiars' },
-    desc: { ru: 'Призывает скелетов-союзников на время.', en: 'Summons skeletal allies for a while.' },
+    desc: { ru: 'Призывает летающие черепа: кружат у героя, бросаются на врагов и кусают.', en: 'Summons flying skulls that circle you, dash at enemies and bite.' },
     icon: 'skull', color: 0xe8e2cc, rarity: 'rare', behavior: 'summon', targeting: 'nearest',
     base: S({ damage: 9, cooldown: 6, amount: 2, projSpeed: 6.5, duration: 8, area: 1, knockback: 0.8, hitEvery: 0.6, pierce: -1 }),
     levels: [{ amount: 1 }, { damage: 4 }, { duration: 3, cooldown: -0.6 }, { amount: 1 }, { damage: 6, amount: 1 }],
@@ -438,7 +438,7 @@ export const WEAPONS: WeaponDef[] = [
   {
     id: 'legion_of_bones', evolved: true,
     name: { ru: 'Легион костей', en: 'Legion of Bones' },
-    desc: { ru: 'Постоянная армия мощных скелетов.', en: 'A permanent army of mighty skeletons.' },
+    desc: { ru: 'Постоянный рой рогатых черепов-владык.', en: 'A permanent swarm of horned lord skulls.' },
     icon: 'skull', color: 0xfff4c2, rarity: 'legendary', behavior: 'summon', targeting: 'nearest',
     base: S({ damage: 22, cooldown: 2, amount: 6, projSpeed: 8, duration: 9999, area: 1.3, knockback: 1.2, hitEvery: 0.45, pierce: -1, evo: 1 }),
     levels: [], tags: ['summon'], sfx: 'bones',

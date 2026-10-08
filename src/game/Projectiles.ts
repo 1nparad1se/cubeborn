@@ -44,7 +44,11 @@ export class Projectile {
   e = 0;
   /** Light emitted for the light pool (0 = none). */
   glow = 0;
+  /** Unique per spawn (pooled objects get a new one), so renderers can tell shots apart. */
+  serial = 0;
 }
+
+let nextSerial = 1;
 
 export class Projectiles {
   readonly list: Projectile[] = [];
@@ -57,6 +61,7 @@ export class Projectiles {
   spawn(owner: WeaponInstance | null, x: number, z: number, vx: number, vz: number, life: number, vis: string, color: number): Projectile {
     const p = this.free.pop() ?? new Projectile();
     p.active = true;
+    p.serial = nextSerial++;
     p.owner = owner;
     p.x = x;
     p.z = z;

@@ -479,7 +479,7 @@ export class Renderer {
     const nightK = run.dayNight.night;
     if (pal.heroLight) this.lights.request(p.x, 2.6, p.z, pal.heroLight, 1.6 + dark * 0.8 + nightK * 0.4, 9, t.x, t.z);
     else if (nightK > 0.05) this.lights.request(p.x, 2.6, p.z, 0xffe2b0, 1.5 * nightK, 8.5, t.x, t.z);
-    this.entities!.update(dt, t.x, t.z);
+    this.entities!.update(dt, t.x, t.z, this.rig.camera);
     this.particles!.update(dt, t.x, t.z, bl);
   }
 
