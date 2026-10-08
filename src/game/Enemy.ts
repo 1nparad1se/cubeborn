@@ -1,3 +1,4 @@
+import type { Zone } from './Hazards';
 import type { EnemyDef } from '../data/types';
 import type { DayKind } from '../config/dayNight';
 import type { EliteId } from '../data/enemies';
@@ -53,6 +54,15 @@ export class Enemy {
   curseT = 0;
   weakenT = 0;
   markT = 0;
+  /** Action-RPG role and attack state: wind-up time left, its hazard, cooldown, support haste. */
+  role: EnemyRole = 'melee';
+  atkT = 0;
+  atkCd = 0;
+  atkZone: Zone | null = null;
+  atkX = 0;
+  atkZ = 0;
+  hasteT = 0;
+  skillCd = 0;
   dotTick = 0;
   invuln = false;
   shieldT = 0;
@@ -103,6 +113,11 @@ export class Enemy {
     this.slowMul = 1;
     this.poisonDps = this.burnDps = 0;
     this.stunT = this.bleedT = this.bleedDps = this.curseT = this.weakenT = this.markT = 0;
+    this.atkT = this.hasteT = 0;
+    this.atkCd = 0.5 + Math.random();
+    this.skillCd = 3 + Math.random() * 3;
+    this.atkZone = null;
+    this.role = roleOf(def);
     this.dotTick = 0;
     this.invuln = false;
     this.shieldT = 0;
@@ -135,5 +150,31 @@ export class Enemy {
 
   hasElite(id: EliteId): boolean {
     return this.elite === id || this.elite2 === id;
+  }
+}
+
+export type EnemyRole = 'melee' | 'ranged' | 'tank' | 'assassin' | 'support' | 'summoner' | 'bomber' | 'flyer' | 'special';
+
+/** Combat role from the enemy definition (p.role overrides the category). */
+export function roleOf(def: EnemyDef): EnemyRole {
+  const o = def.p?.role as EnemyRole | undefined;
+  if (o) return o;
+  switch (def.category) {
+    case 'fast':
+      return 'assassin';
+    case 'tank':
+      return 'tank';
+    case 'ranged':
+      return 'ranged';
+    case 'flying':
+      return 'flyer';
+    case 'summoner':
+      return 'summoner';
+    case 'exploder':
+      return 'bomber';
+    case 'special':
+      return def.behavior === 'teleporter' ? 'assassin' : 'special';
+    default:
+      return 'melee';
   }
 }

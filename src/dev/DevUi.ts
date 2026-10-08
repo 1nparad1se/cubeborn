@@ -8,6 +8,9 @@ import { BALANCE } from '../config/balance';
 import { keyName } from '../input/Input';
 import { dev, INF_XP_MUL, type DevToggle } from './DevMode';
 import type { PickupKind } from '../game/Pickups';
+import type { GearSlot } from '../game/arpg/Gear';
+import type { Rarity, StatKey } from '../data/types';
+import { RARITIES } from '../data/types';
 
 // selections survive panel rebuilds
 const sel = {
@@ -23,8 +26,12 @@ const sel = {
   xp: 500,
   gold: 1000,
   coins: 10000,
+  slot: 'any' as GearSlot | 'any',
+  rarity: 'legendary' as Rarity,
+  stat: 'might' as StatKey,
+  statV: 0.25,
 };
-const openSecs = new Set<string>(['player', 'time']);
+const openSecs = new Set<string>(['player', 'arpg', 'time']);
 
 /**
  * Developer overlays: the DEVELOPER TOOLS panel (F1), the debug info readout (F2) and the
@@ -149,6 +156,8 @@ export class DevUi {
         numRow(t('dv_add_coins'), 'coins', () => dev.addCoins(sel.coins)),
         noRun,
       ]),
+      sec('arpg', t('dv_sec_arpg'), run ? this.arpgSec() : [noRun]),
+      sec('gear', t('dv_sec_gear'), run ? this.gearSec() : [noRun]),
       sec('unlock', t('dv_sec_unlock'), [
         h(
           'div.dev-grid',
@@ -210,6 +219,55 @@ export class DevUi {
       sec('debug', t('dv_sec_debug'), [btn(dev.debugOpen ? t('dv_hide_debug') : t('dv_show_debug'), () => this.setDebug(!dev.debugOpen), dev.debugOpen ? '.on.wide' : '.wide')]),
     );
     this.body.scrollTop = this.scroll;
+  }
+
+  /** Hero level, skill levels, cooldowns, resource, per-skill tests and teleport. */
+  private arpgSec(): (HTMLElement | null)[] {
+    const run = dev.run!;
+    const sk = run.skills;
+    const rows = h('div.dev-list');
+    for (let i = 0; i < 4; i++) {
+      const def = sk.skill(i);
+      const lv = sk.level(i);
+      const max = i === 3 ? 4 : 6;
+      rows.append(
+        h(
+          'div.dev-item',
+          h('span.dev-item-name', `${['Q', 'W', 'E', 'R'][i]} · ${L(def.name)}`),
+          h('span.dev-lv', `${lv}/${max}`),
+          btn('−', () => dev.setSkillLevel(i, lv - 1), '.sq', false, t('dv_level_down')),
+          btn('+', () => dev.setSkillLevel(i, lv + 1), '.sq', false, t('dv_level_up')),
+          btn(t('dv_max_short'), () => dev.setSkillLevel(i, max), '.sq', false, t('dv_level_up')),
+          btn('▶', () => dev.testSkill(i), '.sq', false, t('dv_test_skill')),
+        ),
+      );
+    }
+    return [
+      h('div.dev-cur', t('dv_arpg_cur', { cls: L(sk.kit.role), res: L(sk.kit.res.name), lv: run.player.level })),
+      h('div.dev-grid', btn(t('dv_arpg_max'), () => dev.arpgMax(), '.gold'), btn(t('dv_max_level'), () => dev.maxLevel()), btn(t('dv_cd_reset'), () => dev.resetCooldowns()), btn(t('dv_heal'), () => dev.heal())),
+      tog(t('dv_infRes'), 'infRes'),
+      tog(t('dv_noCd'), 'noCd'),
+      tog(t('dv_god'), 'god'),
+      rows,
+      h('div.dev-grid', btn(t('dv_tp'), () => dev.teleportToCursor())),
+      h('div.dev-note', t('dv_tp_note')),
+    ];
+  }
+
+  /** Items, gear sets and stat overrides. */
+  private gearSec(): (HTMLElement | null)[] {
+    const slots: (GearSlot | 'any')[] = ['any', 'weapon', 'helm', 'armor', 'gloves', 'boots', 'amulet', 'ring', 'trinket'];
+    const stats: StatKey[] = ['might', 'maxHp', 'armor', 'moveSpeed', 'critChance', 'critDamage', 'cooldown', 'regen', 'area', 'lifesteal', 'duration'];
+    const v = h('input.dev-num', { type: 'number', step: '0.05', value: String(sel.statV) }) as HTMLInputElement;
+    v.addEventListener('change', () => (sel.statV = Number(v.value) || 0));
+    return [
+      h('div.dev-pickrow', pick(slots.map((x) => [x, x === 'any' ? t('dv_any_slot') : t('slot_' + x)]), () => sel.slot, (x) => (sel.slot = x as GearSlot | 'any')), pick(RARITIES.map((r) => [r, t('rar_' + r)]), () => sel.rarity, (x) => (sel.rarity = x as Rarity))),
+      h('div.dev-grid', btn(t('dv_create_item'), () => dev.createItem(sel.slot, sel.rarity)), btn(t('dv_gear_set'), () => dev.giveGearSet(sel.rarity), '.gold')),
+      h('div.dev-sub', t('dv_set_stats')),
+      h('div.dev-pickrow', pick(stats.map((x) => [x, t('stat_' + x)]), () => sel.stat, (x) => (sel.stat = x as StatKey)), v, btn('+', () => dev.addStat(sel.stat, sel.statV))),
+      btn(t('dv_stats_clear'), () => dev.clearStats(), '.wide'),
+      h('div.dev-note', t('dv_stats_note')),
+    ];
   }
 
   private weaponsSec(): (HTMLElement | null)[] {

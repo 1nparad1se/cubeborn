@@ -32,6 +32,7 @@ import { MapFeatures } from './MapFeatures';
 import { RARITIES, type Rarity } from '../data/types';
 import './weapons/behaviors';
 import { SkillSystem, makeControls } from './arpg/Skills';
+import { Loot, type GearSave } from './arpg/Loot';
 
 export type RunState = 'playing' | 'levelup' | 'chest' | 'dead' | 'victory';
 
@@ -80,6 +81,8 @@ export interface RunOptions {
   tr: (key: string) => string;
   seed?: number;
   mode?: RunMode;
+  /** Saved equipment and bag. */
+  gear?: GearSave | null;
 }
 
 /** One playthrough of a map: owns every gameplay system and advances the simulation. */
@@ -111,6 +114,7 @@ export class Run {
   /** Action-RPG hero abilities and the frame's mouse/keyboard controls. */
   readonly skills: SkillSystem;
   readonly ctl = makeControls();
+  readonly loot: Loot;
   readonly bosses: BossController[] = [];
   readonly unlockedWeapons: Set<string>;
   readonly unlockedPassives: Set<string>;
@@ -124,7 +128,9 @@ export class Run {
   /** Multipliers for enemies spawned in the current wave. */
   waveScale: WaveScale;
   /** Developer-mode switches (all off in normal play). */
-  readonly debug = { god: false, infHp: false, xpMul: 1, freeze: false, enemyHp: 1, enemyDmg: 1, tainted: false, infRes: false };
+  readonly debug = { god: false, infHp: false, xpMul: 1, freeze: false, enemyHp: 1, enemyDmg: 1, tainted: false, infRes: false, noCd: false };
+  /** Developer stat bonuses (added on top of everything). */
+  readonly devMods: StatMods = {};
   readonly reviveBlast = makeDamage();
   readonly nukeBlast = makeDamage();
 
@@ -166,6 +172,7 @@ export class Run {
     const c = Math.floor(o.map.size / 2) + 0.5;
     this.player = new Player(this, c, c);
     this.skills = new SkillSystem(this);
+    this.loot = new Loot(this, o.gear ?? null);
     this.recomputeStats();
     this.player.hp = this.player.stats.maxHp;
     this.player.revivals = this.player.stats.revival;
@@ -195,7 +202,7 @@ export class Run {
   recomputeStats() {
     const p = this.player;
     const oldMax = p.stats?.maxHp ?? 0;
-    const mods = sumMods(this.hero.stats, this.permanent, this.passives.mods(), this.skills.statMods());
+    const mods = sumMods(this.hero.stats, this.permanent, this.passives.mods(), this.skills.statMods(), this.loot.totals.mods, this.devMods);
     p.stats = resolveStats(this.hero.baseHp, mods);
     if (oldMax > 0 && p.stats.maxHp > oldMax) p.hp += p.stats.maxHp - oldMax;
     const newRev = p.stats.revival;
@@ -265,6 +272,7 @@ export class Run {
     this.allies.update(dt);
     this.hazards.update(dt);
     this.pickups.update(dt);
+    this.loot.update(dt);
     this.effects.update(dt, p.x, p.z);
     this.stats.maxedWeapons = Math.max(this.stats.maxedWeapons, this.weapons.list.filter((w) => w.isMax).length);
     if (p.pendingLevels > 0 && this.state === 'playing' && !p.dead && this.endTimer < 0) this.beginLevelUp();

@@ -20,10 +20,6 @@ interface Slot {
   cost: HTMLElement;
 }
 
-const ROLE_KEY: Record<string, string> = {
-  normal: 'role_melee', fast: 'role_assassin', tank: 'role_tank', ranged: 'role_ranged', flying: 'role_flyer',
-  summoner: 'role_summoner', exploder: 'role_bomber', special: 'role_special', prop: 'role_special',
-};
 
 /** Effects shown on an enemy (hover panel, boss bar). */
 export function enemyEffects(e: Enemy): { key: string; color: string; t: number }[] {
@@ -68,6 +64,8 @@ export class ArpgHud {
   private hover: Enemy | null = null;
   private runRef: Run | null = null;
   binds: Keybinds | null = null;
+  onInventory: () => void = () => {};
+  private bagKey = h('span.key');
 
   constructor() {
     this.hpFill = h('div.ah-fill');
@@ -100,7 +98,7 @@ export class ArpgHud {
     this.root = h(
       'div.arpg-hud',
       this.build,
-      h('div.ah-main', bars, h('div.ah-slots', ...this.slots.slice(0, 4).map((s) => s.root), h('div.sk-gap'), this.slots[4].root), h('div.ah-gold', h('i.ic-coin'), this.gold)),
+      h('div.ah-main', bars, h('div.ah-slots', ...this.slots.slice(0, 4).map((s) => s.root), h('div.sk-gap'), this.slots[4].root), h('div.ah-side', h('div.ah-gold', h('i.ic-coin'), this.gold), h('button.ah-bag', { title: t('inv_title'), onclick: () => this.onInventory() }, iconImg('chest', 0xffc060, 'icon'), this.bagKey))),
       h('div.ah-xp', h('div.ah-xp-track', this.xpFill), this.xpText),
     );
     this.hName = h('div.hv-name');
@@ -169,6 +167,8 @@ export class ArpgHud {
     this.set('xpt', `${p.level}|${capped}|${Math.floor(p.xp)}`, () => {
       this.xpText.textContent = capped ? t('arpg_lv_max', { n: p.level }) : t('arpg_lv', { n: p.level, max: sk.maxLevel }) + ` · ${Math.floor(p.xp)} / ${p.xpNext}`;
     });
+    this.set('bagk', this.binds?.inventory?.[0] ?? '', () => (this.bagKey.textContent = keyName(this.binds?.inventory?.[0] ?? '')));
+    this.set('bagn', run.loot.bag.length, () => this.root.style.setProperty('--bagn', `'${run.loot.bag.length}'`));
     this.set('gold', Math.round(run.stats.gold), () => (this.gold.textContent = fmtNum(run.stats.gold)));
     // skill slots
     for (let i = 0; i < 5; i++) {
@@ -244,7 +244,7 @@ export class ArpgHud {
       this.hName.style.color = e.elite ? '#ffd23d' : '#f1f2f4';
     });
     const lvl = Math.max(1, run.waves.wave.n + (e.elite ? 2 : 0));
-    const role = e.elite ? t('role_elite') + ' · ' + t(ROLE_KEY[e.def.category] ?? 'role_melee') : t(ROLE_KEY[e.def.category] ?? 'role_melee');
+    const role = (e.elite ? t('role_elite') + ' · ' : '') + t('role_' + e.role);
     this.set('hvm', role + lvl, () => (this.hMeta.textContent = `${t('arpg_lv_short', { n: lvl })} · ${role}`));
     const k = Math.max(0, e.hp / e.maxHp);
     this.set('hvk', Math.round(k * 300), () => (this.hFill.style.transform = `scaleX(${k})`));

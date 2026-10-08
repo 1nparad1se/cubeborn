@@ -6,6 +6,7 @@ import type { Run } from '../game/Run';
 import type { VoxelModel } from '../data/types';
 import { WeaponVisualSystem } from './weapons/WeaponVisualSystem';
 import { getModel, PROJECTILE_MODELS, PICKUP_MODELS, BOSS_MODELS } from '../models';
+import { RARITY_HEX } from '../game/arpg/Gear';
 import { ELITE_MODS } from '../data/enemies';
 import { InstancedBatch } from './InstancedBatch';
 import { buildVoxelGeometry } from './VoxelGeometry';
@@ -156,6 +157,7 @@ export class EntityRenderer {
     this.drawAllies(visible);
     this.drawProjectiles(time, visible);
     this.drawPickups(time, visible);
+    this.drawLoot(time, visible);
     this.drawHazards(time);
     this.drawEffects(time);
 
@@ -510,6 +512,24 @@ export class EntityRenderer {
       } else if (k.kind !== 'gold') {
         this.glowDisc.push(k.x, 0.05, k.z, 0, 1.6, 1, 1.6, modelColor(model), 0, 0, 0, 0.5);
       }
+    }
+  }
+
+  /** Items on the ground: a small sack with a beam in the rarity colour. */
+  private drawLoot(time: number, visible: (x: number, z: number) => boolean) {
+    const model = PICKUP_MODELS.pouch;
+    if (!model) return;
+    for (const g of this.run.loot.ground) {
+      if (!visible(g.x, g.z)) continue;
+      const c = RARITY_HEX[g.item.rarity];
+      const pop = Math.min(1, Math.max(0, g.age) * 4);
+      const mb = this.batchesFor('k:loot', model, 1)!;
+      const bob = Math.sin(time * 2.5 + g.id) * 0.06;
+      mb.frames[0].pushFast(g.x, 0.12 + bob, g.z, time * 0.8 + g.id, pop, pop, ((c >> 16) & 255) / 200 + 0.3, ((c >> 8) & 255) / 200 + 0.3, (c & 255) / 200 + 0.3, 0.1);
+      const tall = g.item.rarity === 'legendary' ? 7 : g.item.rarity === 'epic' ? 5 : g.item.rarity === 'rare' ? 3.5 : 1.8;
+      this.glowBox.push(g.x, tall / 2, g.z, time, 0.16, tall, 0.16, c, 0, 0, 0, 0.45 + Math.sin(time * 3 + g.id) * 0.1);
+      this.glowDisc.push(g.x, 0.05, g.z, 0, 1.6, 1, 1.6, c, 0, 0, 0, 0.5);
+      this.shadows.push(g.x, 0.02, g.z, 0, 0.7, 1, 0.7);
     }
   }
 

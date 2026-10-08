@@ -243,6 +243,15 @@ export class EnemyManager {
       if (e.awakeT > 0) e.awakeT -= dt;
 
       const frozen = e.freezeT > 0 || e.stunT > 0 || this.frozenAll > 0;
+      if (frozen && e.atkT > 0) {
+        // crowd control interrupts a wind-up: its telegraphed hit never lands
+        if (e.atkZone) e.atkZone.active = false;
+        e.atkZone = null;
+        e.atkT = 0;
+        e.atkCd = Math.max(e.atkCd, 0.8);
+        if (e.state === 1 && e.role === 'assassin') e.state = 0;
+      }
+      if (e.hasteT > 0) e.hasteT -= dt;
       if (e.boss) {
         if (!frozen) e.boss.update(dt);
       } else if (!frozen) this.think(e, dt);
@@ -284,7 +293,8 @@ export class EnemyManager {
       const dzp = p.z - e.z;
       const d2 = dxp * dxp + dzp * dzp;
       // contact damage
-      if (e.damage > 0 && !frozen && !e.asleep && e.touchCd <= 0) {
+      const touches = e.boss || e.role === 'flyer' || e.role === 'special' || e.role === 'bomber' || (e.role === 'assassin' && e.state === 2);
+      if (touches && e.damage > 0 && !frozen && !e.asleep && e.touchCd <= 0) {
         const rr = e.radius + p.radius;
         if (d2 < rr * rr && (rr < 0.95 || run.terrain.los(e.x, e.z, p.x, p.z))) {
           e.touchCd = BALANCE.contactInterval;
@@ -366,6 +376,149 @@ export class EnemyManager {
     }
   }
 
+  /**
+   * Action-RPG roles: melee and tanks wind up telegraphed strikes instead of hurting on touch,
+   * assassins lunge along a shown line, supports heal and hasten their allies, elites add a
+   * ground slam. Returns true when the role took over movement this frame.
+   */
+  private roleAI(e: Enemy, dt: number, dist: number, ux: number, uz: number, speed: number): boolean {
+    const run = this.run;
+    const p = run.player;
+    const dmg = DayNight.damageOf(e) * (e.weakenT > 0 ? 0.7 : 1);
+    if (e.atkCd > 0) e.atkCd -= dt;
+    // a strike is being wound up: hold still and face the target
+    if (e.atkT > 0 && e.role !== 'ranged') {
+      e.vx = e.vz = 0;
+      e.atkT -= dt;
+      e.flash = Math.max(e.flash, 0.03);
+      if (e.atkT <= 0) e.atkZone = null;
+      return true;
+    }
+    // elites: telegraphed ground slam when the hero is close
+    if (e.elite && e.role !== 'bomber') {
+      e.skillCd -= dt;
+      if (e.skillCd <= 0 && dist < 4.5) {
+        e.skillCd = 7 + Math.random() * 2;
+        e.atkT = 0.95;
+        e.atkZone = run.hazards.zone(e.x, e.z, 2.8, 0.95, dmg * 1.6, { color: 0xffb020 });
+        e.vx = e.vz = 0;
+        return true;
+      }
+    }
+    switch (e.role) {
+      case 'melee':
+      case 'tank': {
+        if (e.def.behavior !== 'chase' && e.def.behavior !== 'splitter') return false;
+        const tank = e.role === 'tank';
+        const reach = e.radius + p.radius + (tank ? 0.9 : 0.5);
+        if (dist < reach + 0.35 && e.atkCd <= 0 && run.terrain.los(e.x, e.z, p.x, p.z)) {
+          const wind = (tank ? 0.85 : 0.5) * (e.elite ? 0.85 : 1);
+          const r = tank ? 2.1 : 1.05;
+          const off = tank ? 0 : e.radius + 0.45;
+          const dx = (p.x - e.x) / dist;
+          const dz = (p.z - e.z) / dist;
+          e.atkZone = run.hazards.zone(e.x + dx * off, e.z + dz * off, r, wind, dmg * (tank ? 1.7 : 1.1));
+          e.atkT = wind;
+          e.atkCd = (tank ? 2.4 : 1.4) * (0.85 + Math.random() * 0.3);
+          e.dirX = dx;
+          e.dirZ = dz;
+          e.vx = e.vz = 0;
+          return true;
+        }
+        return false;
+      }
+      case 'assassin': {
+        if (e.def.behavior === 'teleporter') {
+          // phantoms blink in, then strike like melee
+          if (dist < e.radius + p.radius + 0.6 && e.atkCd <= 0) {
+            const dx = (p.x - e.x) / dist;
+            const dz = (p.z - e.z) / dist;
+            e.atkZone = run.hazards.zone(e.x + dx * 0.8, e.z + dz * 0.8, 1.1, 0.45, dmg * 1.2, { color: 0xb070ff });
+            e.atkT = 0.45;
+            e.atkCd = 2;
+            return true;
+          }
+          return false;
+        }
+        if (e.state === 1) {
+          e.vx = e.vz = 0;
+          e.stateT -= dt;
+          if (e.stateT <= 0) {
+            e.state = 2;
+            e.stateT = 0.32;
+          }
+          return true;
+        }
+        if (e.state === 2) {
+          e.vx = e.dirX * 15;
+          e.vz = e.dirZ * 15;
+          e.stateT -= dt;
+          if (e.stateT <= 0) {
+            e.state = 3;
+            e.stateT = 0.6;
+          }
+          return true;
+        }
+        if (e.state === 3) {
+          // backs off after the lunge
+          e.vx = -ux * speed * 0.6;
+          e.vz = -uz * speed * 0.6;
+          e.stateT -= dt;
+          if (e.stateT <= 0) e.state = 0;
+          return true;
+        }
+        if (e.atkCd <= 0 && dist > 1.5 && dist < 6.5 && run.terrain.los(e.x, e.z, p.x, p.z)) {
+          e.state = 1;
+          e.stateT = 0.45;
+          e.dirX = (p.x - e.x) / dist;
+          e.dirZ = (p.z - e.z) / dist;
+          e.atkCd = 3.2 + Math.random();
+          e.touchCd = 0;
+          run.hazards.lineTelegraph(e.x, e.z, e.dirX, e.dirZ, 5.2, e.radius * 2 + 0.3, 0.45);
+          e.vx = e.vz = 0;
+          return true;
+        }
+        if (dist < 1.2 && e.atkCd > 0) {
+          // circle the hero while the lunge recharges
+          const s = e.index % 2 ? 1 : -1;
+          e.vx = -uz * speed * s;
+          e.vz = ux * speed * s;
+          return true;
+        }
+        return false;
+      }
+      case 'support': {
+        const range = 7;
+        const m = dist < range * 0.7 ? -0.6 : dist < range ? 0 : 1;
+        const s = e.index % 2 ? 1 : -1;
+        e.vx = (ux * m - uz * 0.3 * s) * speed;
+        e.vz = (uz * m + ux * 0.3 * s) * speed;
+        e.skillCd -= dt;
+        if (e.skillCd <= 0 && dist < 16) {
+          e.skillCd = 6;
+          const w = run.effects.add('warn', e.x, e.z, 0.7, 0x6bff8a);
+          w.r = 6;
+          const sx = e.x;
+          const sz = e.z;
+          const uid = e.uid;
+          run.later(0.7, () => {
+            if (!e.alive || e.uid !== uid) return;
+            this.forEachInRadius(sx, sz, 6, (o) => {
+              if (!o.alive || o.isAlly || o.def.category === 'prop') return;
+              o.hp = Math.min(o.maxHp, o.hp + o.maxHp * 0.2);
+              o.hasteT = 3;
+            }, false);
+            const ring = run.effects.add('ring', sx, sz, 0.5, 0x6bff8a);
+            ring.r = 6;
+            run.fx.burst(sx, 1, sz, 0x6bff8a, 20, 4, 0.16, 0.7, 'glow');
+          });
+        }
+        return true;
+      }
+    }
+    return false;
+  }
+
   /** Per-behaviour AI producing desired velocity e.vx/e.vz. */
   private think(e: Enemy, dt: number) {
     const run = this.run;
@@ -397,7 +550,9 @@ export class EnemyManager {
     let speed = e.speed * e.slowMul * e.todSpd;
     if (!e.flying && !e.boss) speed *= run.features.moveMul(e.x, e.z, false);
     if (e.hasElite('frenzied') && e.hp < e.maxHp * 0.5) speed *= 1.5;
+    if (e.hasteT > 0) speed *= 1.35;
     const pp = e.def.p ?? {};
+    if (!e.boss && this.roleAI(e, dt, dist, ux, uz, speed)) return;
     switch (e.def.behavior) {
       case 'prop':
         e.vx = e.vz = 0;
@@ -430,11 +585,25 @@ export class EnemyManager {
           e.vx = ux * speed;
           e.vz = uz * speed;
         }
-        if (e.cd <= 0 && sees) {
+        if (e.atkT > 0) {
+          // aiming: stand still, then loose along the shown line
+          e.vx = e.vz = 0;
+          e.atkT -= dt;
+          if (e.atkT > 0) return;
+        } else if (e.cd <= 0 && sees) {
+          e.atkT = 0.4;
+          e.atkX = dx / dist;
+          e.atkZ = dz / dist;
+          run.hazards.lineTelegraph(e.x, e.z, e.atkX, e.atkZ, Math.min(range + 2, dist + 1.5), 0.5, 0.4);
+          e.vx = e.vz = 0;
+          return;
+        }
+        if (e.cd <= 0 && e.atkT <= 0 && e.atkX !== 0) {
           e.cd = ((pp.fireCd as number) ?? 2.5) * (0.85 + Math.random() * 0.3);
           const count = (pp.bullets as number) ?? 1;
           const spread = (((pp.spread as number) ?? 20) * Math.PI) / 180;
-          const base = Math.atan2(dz, dx);
+          const base = Math.atan2(e.atkZ, e.atkX);
+          e.atkX = e.atkZ = 0;
           for (let k = 0; k < count; k++) {
             const a = count === 1 ? base : base - spread / 2 + (spread * k) / (count - 1);
             run.hazards.bullet(e.x, e.z, Math.cos(a) * ((pp.bulletSpeed as number) ?? 7), Math.sin(a) * ((pp.bulletSpeed as number) ?? 7), DayNight.damageOf(e) * 0.65, 0.28, 4, pp.slow ? 0x8ae8ff : 0xff3a6a, !!pp.slow);

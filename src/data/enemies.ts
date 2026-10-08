@@ -27,7 +27,7 @@ export const ENEMIES: EnemyDef[] = [
   def({ id: 'iron_husk', name: { ru: 'Железная оболочка', en: 'Iron Husk' }, category: 'tank', behavior: 'chase', hp: 86, damage: 13, speed: 1.6, xp: 7, size: 1.35, radius: 0.75, kbResist: 0.8 }),
   def({ id: 'cult_archer', name: { ru: 'Культист-лучник', en: 'Cult Archer' }, category: 'ranged', behavior: 'ranged', hp: 14, damage: 8, speed: 2.2, xp: 3, p: { range: 8, fireCd: 2.4, bulletSpeed: 7.5, bullets: 1 } }),
   def({ id: 'powder_imp', name: { ru: 'Пороховой бес', en: 'Powder Imp' }, category: 'exploder', behavior: 'exploder', hp: 11, damage: 20, speed: 3.6, xp: 3, size: 0.85, p: { fuse: 0.7, blast: 2.4, trigger: 1.6 } }),
-  def({ id: 'bell_cultist', name: { ru: 'Звонарь культа', en: 'Bell Cultist' }, category: 'summoner', behavior: 'summoner', hp: 50, damage: 7, speed: 1.7, xp: 9, size: 1.15, radius: 0.55, kbResist: 0.4, p: { summon: 'ghoul', count: 3, cd: 6, range: 9 } }),
+  def({ id: 'bell_cultist', name: { ru: 'Звонарь культа', en: 'Bell Cultist' }, category: 'summoner', behavior: 'summoner', hp: 50, damage: 7, speed: 1.7, xp: 9, size: 1.15, radius: 0.55, kbResist: 0.4, p: { summon: 'ghoul', count: 3, cd: 6, range: 9, role: 'support' } }),
   def({ id: 'gargoyle', name: { ru: 'Горгулья', en: 'Gargoyle' }, category: 'special', behavior: 'charger', hp: 36, damage: 14, speed: 2.2, xp: 5, flying: true, size: 1.15, radius: 0.6, kbResist: 0.5, p: { chargeCd: 4, chargeSpeed: 12, trigger: 8, windup: 0.6 } }),
   // ---------------------------------------------------------------- Ossuary Depths
   def({ id: 'skeleton', name: { ru: 'Скелет', en: 'Skeleton' }, category: 'normal', behavior: 'chase', hp: 14, damage: 9, speed: 2.4, xp: 1 }),

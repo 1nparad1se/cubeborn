@@ -15,10 +15,13 @@ import type { EliteId } from '../data/enemies';
 import { DEV_TOOLS_AVAILABLE } from './flags';
 import { BOSSES } from '../data/bosses';
 import { L, t } from '../i18n';
+import { MAX_LEVEL } from '../game/arpg/kits';
+import { EQUIP_POS, makeItem, slotOf, BASES, type GearSlot } from '../game/arpg/Gear';
+import type { Rarity, StatKey } from '../data/types';
 
 const wname = (id: string) => L(WEAPON_BY_ID[id]?.name) || id;
 
-export type DevToggle = 'god' | 'infHp' | 'infXp' | 'infGold' | 'infCoins' | 'freeze';
+export type DevToggle = 'god' | 'infHp' | 'infXp' | 'infGold' | 'infCoins' | 'freeze' | 'infRes' | 'noCd';
 
 /** XP multiplier used by "Infinite XP" (a true infinite would open a level-up every frame). */
 export const INF_XP_MUL = 25;
@@ -52,7 +55,7 @@ export class DevMode {
   enabled = false;
   profile: Profile | null = null;
   run: Run | null = null;
-  readonly toggles: Record<DevToggle, boolean> = { god: false, infHp: false, infXp: false, infGold: false, infCoins: false, freeze: false };
+  readonly toggles: Record<DevToggle, boolean> = { god: false, infHp: false, infXp: false, infGold: false, infCoins: false, freeze: false, infRes: false, noCd: false };
   enemyHp = 1;
   enemyDmg = 1;
   timeScale = 1;
@@ -148,6 +151,8 @@ export class DevMode {
     d.infHp = on && this.toggles.infHp;
     d.xpMul = on && this.toggles.infXp ? INF_XP_MUL : 1;
     d.freeze = on && this.toggles.freeze;
+    d.infRes = on && this.toggles.infRes;
+    d.noCd = on && this.toggles.noCd;
     d.enemyHp = on ? this.enemyHp : 1;
     d.enemyDmg = on ? this.enemyDmg : 1;
     this.dps.reset();
@@ -203,7 +208,12 @@ export class DevMode {
     const run = this.need();
     if (!run) return;
     const p = run.player;
-    p.level = 99;
+    // walk the levels so Ultimate upgrades at 12/18/22 are granted; choices are skipped
+    while (p.level < MAX_LEVEL) {
+      p.level++;
+      run.skills.onLevel(p.level);
+    }
+    p.pendingLevels = 0;
     p.xp = 0;
     p.xpNext = BALANCE.xpForLevel(p.level);
     this.changed(t('dvm_level'));
@@ -281,6 +291,110 @@ export class DevMode {
     run.recomputeStats();
     run.player.hp = run.player.stats.maxHp;
     this.changed(t('dvm_max_player'));
+  }
+
+  // ---------------------------------------------------------------- action-RPG tools
+  /** Level 22, every skill at max, the Ultimate learned and maxed. */
+  arpgMax() {
+    const run = this.need();
+    if (!run) return;
+    this.maxLevel();
+    run.skills.devMaxAll();
+    run.skills.resetCooldowns();
+    this.changed(t('dvm_arpg_max'));
+  }
+
+  setSkillLevel(slot: number, level: number) {
+    const run = this.need();
+    if (!run) return;
+    const sk = run.skills;
+    if (slot < 3) sk.levels[slot] = Math.max(1, Math.min(6, level));
+    else sk.ultLevel = Math.max(0, Math.min(4, level));
+    this.changed(t('dvm_skill_lv', { s: ['Q', 'W', 'E', 'R'][slot], n: sk.level(slot) }));
+  }
+
+  resetCooldowns() {
+    const run = this.need();
+    if (!run) return;
+    run.skills.resetCooldowns();
+    this.changed(t('dvm_cd_reset'));
+  }
+
+  /** Casts a skill toward the nearest enemy (or ahead) ignoring cooldown and cost. */
+  testSkill(slot: number) {
+    const run = this.need();
+    if (!run) return;
+    const sk = run.skills;
+    const p = run.player;
+    if (sk.level(slot) <= 0) sk.ultLevel = slot === 3 ? 1 : sk.ultLevel;
+    const e = run.enemies.nearest(p.x, p.z, 14, undefined, true);
+    const ax = e ? e.x : p.x + p.fx * 5;
+    const az = e ? e.z : p.z + p.fz * 5;
+    sk.cds[slot] = 0;
+    sk.res = run.skills.kit.res.id === 'heat' ? 0 : sk.resMax;
+    sk.cast(slot, ax, az);
+    this.changed(t('dvm_skill_test', { s: ['Q', 'W', 'E', 'R'][slot] }));
+  }
+
+  /** Moves the hero to the last cursor point on the ground. */
+  teleportToCursor() {
+    const run = this.need();
+    if (!run) return;
+    const t2 = run.terrain;
+    const x = run.ctl.aimX;
+    const z = run.ctl.aimZ;
+    if (!t2.inBounds(Math.floor(x), Math.floor(z)) || t2.blocksWalker(Math.floor(x), Math.floor(z))) {
+      this.changed(t('dvm_tp_blocked'));
+      return;
+    }
+    run.player.x = x;
+    run.player.z = z;
+    run.player.clearPath();
+    run.nav.update(0, x, z, true);
+    this.changed(t('dvm_tp'));
+  }
+
+  createItem(slot: GearSlot | 'any', rarity: Rarity) {
+    const run = this.need();
+    if (!run) return;
+    const bases = slot === 'any' ? BASES : BASES.filter((b) => b.slot === slot);
+    const base = bases[Math.floor(Math.random() * bases.length)];
+    const it = makeItem(Math.random, run.loot.ilvl, rarity, base.id);
+    run.loot.drop(it, run.player.x + run.player.fx * 1.5, run.player.z + run.player.fz * 1.5);
+    this.changed(t('dvm_item'));
+  }
+
+  /** A full equipped set of one rarity (replaces what is worn). */
+  giveGearSet(rarity: Rarity) {
+    const run = this.need();
+    if (!run) return;
+    const loot = run.loot;
+    for (const pos of EQUIP_POS) {
+      const opts = BASES.filter((b) => b.slot === slotOf(pos));
+      const it = makeItem(Math.random, loot.ilvl, rarity, opts[Math.floor(Math.random() * opts.length)].id);
+      loot.bag.push(it);
+      loot.equip(it, pos);
+      const i = loot.bag.length;
+      if (i > 30) loot.bag.length = 30;
+    }
+    this.changed(t('dvm_gear_set'));
+  }
+
+  /** Adds a flat developer bonus to a stat (fractions for % stats). */
+  addStat(stat: StatKey, v: number) {
+    const run = this.need();
+    if (!run) return;
+    run.devMods[stat] = (run.devMods[stat] ?? 0) + v;
+    run.recomputeStats();
+    this.changed(t('dvm_stat', { s: t('stat_' + stat), v }));
+  }
+
+  clearStats() {
+    const run = this.need();
+    if (!run) return;
+    for (const k of Object.keys(run.devMods)) delete run.devMods[k as StatKey];
+    run.recomputeStats();
+    this.changed(t('dvm_stat_clear'));
   }
 
   // ---------------------------------------------------------------- unlocks (test save only)

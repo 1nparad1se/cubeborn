@@ -1,3 +1,4 @@
+import type { EquipPos, Item } from '../game/arpg/Gear';
 import { PERM_UPGRADES, permCost } from '../data/upgrades';
 import type { Lang } from '../i18n';
 
@@ -113,6 +114,8 @@ export interface SaveData {
   /** Gold actually paid for permanent upgrades (what a refund returns). */
   permSpent: number;
   last: { hero: string; map: string; diff: string; mode: 'campaign' | 'endless' };
+  /** Action-RPG equipment: one shared bag, equipped sets per hero. */
+  gear: { bag: Item[]; equipped: Record<string, Partial<Record<EquipPos, Item>>> };
 }
 
 const KEY = 'cubeborn.save.v1';
@@ -161,6 +164,7 @@ export function defaultSave(): SaveData {
     seenIntro: false,
     permSpent: 0,
     last: { hero: 'bram', map: 'blightwood', diff: 'normal', mode: 'campaign' },
+    gear: { bag: [], equipped: {} },
   };
 }
 
@@ -211,6 +215,9 @@ export function migrate(raw: any): SaveData {
     for (const u of PERM_UPGRADES) for (let i = 0; i < (out.perm[u.id] ?? 0); i++) spent += permCost(u, i, 1);
     out.permSpent = spent;
   }
+  // gear: keep only well-formed items (older saves have none)
+  const g = raw.gear && typeof raw.gear === 'object' ? raw.gear : {};
+  out.gear = { bag: Array.isArray(g.bag) ? g.bag.filter((x: any) => x && typeof x.slot === 'string') : [], equipped: g.equipped && typeof g.equipped === 'object' ? g.equipped : {} };
   out.version = VERSION;
   return out;
 }

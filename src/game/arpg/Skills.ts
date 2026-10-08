@@ -59,6 +59,7 @@ interface Lasting {
 
 const EL_FX: Record<DmgType, string> = { phys: 'el_physical', fire: 'el_fire', ice: 'el_ice', lightning: 'el_lightning', poison: 'el_poison', dark: 'el_dark', magic: 'el_holy' };
 export const EL_COLOR: Record<DmgType, number> = { phys: 0xe8e0d0, fire: 0xff7a2a, ice: 0x8ae8ff, lightning: 0x8ad8ff, poison: 0x9cff4f, dark: 0xb070ff, magic: 0xffe08a };
+const EL_SFX: Record<DmgType, string> = { phys: 'slash', fire: 'fire', ice: 'ice', lightning: 'zap', poison: 'venom', dark: 'shadow', magic: 'magic' };
 const SOURCE_SKILL = 20;
 const SOURCE_BASIC = 21;
 const ALLY_GROUP = -7;
@@ -111,7 +112,12 @@ export class SkillSystem {
   }
 
   get resMax(): number {
-    return this.kit.res.max;
+    return this.kit.res.max + this.run.loot.totals.resMax;
+  }
+
+  /** A build modifier is active when chosen on level up or granted by a legendary item. */
+  hasMod(id: string): boolean {
+    return this.mods.has(id) || this.run.loot.powers.has(id);
   }
 
   skill(slot: number): SkillDef {
@@ -161,7 +167,7 @@ export class SkillSystem {
 
   cooldownOf(slot: number): number {
     const st = this.run.player.stats;
-    return this.skill(slot).cd * Math.max(0.3, this.ups(slot).cd) * st.cooldown * (this.mods.has('m_arcane') ? 0.9 : 1);
+    return this.skill(slot).cd * Math.max(0.3, this.ups(slot).cd) * st.cooldown * (this.hasMod('m_arcane') ? 0.9 : 1);
   }
 
   costOf(slot: number): number {
@@ -196,8 +202,14 @@ export class SkillSystem {
     // resource
     let regen = r.regen;
     if (r.id === 'rage' && run.time - run.stats.lastHurt < 3) regen = 0;
-    this.res = Math.max(0, Math.min(r.max, this.res + regen * dt));
-    if (run.debug.infRes) this.res = r.id === 'heat' ? 0 : r.max;
+    if (r.id !== 'heat') regen += run.loot.totals.resRegen;
+    const max = this.resMax;
+    this.res = Math.max(0, Math.min(max, this.res + regen * dt));
+    if (run.debug.infRes) this.res = r.id === 'heat' ? 0 : max;
+    if (run.debug.noCd) {
+      this.cds.fill(0);
+      this.dodgeCd = 0;
+    }
     for (let i = 0; i < 4; i++) if (this.cds[i] > 0) this.cds[i] = Math.max(0, this.cds[i] - dt);
     for (let i = 0; i < 5; i++) {
       if (this.flash[i] > 0) this.flash[i] -= dt;
@@ -210,7 +222,7 @@ export class SkillSystem {
     this.updateLasting(dt);
     if (p.dead) return;
     // fizz: overload
-    if (r.id === 'heat' && this.res >= r.max - 0.01) this.overload();
+    if (r.id === 'heat' && this.res >= this.resMax - 0.01) this.overload();
     if (c.dodge) this.dodge(c);
     for (const s of c.casts) this.cast(s, c.aimX, c.aimZ);
     if (c.attack && this.basicCd <= 0 && p.dashT <= 0) this.basicAttack(c.aimX, c.aimZ);
@@ -229,7 +241,8 @@ export class SkillSystem {
     this.buffs.length = w;
     // passive class mechanics and modifiers
     if (this.kit.mechanic.id === 'bulwark') b.armor += Math.floor(this.res / 10);
-    if (this.mods.has('m_swift')) b.atkSpeed += 0.15;
+    if (this.hasMod('m_swift')) b.atkSpeed += 0.15;
+    b.atkSpeed += this.run.loot.totals.atkSpeed;
     if (this.kit.mechanic.id === 'overclock' && this.lasting.some((l) => l.turret)) b.atkSpeed += 0.3;
   }
 
@@ -248,10 +261,11 @@ export class SkillSystem {
     const el = act.el ?? 'phys';
     d.el = el;
     d.weaponId = EL_FX[el];
-    d.damage = (act.dmg ?? 0) * mul;
+    const gear = this.run.loot.totals;
+    d.damage = (act.dmg ?? 0) * mul * (1 + (gear.elem[el] ?? 0)) * (basic ? 1 : 1 + gear.skillDmg);
     d.knockback = act.knock ?? (basic ? 0.5 : 0.8);
     d.source = basic ? SOURCE_BASIC : SOURCE_SKILL;
-    d.critChance = this.buff.crit + (sp.has('crit') ? 0.25 : 0) + (this.mods.has('m_assassin') ? 0.12 : 0);
+    d.critChance = this.buff.crit + (sp.has('crit') ? 0.25 : 0) + (this.hasMod('m_assassin') ? 0.12 : 0);
     d.critDamage = 1.6;
     const st: Partial<Record<StatusId, number>> = {};
     if (act.st) st[act.st] = act.stp ?? ST_DEFAULT[act.st];
@@ -260,24 +274,24 @@ export class SkillSystem {
       st[id] = (st[id] ?? 0) + (st[id] !== undefined ? extraSt[id]! : ST_DEFAULT[id]);
     }
     if (!basic) {
-      if (this.mods.has('m_pyro')) st.burn = Math.max(st.burn ?? 0, ST_DEFAULT.burn);
-      if (this.mods.has('m_frost')) {
+      if (this.hasMod('m_pyro')) st.burn = Math.max(st.burn ?? 0, ST_DEFAULT.burn);
+      if (this.hasMod('m_frost')) {
         st.slow = st.slow ?? ST_DEFAULT.slow;
         if (!st.freeze) {
           d.freeze = 0.15;
           d.freezeDur = 1.2;
         }
       }
-      if (this.mods.has('m_hexer')) st.curse = Math.max(st.curse ?? 0, 4);
+      if (this.hasMod('m_hexer')) st.curse = Math.max(st.curse ?? 0, 4);
     }
-    if (this.mods.has('m_plague')) st.poison = Math.max(st.poison ?? 0, 4) * 1.3;
+    if (this.hasMod('m_plague')) st.poison = Math.max(st.poison ?? 0, 4) * 1.3;
     const lv = this.levelMul;
-    const jail = this.mods.has('m_jailer') ? 1.4 : 1;
+    const jail = this.hasMod('m_jailer') ? 1.4 : 1;
     for (const k in st) {
       const v = st[k as StatusId]!;
       switch (k as StatusId) {
         case 'burn':
-          d.burn = v * lv * (this.mods.has('m_pyro') ? 1.15 : 1);
+          d.burn = v * lv * (this.hasMod('m_pyro') ? 1.15 : 1);
           d.burnDur = 3;
           break;
         case 'poison':
@@ -316,10 +330,10 @@ export class SkillSystem {
     let m = 1;
     const meta = this.meta.get(info);
     if (this.kit.mechanic.id === 'mark' && e.markT > 0 && meta && !meta.basic) m *= 1.3;
-    if (this.mods.has('m_inferno') && e.burnT > 0) m *= 1.25;
-    if (this.mods.has('m_shatter') && (e.freezeT > 0 || e.stunT > 0)) m *= 1.35;
+    if (this.hasMod('m_inferno') && e.burnT > 0) m *= 1.25;
+    if (this.hasMod('m_shatter') && (e.freezeT > 0 || e.stunT > 0)) m *= 1.35;
     const low = e.hp < e.maxHp * 0.3;
-    if (low && this.mods.has('m_executioner')) m *= 1.6;
+    if (low && this.hasMod('m_executioner')) m *= 1.6;
     if (low && meta?.sp.has('execute')) m *= 2;
     return m;
   }
@@ -338,13 +352,13 @@ export class SkillSystem {
     }
     let leech = this.buff.lifesteal;
     if (meta.sp.has('leech')) leech += 0.08;
-    if (!meta.basic && this.mods.has('m_vampire')) leech += 0.04;
+    if (!meta.basic && this.hasMod('m_vampire')) leech += 0.04;
     if (leech > 0) run.player.heal(Math.min(dmg * leech, run.player.stats.maxHp * 0.04), true);
-    if (crit && this.mods.has('m_assassin')) {
+    if (crit && this.hasMod('m_assassin')) {
       e.bleedDps = Math.max(e.bleedDps, 5 * this.levelMul);
       e.bleedT = Math.max(e.bleedT, 3);
     }
-    if (this.mods.has('m_conduit') && info.el !== 'lightning' && Math.random() < 0.15) this.chainFrom(e, info.damage * 0.5, 3, 'lightning');
+    if (this.hasMod('m_conduit') && info.el !== 'lightning' && Math.random() < 0.15) this.chainFrom(e, info.damage * 0.5, 3, 'lightning');
   }
 
   onKill(e: Enemy) {
@@ -369,7 +383,7 @@ export class SkillSystem {
 
   gain(v: number) {
     if (this.kit.res.id === 'heat' || v <= 0) return;
-    this.res = Math.min(this.kit.res.max, this.res + v);
+    this.res = Math.min(this.resMax, this.res + v);
   }
 
   // ------------------------------------------------------------------ basic attack
@@ -400,6 +414,7 @@ export class SkillSystem {
     p.cues.aimX = dx;
     p.cues.aimZ = dz;
     p.attackPulse = 0.2;
+    run.fx.sound(act.k === 'proj' && act.vis === 'arrow' ? 'bow' : act.k === 'cone' ? 'whoosh' : EL_SFX[act.el ?? 'phys'], 0.35);
     this.runAct(act, info, ax, az, 1, 0);
   }
 
@@ -458,8 +473,8 @@ export class SkillSystem {
     if (up.sp.has('barrier')) p.buffs.aegis = Math.max(p.buffs.aegis, 1.2);
     if (this.kit.mechanic.id === 'spark') this.kindle = true;
     if (this.kit.mechanic.id === 'grace') p.heal(p.stats.maxHp * 0.03);
-    if (this.mods.has('m_arcane')) this.gain(8);
-    run.fx.sound(slot === 3 ? 'evolve' : 'ability', 0.6);
+    if (this.hasMod('m_arcane')) this.gain(8);
+    run.fx.sound(slot === 3 ? 'evolution' : EL_SFX[def.acts.find((a) => a.el)?.el ?? 'phys'], 0.7);
     return true;
   }
 
@@ -906,7 +921,7 @@ export class SkillSystem {
 
   // ------------------------------------------------------------------ dodge
   dodgeCooldown(): number {
-    return 3 * Math.pow(0.85, this.dodgeLevel) * (this.mods.has('m_swift') ? 0.7 : 1);
+    return 3 * Math.pow(0.85, this.dodgeLevel) * (this.hasMod('m_swift') ? 0.7 : 1);
   }
 
   private dodge(c: Controls) {
@@ -926,7 +941,7 @@ export class SkillSystem {
     p.invulnT = Math.max(p.invulnT, 0.32);
     p.clearPath();
     run.stats.dodges++;
-    run.fx.sound('jump', 0.5);
+    run.fx.sound('dash', 0.5);
   }
 
   // ------------------------------------------------------------------ stats from choices
@@ -939,7 +954,7 @@ export class SkillSystem {
       const v = s.stat === 'maxHp' ? s.v * base : s.v;
       out[s.stat] = (out[s.stat] ?? 0) + v * n;
     }
-    if (this.mods.has('m_juggernaut')) {
+    if (this.hasMod('m_juggernaut')) {
       out.maxHp = (out.maxHp ?? 0) + base * 0.25;
       out.armor = (out.armor ?? 0) + 3;
       out.moveSpeed = (out.moveSpeed ?? 0) - 0.08;
@@ -968,7 +983,7 @@ export class SkillSystem {
     if (this.ultLevel === 0 && this.ultDeclined && this.choiceLevel >= ULT_LEVEL) pool.push({ c: { kind: 'ult_learn', id: 'yes', level: 1, rarity: 'legendary' }, w: 30 });
     for (const s of STAT_UPS) if (!run.leveling.banished.has(s.id)) pool.push({ c: { kind: 'stat', id: s.id, level: (this.statUps.get(s.id) ?? 0) + 1, rarity: 'common' }, w: 3 });
     if (this.dodgeLevel < 4) pool.push({ c: { kind: 'dodge_up', id: 'dodge', level: this.dodgeLevel + 1, rarity: 'uncommon' }, w: 4 });
-    for (const m of MODS) if (!this.mods.has(m.id) && !run.leveling.banished.has(m.id)) pool.push({ c: { kind: 'mod', id: m.id, level: 1, rarity: 'epic' }, w: this.mods.size >= 4 ? 1 : 3.5 });
+    for (const m of MODS) if (!this.hasMod(m.id) && !run.leveling.banished.has(m.id)) pool.push({ c: { kind: 'mod', id: m.id, level: 1, rarity: 'epic' }, w: this.mods.size >= 4 ? 1 : 3.5 });
     for (const def of PASSIVES) {
       if (!run.unlockedPassives.has(def.id) || run.leveling.banished.has(def.id)) continue;
       const lv = run.passives.level(def.id);
@@ -1060,7 +1075,7 @@ export class SkillSystem {
     const run = this.run;
     this.overflow++;
     run.player.heal(run.player.stats.maxHp * 0.25);
-    if (this.kit.res.id !== 'heat') this.res = this.kit.res.max;
+    if (this.kit.res.id !== 'heat') this.res = this.resMax;
     run.stats.gold += 5;
     run.fx.text(run.player.x, run.player.z, run.tr('arpg_overflow'), 0x8affff);
   }

@@ -57,6 +57,10 @@ export class Input {
       }
       if (e.repeat) return;
       // Escape always pauses, whatever the bindings say
+      if (this.is('inventory', e.code)) {
+        this.onInventory?.();
+        return;
+      }
       if (e.code === 'Escape' || this.is('pause', e.code)) {
         this.onPause?.();
         return;
@@ -75,7 +79,6 @@ export class Input {
           e.preventDefault();
           this.dodgeQueued = true;
         }
-        if (this.is('inventory', e.code)) this.onInventory?.();
         if (this.is('potion', e.code)) this.onPotion?.();
       }
       this.keys.add(e.code);

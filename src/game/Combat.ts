@@ -134,6 +134,7 @@ export class Combat {
     run.enemies.startDying(e);
     const isProp = def.category === 'prop';
     if (e.boss) {
+      if (!e.boss.isClone) run.loot.onKill(e);
       e.boss.onDeath();
       return;
     }
@@ -167,6 +168,7 @@ export class Combat {
       }
     }
     run.skills.onKill(e);
+    run.loot.onKill(e);
     run.stats.kills++;
     run.stats.killsBy[def.id] = (run.stats.killsBy[def.id] ?? 0) + 1;
     if (run.dayNight.isNight) run.stats.nightKills++;

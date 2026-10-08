@@ -7,6 +7,7 @@ import { dev } from './dev/DevMode';
 import { DevUi } from './dev/DevUi';
 import { Run } from './game/Run';
 import type { Enemy } from './game/Enemy';
+import { itemName, RARITY_COLOR as ITEM_COLOR } from './game/arpg/Gear';
 import { NullFx, type FxSink } from './game/types';
 import { Renderer } from './render/Renderer';
 import { Input, keyName } from './input/Input';
@@ -16,7 +17,7 @@ import { Hud } from './ui/Hud';
 import { Menus, type MenuApi } from './ui/Menus';
 import { RunModals } from './ui/RunModals';
 import { h } from './ui/dom';
-import { t, L, setLang } from './i18n';
+import { t, L, setLang, getLang } from './i18n';
 import { HERO_BY_ID } from './data/heroes';
 import { MAP_BY_ID, MAPS } from './data/maps';
 import { DIFFICULTIES, DIFFICULTY_BY_ID } from './data/difficulty';
@@ -105,11 +106,13 @@ export class App implements MenuApi {
     this.input.onPause = () => this.handleEscape();
     this.input.onZoom = (dir) => this.stepZoom(dir);
     this.input.onMap = () => this.hud.toggleMap();
+    this.input.onInventory = () => this.toggleInventory();
     this.input.onJump = () => {
       if (this.run && this.mode !== 'menu' && !this.paused && !this.modals.isOpen) this.run.player.requestJump();
     };
     this.hud = new Hud(root);
     this.hud.onPause = () => this.togglePause();
+    this.hud.arpg.onInventory = () => this.toggleInventory();
     this.hud.setVisible(false);
     this.menus = new Menus(root, this);
     this.menus.setVisible(false);
@@ -248,10 +251,33 @@ export class App implements MenuApi {
       return;
     }
     if (this.mode === 'run') {
+      if (this.invOpen) {
+        this.toggleInventory();
+        return;
+      }
       if (this.paused || (this.run?.state === 'playing' && !this.run.ending)) this.togglePause();
       return;
     }
     if (this.mode === 'menu' && this.menus.canGoBack) this.menus.back();
+  }
+
+  private invOpen = false;
+  /** Inventory screen (I / C): the game waits while it is open. */
+  toggleInventory() {
+    const run = this.run;
+    if (!run || this.mode !== 'run') return;
+    if (this.invOpen) {
+      this.invOpen = false;
+      this.modals.close();
+      this.input.setEnabled(true);
+      this.sfx('uiBack');
+      return;
+    }
+    if (this.paused || this.modals.isOpen || run.state !== 'playing' || run.ending) return;
+    this.invOpen = true;
+    this.input.setEnabled(false);
+    this.modals.inventory(run, () => this.toggleInventory());
+    this.sfx('ui');
   }
 
   resetProgress() {
@@ -325,6 +351,7 @@ export class App implements MenuApi {
       settings: { damageNumbers: p.data.settings.damageNumbers, dayLength: DAY_NIGHT.lengths[p.data.settings.dayNight] ?? DAY_NIGHT.lengths[DAY_NIGHT.defaultLength] },
       tr: (k) => t(k),
       mode,
+      gear: { bag: p.data.gear.bag, equipped: p.data.gear.equipped[heroId] ?? {} },
     });
     fx.target = this.renderer.startRun(run, { sound: (id, v) => audio.play(id, v), vibrate: () => {} });
     this.renderer.setZoom(p.data.settings.cameraZoom);
@@ -408,6 +435,9 @@ export class App implements MenuApi {
       const w = WEAPON_BY_ID[id];
       this.toast(t('evolved', { name: L(w.name) }), '#ffb02e');
     });
+    run.loot.onPickup = (it) => {
+      if (it.rarity !== 'common') this.toast(t('inv_got', { name: itemName(it, getLang()) }), ITEM_COLOR[it.rarity]);
+    };
     run.events.on('gameover', () => this.finishRun(false));
     run.events.on('victory', () => this.finishRun(true));
   }
@@ -455,6 +485,10 @@ export class App implements MenuApi {
       p.data = JSON.parse(JSON.stringify(p.data));
       p.data.settings = settings;
     }
+    // equipment and bag persist between runs
+    const gs = run.loot.serialize();
+    p.data.gear.bag = gs.bag;
+    p.data.gear.equipped[run.hero.id] = gs.equipped;
     const s = run.summary();
     const diff = run.diff;
     const goldEarned = Run.goldReward(s, diff.reward);

@@ -9,6 +9,7 @@ import { PASSIVE_BY_ID } from '../data/passives';
 import type { AchievementDef } from '../data/types';
 import { rewardText, settingsPanel, type MenuApi } from './Menus';
 import { BALANCE } from '../config/balance';
+import { InventoryUi } from './InventoryUi';
 import { MOD_BY_ID, STAT_UPS, SKILL_MAX, type SkillDef, type SkillUp } from '../game/arpg/kits';
 
 const RARITY_COLOR: Record<string, string> = { common: '#c8ccd8', uncommon: '#6aff8a', rare: '#5ab4ff', epic: '#c77dff', legendary: '#ffb02e' };
@@ -134,6 +135,11 @@ export class RunModals {
     };
     render(choices);
     this.open(h('div.modal-back', h('div.modal.levelup', h('h2.glow', t('level_up')), h('div.sub', t('hud_level', { n: run.player.level + 1 - run.player.pendingLevels + 0 })), cards, actions, h('div.banish-hint', t('banish_hint')))));
+  }
+
+  // ------------------------------------------------------------------ inventory
+  inventory(run: Run, close: () => void) {
+    this.open(new InventoryUi(run, close).root);
   }
 
   // ------------------------------------------------------------------ chest
