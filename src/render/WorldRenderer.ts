@@ -537,6 +537,7 @@ vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`,
         .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n' + DITHER);
     };
     this.disposables.push(mat);
+    const rbox = new RoundedBoxGeometry(1, 1, 1, 2, 0.1);
     const blob = new THREE.IcosahedronGeometry(1, 1);
     const cone = new THREE.ConeGeometry(1, 1, 8, 2);
     const trunkG = new THREE.CylinderGeometry(1, 1, 1, 7, 1);
@@ -611,116 +612,98 @@ vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`,
       const trunkC = trunkCols[tr.v % trunkCols.length];
       const leafC = leafCols[tr.v % leafCols.length];
       const parts: THREE.BufferGeometry[] = [];
-      const ry = r(1) * Math.PI * 2;
+      // Minecraft-like: everything is built from slightly bevelled cubes
+      const cube = (x: number, y: number, z: number, sx: number, sy: number, sz: number, c: number, sway: number, sd: number) => {
+        tmp.setHex(c).offsetHSL(0, 0, (hash2(sd, seed, 3) - 0.5) * 0.07);
+        parts.push(piece(rbox, x, y, z, sx, sy, sz, 0, tmp.getHex(), sway, sd));
+      };
+      const ox = cx + (r(5) - 0.5) * 0.1;
+      const oz = cz + (r(6) - 0.5) * 0.1;
       if (tr.kind === 'oak') {
         const h = tr.h;
         const big = h >= 4;
-        parts.push(piece(trunkG, cx, h / 2, cz, 0.24, h, 0.24, ry, trunkC, 0, seed, { taper: 0.35 }));
-        parts.push(piece(trunkG, cx, 0.15, cz, 0.42, 0.3, 0.42, ry, trunkC, 0, seed + 1, { taper: 0.4 }));
-        // a branch reaching out under the canopy
-        parts.push(piece(trunkG, cx + Math.cos(ry) * 0.45, h - 0.9, cz + Math.sin(ry) * 0.45, 0.1, 0.9, 0.1, ry, trunkC, 0.2, seed + 2));
-        const crown = big ? 1.55 : 1.1;
-        const blobs = big ? 6 : 4;
-        parts.push(piece(blob, cx, h + 0.35, cz, crown, crown * 0.82, crown, ry, leafC, 1, seed + 3, { jitter: 0.22 }));
-        for (let i = 0; i < blobs; i++) {
-          const a = ry + (i / blobs) * Math.PI * 2 + r(10 + i) * 0.5;
-          const d = crown * (0.62 + r(20 + i) * 0.25);
-          const s = crown * (0.48 + r(30 + i) * 0.22);
-          tmp.setHex(leafC).offsetHSL((r(40 + i) - 0.5) * 0.03, 0, (r(50 + i) - 0.5) * 0.08);
-          parts.push(piece(blob, cx + Math.cos(a) * d, h - 0.1 + r(60 + i) * 0.7, cz + Math.sin(a) * d, s, s * 0.85, s, a, tmp.getHex(), 1, seed + 10 + i, { jitter: 0.25 }));
+        cube(ox, h / 2, oz, 0.55, h, 0.55, trunkC, 0, seed);
+        const R = big ? 2 : 1;
+        const top = h + 0.2;
+        // two wide leaf layers, corners trimmed at random, then a small cap
+        for (let ly = 0; ly < 2; ly++) {
+          for (let ix = -R; ix <= R; ix++) for (let iz = -R; iz <= R; iz++) {
+            const corner = Math.abs(ix) === R && Math.abs(iz) === R;
+            if (corner && r(200 + ix * 7 + iz * 3 + ly * 31) < 0.7) continue;
+            cube(ox + ix * 0.8, top - 0.8 + ly * 0.8, oz + iz * 0.8, 0.84, 0.84, 0.84, leafC, 1, seed + 50 + ix * 9 + iz * 3 + ly * 41);
+          }
         }
-        parts.push(piece(blob, cx + (r(70) - 0.5) * 0.4, h + 0.35 + crown * 0.6, cz + (r(71) - 0.5) * 0.4, crown * 0.6, crown * 0.5, crown * 0.6, ry, leafC, 1, seed + 30, { jitter: 0.2 }));
+        for (let ix = -1; ix <= 1; ix++) for (let iz = -1; iz <= 1; iz++) {
+          if (ix && iz && r(300 + ix * 5 + iz) < 0.6) continue;
+          cube(ox + ix * 0.8, top + 0.8, oz + iz * 0.8, 0.84, 0.84, 0.84, leafC, 1, seed + 90 + ix * 9 + iz);
+        }
       } else if (tr.kind === 'mushroom') {
-        // giant toadstool: pale curved stem, wide red dome with white warts, gills below
+        // giant Minecraft-style toadstool: square stem, flat blocky cap with white spots
         const capC = leafCols[0];
         const stemC = leafCols[1 % leafCols.length];
-        const h = tr.h + 0.4;
-        const lean = (r(2) - 0.5) * 0.3;
-        parts.push(piece(trunkG, cx, h / 2, cz, 0.32, h, 0.32, ry, stemC, 0, seed, { taper: -0.25, jitter: 0.06 }));
-        parts.push(piece(trunkG, cx, 0.12, cz, 0.5, 0.24, 0.5, ry, stemC, 0, seed + 1, { taper: 0.3 }));
-        const capR = 1.25 + r(3) * 0.35;
-        const capX = cx + lean;
-        parts.push(piece(disc, capX, h - 0.02, cz, capR * 0.96, 0.06, capR * 0.96, ry, 0xb89a80, 0, seed + 2));
-        parts.push(piece(dome, capX, h, cz, capR, capR * 0.62, capR, ry, capC, 0, seed + 3, { jitter: 0.05 }));
-        const warts = 7;
-        for (let i = 0; i < warts; i++) {
-          const a = ry + (i / warts) * Math.PI * 2 + r(80 + i);
-          const el = 0.35 + r(90 + i) * 0.7;
-          const px = Math.cos(a) * Math.cos(el) * capR;
-          const pz = Math.sin(a) * Math.cos(el) * capR;
-          const py = Math.sin(el) * capR * 0.62;
-          const ws = 0.12 + r(100 + i) * 0.1;
-          parts.push(piece(blob, capX + px, h + py, cz + pz, ws, ws * 0.5, ws, 0, 0xf4eee2, 0, seed + 20 + i));
+        const h = tr.h + 0.6;
+        cube(ox, h / 2, oz, 0.7, h, 0.7, stemC, 0, seed);
+        const R = 2;
+        for (let ix = -R; ix <= R; ix++) for (let iz = -R; iz <= R; iz++) {
+          if (Math.abs(ix) === R && Math.abs(iz) === R) continue;
+          const spot = r(400 + ix * 11 + iz * 5) < 0.22;
+          cube(ox + ix * 0.75, h + 0.3, oz + iz * 0.75, 0.78, 0.6, 0.78, spot ? 0xf4eee2 : capC, 0, seed + 60 + ix * 9 + iz);
         }
-        parts.push(piece(blob, capX, h + capR * 0.62, cz, 0.16, 0.08, 0.16, 0, 0xf4eee2, 0, seed + 40));
+        for (let ix = -1; ix <= 1; ix++) for (let iz = -1; iz <= 1; iz++) {
+          const spot = r(500 + ix * 11 + iz * 5) < 0.25;
+          cube(ox + ix * 0.75, h + 0.85, oz + iz * 0.75, 0.78, 0.55, 0.78, spot ? 0xf4eee2 : capC, 0, seed + 120 + ix * 9 + iz);
+        }
+        cube(ox, h - 0.08, oz, 3.4, 0.12, 3.4, 0xb89a80, 0, seed + 2);
       } else {
-        const h = tr.h;
-        parts.push(piece(trunkG, cx, 0.7, cz, 0.2, 1.4, 0.2, ry, trunkC, 0, seed, { taper: 0.3 }));
-        const tiers = 3;
-        for (let i = 0; i < tiers; i++) {
-          const k = i / tiers;
-          const rad = (1.45 - k * 0.95) * (0.85 + h * 0.05);
-          const ht = 1.5 - k * 0.3;
-          const y = 1.2 + i * (h - 1.6) / tiers + ht / 2;
-          parts.push(piece(cone, cx, y, cz, rad, ht, rad, ry + i * 0.4, leafC, 0.6, seed + i, { jitter: 0.12, snowAbove: y + ht * 0.05, snow: 0xf2f6fa }));
+        // spruce: square trunk and stacked square layers that narrow upward
+        const h = tr.h + 1;
+        cube(ox, h / 2, oz, 0.5, h, 0.5, trunkC, 0, seed);
+        const layers = [2, 1, 1, 0];
+        for (let i = 0; i < layers.length; i++) {
+          const R = layers[i];
+          const y = 1.5 + i * ((h - 1.2) / layers.length);
+          for (let ix = -R; ix <= R; ix++) for (let iz = -R; iz <= R; iz++) {
+            if (R === 2 && Math.abs(ix) === 2 && Math.abs(iz) === 2) continue;
+            if (R === 1 && i === 2 && ix && iz) continue;
+            const c = i === layers.length - 1 && pal.snow ? 0xf2f6fa : leafC;
+            cube(ox + ix * 0.7, y, oz + iz * 0.7, 0.74, 0.6, 0.74, c, 0.6, seed + 30 + i * 37 + ix * 7 + iz);
+          }
         }
       }
       const bx = Math.min(chunks - 1, Math.max(0, Math.floor(tr.x / CHUNK)));
       const bz = Math.min(chunks - 1, Math.max(0, Math.floor(tr.z / CHUNK)));
       buckets[bz * chunks + bx].push(...parts);
     }
-    // pitched roofs: two shingled panels with an overhang, gable ends and a ridge beam
+    // Minecraft-style stepped roofs: stair layers that narrow toward the ridge
     for (const rf of t.roofs) {
       const cols = pal[rf.mat] ?? [0x8a4a3a];
       let rc = cols[0];
-      if (rf.mat === 'leaves') rc = 0x9a7a4a; // forest huts get straw thatch, not a green slab
+      if (rf.mat === 'leaves') rc = 0x9a7a4a;
       if (rf.mat === 'snow') rc = 0xeef3f8;
       const seed = rf.x * 31 + rf.z * 7;
       const alongX = rf.w >= rf.d;
-      const L = (alongX ? rf.w : rf.d) + 0.5;
-      const S = (alongX ? rf.d : rf.w) / 2 + 0.35;
-      const rise = Math.min(1.6, S * 0.75);
-      const ang = Math.atan2(rise, S);
-      const slant = Math.hypot(S, rise);
+      const L = (alongX ? rf.w : rf.d) + 0.6;
+      const W = (alongX ? rf.d : rf.w) + 0.6;
       const cx = rf.x + rf.w / 2;
       const cz = rf.z + rf.d / 2;
-      const ry = alongX ? 0 : Math.PI / 2;
       const parts: THREE.BufferGeometry[] = [];
-      for (const side of [-1, 1]) {
-        // panel centre sits halfway down the slope on this side
-        const off = (S / 2) * side;
-        const px = alongX ? cx : cx + off;
-        const pz = alongX ? cz + off : cz;
-        const g = slab.clone();
-        g.scale(L, 0.16, slant + 0.05);
-        g.rotateX(side * ang);
-        g.rotateY(ry);
-        g.translate(px - cx, 0, pz - cz);
-        parts.push(piece(g, cx, rf.y + rise / 2 + 0.08, cz, 1, 1, 1, 0, rc, 0, seed + side, { jitter: 0 }));
-        g.dispose();
+      const steps = Math.max(2, Math.ceil(W / 2));
+      const stepW = W / (steps * 2);
+      for (let i = 0; i < steps; i++) {
+        const w = W - i * stepW * 2;
+        tmp.setHex(rc).offsetHSL(0, 0, (i % 2 ? -0.04 : 0.02));
+        const sx = alongX ? L : w;
+        const sz = alongX ? w : L;
+        parts.push(piece(rbox, cx, rf.y + 0.25 + i * 0.5, cz, sx, 0.5, sz, 0, tmp.getHex(), 0, seed + i));
       }
-      // gable fill under the panels (triangular prism along the ridge)
-      const gp = prism.clone();
-      gp.rotateZ(Math.PI / 2);
-      gp.rotateX(Math.PI / 2);
-      gp.rotateX(Math.PI);
-      gp.scale(L - 0.55, 1, 1);
-      parts.push(piece(gp, cx, rf.y + rise * 0.33, cz, 1, rise * 0.68, S * 0.83, ry, cols[cols.length > 1 ? 1 : 0] === rc ? 0x7a5a3a : 0x8a6a48, 0, seed + 5));
-      gp.dispose();
-      parts.push(piece(trunkG, cx, rf.y + rise + 0.12, cz, 0.12, L + 0.1, 0.12, 0, 0x5a3a24, 0, seed + 6));
-      const last = parts.length;
-      // the ridge beam is a cylinder: lay it along the ridge
-      const beam = parts[last - 1];
-      beam.translate(-cx, -(rf.y + rise + 0.12), -cz);
-      beam.rotateZ(alongX ? Math.PI / 2 : 0);
-      if (!alongX) beam.rotateX(Math.PI / 2);
-      beam.translate(cx, rf.y + rise + 0.12, cz);
-      // a chimney on bigger roofs
-      if (L > 4) parts.push(piece(slab, cx + (alongX ? L * 0.22 : S * 0.35), rf.y + rise * 0.7, cz + (alongX ? S * 0.35 : L * 0.22), 0.45, rise * 0.9, 0.45, 0, 0x7a7a80, 0, seed + 7));
+      // log ridge on top
+      parts.push(piece(rbox, cx, rf.y + 0.25 + steps * 0.5 - 0.1, cz, alongX ? L + 0.1 : 0.4, 0.3, alongX ? 0.4 : L + 0.1, 0, 0x5a3a24, 0, seed + 20));
+      if (L > 4) parts.push(piece(rbox, cx + (alongX ? L * 0.25 : W * 0.25), rf.y + steps * 0.35 + 0.3, cz + (alongX ? W * 0.25 : L * 0.25), 0.6, steps * 0.7 + 0.6, 0.6, 0, 0x7a7a80, 0, seed + 7));
       const bx = Math.min(chunks - 1, Math.max(0, Math.floor(cx / CHUNK)));
       const bz = Math.min(chunks - 1, Math.max(0, Math.floor(cz / CHUNK)));
       buckets[bz * chunks + bx].push(...parts);
     }
+    rbox.dispose();
     blob.dispose();
     cone.dispose();
     trunkG.dispose();
