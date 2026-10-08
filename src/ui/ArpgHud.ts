@@ -65,6 +65,8 @@ export class ArpgHud {
   private runRef: Run | null = null;
   binds: Keybinds | null = null;
   onInventory: () => void = () => {};
+  onLearn: (slot: number) => void = () => {};
+  private pointsBox = h('div.ah-points.hidden');
   private bagKey = h('span.key');
 
   constructor() {
@@ -86,7 +88,13 @@ export class ArpgHud {
         pips: h('div.sk-pips'),
         cost: h('div.sk-cost'),
       };
-      s.root.append(s.icon, s.cd, s.timer, s.key, s.cost, s.pips);
+      s.root.append(s.icon, s.cd, s.timer, s.key, s.cost, s.pips, h('div.sk-plus', '+'));
+      s.root.addEventListener('mousedown', (e) => {
+        if (!s.root.classList.contains('learn')) return;
+        e.stopPropagation();
+        e.preventDefault();
+        this.onLearn(i);
+      });
       this.slots.push(s);
     }
     this.build = h('div.ah-build');
@@ -98,6 +106,7 @@ export class ArpgHud {
     this.root = h(
       'div.arpg-hud',
       this.build,
+      this.pointsBox,
       h('div.ah-main', bars, h('div.ah-slots', ...this.slots.slice(0, 4).map((s) => s.root), h('div.sk-gap'), this.slots[4].root), h('div.ah-side', h('div.ah-gold', h('i.ic-coin'), this.gold), h('button.ah-bag', { title: t('inv_title'), onclick: () => this.onInventory() }, iconImg('chest', 0xffc060, 'icon'), this.bagKey))),
       h('div.ah-xp', h('div.ah-xp-track', this.xpFill), this.xpText),
     );
@@ -170,6 +179,15 @@ export class ArpgHud {
     this.set('bagk', this.binds?.inventory?.[0] ?? '', () => (this.bagKey.textContent = keyName(this.binds?.inventory?.[0] ?? '')));
     this.set('bagn', run.loot.bag.length, () => this.root.style.setProperty('--bagn', `'${run.loot.bag.length}'`));
     this.set('gold', Math.round(run.stats.gold), () => (this.gold.textContent = fmtNum(run.stats.gold)));
+    // unspent skill points: highlight the frames that can take one
+    this.set('pts', sk.points, () => {
+      this.pointsBox.classList.toggle('hidden', sk.points <= 0);
+      this.pointsBox.textContent = t('arpg_points', { n: sk.points });
+    });
+    for (let i = 0; i < 5; i++) {
+      const can = sk.canLearn(i);
+      this.set('ln' + i, can ? 1 : 0, () => this.slots[i].root.classList.toggle('learn', can));
+    }
     // skill slots
     for (let i = 0; i < 5; i++) {
       const s = this.slots[i];
@@ -208,7 +226,7 @@ export class ArpgHud {
       const costTxt = i < 4 && learned && cost !== 0 ? (sk.kit.res.id === 'heat' ? (cost > 0 ? '+' : '') + cost : String(cost)) : '';
       this.set('cost' + i, costTxt, () => (s.cost.textContent = costTxt));
       const maxLv = i === 3 ? 4 : i === 4 ? 5 : SKILL_MAX;
-      this.set('lv' + i, lv, () => {
+      this.set('lv' + i, lv + (p.level >= 6 ? 100 : 0), () => {
         clear(s.pips);
         if (i === 3 && lv === 0) {
           s.pips.append(h('span.sk-lock', p.level >= 6 ? t('arpg_ult_ready') : t('arpg_ult_at', { n: 6 })));

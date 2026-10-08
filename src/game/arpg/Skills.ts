@@ -87,6 +87,8 @@ export class SkillSystem {
   dodgeCd = 0;
   dodgeMax = 3;
   dodgeLevel = 0;
+  /** Unspent skill points (one per level). */
+  points = 0;
   readonly mods = new Set<string>();
   readonly statUps = new Map<string, number>();
   private buffs: { b: Partial<SkillBuff>; t: number }[] = [];
@@ -1078,6 +1080,27 @@ export class SkillSystem {
     if (this.kit.res.id !== 'heat') this.res = this.resMax;
     run.stats.gold += 5;
     run.fx.text(run.player.x, run.player.z, run.tr('arpg_overflow'), 0x8affff);
+  }
+
+  /** Whether a skill point can go into a slot now (0..2 skills, 3 Ultimate, 4 dodge). */
+  canLearn(slot: number): boolean {
+    if (this.points <= 0) return false;
+    if (slot < 3) return this.levels[slot] < SKILL_MAX;
+    if (slot === 3) return this.ultLevel === 0 && this.run.player.level >= ULT_LEVEL;
+    return this.dodgeLevel < 4;
+  }
+
+  learn(slot: number): boolean {
+    if (!this.canLearn(slot)) return false;
+    this.points--;
+    const run = this.run;
+    if (slot < 3) this.apply({ kind: 'skill_up', id: String(slot), level: this.levels[slot] + 1, rarity: 'common' });
+    else if (slot === 3) this.apply({ kind: 'ult_learn', id: 'yes', level: 1, rarity: 'legendary' });
+    else this.apply({ kind: 'dodge_up', id: 'dodge', level: this.dodgeLevel + 1, rarity: 'common' });
+    this.flash[slot] = 0.5;
+    run.fx.sound('select', 0.7);
+    run.fx.burst(run.player.x, 1, run.player.z, 0xffe080, 16, 3, 0.12, 0.5, 'glow');
+    return true;
   }
 
   // ------------------------------------------------------------------ developer helpers

@@ -113,6 +113,8 @@ export class App implements MenuApi {
     this.hud = new Hud(root);
     this.hud.onPause = () => this.togglePause();
     this.hud.arpg.onInventory = () => this.toggleInventory();
+    this.hud.arpg.onLearn = (i) => this.run?.skills.learn(i);
+    this.input.onLearn = (i) => this.run?.skills.learn(i);
     this.hud.setVisible(false);
     this.menus = new Menus(root, this);
     this.menus.setVisible(false);

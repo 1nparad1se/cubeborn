@@ -3617,3 +3617,12 @@ img.icon.hi.sm,
 .it-price { margin-top: 4px; font: 12px var(--font-ui); color: var(--gold); }
 .inv-acts { display: flex; gap: 8px; flex-wrap: wrap; }
 .inv-hint { margin-top: 12px; font: 12px var(--font-ui); color: var(--dim); text-align: center; }
+
+/* skill points: frames that can take a point pulse gold, with a "+" badge */
+.sk-plus { display: none; position: absolute; top: -9px; right: -9px; width: 20px; height: 20px; border-radius: 4px; background: #ffd34a; color: #2a1a00; font: 700 16px/20px var(--font-ui, sans-serif); text-align: center; box-shadow: 0 0 8px #ffc040; z-index: 3; }
+.sk.learn { pointer-events: auto; cursor: pointer; border-color: #ffd34a !important; animation: sk-learn 1s ease-in-out infinite; }
+.sk.learn .sk-plus { display: block; }
+.sk.learn:hover { transform: scale(1.06); }
+@keyframes sk-learn { 0%, 100% { box-shadow: 0 0 6px #ffc04066, inset 0 0 0 1px #000; } 50% { box-shadow: 0 0 18px #ffd34acc, inset 0 0 8px #ffd34a66; } }
+.ah-points { align-self: center; pointer-events: none; padding: 3px 10px; border-radius: 4px; background: #1a1408cc; border: 1px solid #ffd34a; color: #ffe080; font-size: 12px; text-shadow: 0 1px 0 #000; }
+.ah-points.hidden { display: none; }

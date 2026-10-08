@@ -275,7 +275,14 @@ export class Run {
     this.loot.update(dt);
     this.effects.update(dt, p.x, p.z);
     this.stats.maxedWeapons = Math.max(this.stats.maxedWeapons, this.weapons.list.filter((w) => w.isMax).length);
-    if (p.pendingLevels > 0 && this.state === 'playing' && !p.dead && this.endTimer < 0) this.beginLevelUp();
+    if (p.pendingLevels > 0 && !p.dead) {
+      // levels become skill points: the HUD highlights the slots that can be improved
+      this.skills.points += p.pendingLevels;
+      p.pendingLevels = 0;
+      this.fx.sound('levelup');
+      this.fx.burst(p.x, 1, p.z, 0x8affff, 30, 4, 0.16, 0.8, 'glow');
+      this.fx.text(p.x, p.z, this.tr('arpg_point'), 0xffe080);
+    }
   }
 
   private surgeBuff() {

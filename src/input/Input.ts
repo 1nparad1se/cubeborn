@@ -31,6 +31,8 @@ export class Input {
   readonly casts: number[] = [];
   dodgeQueued = false;
   onInventory: (() => void) | null = null;
+  /** Ctrl + skill key: spend a skill point on that slot (4 = dodge). */
+  onLearn: ((slot: number) => void) | null = null;
   onPotion: (() => void) | null = null;
   private padPause = false;
   private padJump = false;
@@ -74,10 +76,16 @@ export class Input {
           this.onJump?.();
         }
         const slots: BindAction[] = ['skillQ', 'skillW', 'skillE', 'skillR'];
-        for (let i = 0; i < 4; i++) if (this.is(slots[i], e.code)) this.casts.push(i);
+        for (let i = 0; i < 4; i++) if (this.is(slots[i], e.code)) {
+          if (e.ctrlKey) {
+            e.preventDefault();
+            this.onLearn?.(i);
+          } else this.casts.push(i);
+        }
         if (this.is('dodge', e.code)) {
           e.preventDefault();
-          this.dodgeQueued = true;
+          if (e.ctrlKey) this.onLearn?.(4);
+          else this.dodgeQueued = true;
         }
         if (this.is('potion', e.code)) this.onPotion?.();
       }
