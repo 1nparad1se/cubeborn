@@ -25,6 +25,8 @@ export interface Block {
   /** Optional size (defaults to a full block). */
   s?: number;
   glow?: boolean;
+  /** Part of a natural rock pile: drawn as an irregular boulder, not a cube. */
+  rock?: boolean;
 }
 
 /** A tree drawn as a rounded model; only its trunk cell collides. */

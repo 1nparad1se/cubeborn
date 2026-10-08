@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { MapDef } from '../data/types';
 import { CELL, type Block, type Terrain } from '../game/Terrain';
@@ -128,7 +129,7 @@ export class WorldRenderer {
       data[i * 4 + 2] = level[i] < 0 ? 40 * Math.max(1, shore[i] || 5) : 0;
       // a few flat paving stones set into the grass (alpha 254 marks a slab cell)
       const tn = t.tileNames[t.tile[i]] ?? '';
-      const slab = /grass/.test(tn) && t.cell[i] !== CELL.liquid && hash2(x >> 2, z >> 2, 91) < 0.18 && hash2(x, z, 92) < 0.45;
+      const slab = false && /grass/.test(tn);
       data[i * 4 + 3] = slab ? 254 : 255;
     }
     const cells = new THREE.DataTexture(data, n, n, THREE.RGBAFormat);
@@ -441,7 +442,17 @@ diffuseColor.rgb *= mix(0.62, 1.0, smoothstep(0.0, 1.3, vWPos.y));`);
     this.disposables.push(cube, mat, glowMat, tex);
     const buckets: (typeof t.blocks)[] = Array.from({ length: chunks * chunks }, () => []);
     const glowBlocks: typeof t.blocks = [];
+    // natural rock piles: one lumpy, tilted boulder per column instead of stacked cubes
+    const rockCols = new Map<number, { x: number; z: number; h: number; b: Block }>();
     for (const b of t.blocks) {
+      if (!b.rock) continue;
+      const k = b.z * n + b.x;
+      const c = rockCols.get(k);
+      if (c) c.h = Math.max(c.h, b.y + 1);
+      else rockCols.set(k, { x: b.x, z: b.z, h: b.y + 1, b });
+    }
+    for (const b of t.blocks) {
+      if (b.rock) continue;
       if (b.glow) {
         glowBlocks.push(b);
         continue;
@@ -497,6 +508,40 @@ diffuseColor.rgb *= mix(0.62, 1.0, smoothstep(0.0, 1.3, vWPos.y));`);
       this.disposables.push(mesh, geo);
       if (cx >= 0) this.chunks.push({ mesh, x: (cx + 0.5) * CHUNK, z: (cz + 0.5) * CHUNK });
     };
+    if (rockCols.size) {
+      const rg = new RoundedBoxGeometry(1, 1, 1, 3, 0.2);
+      const p = rg.getAttribute('position') as THREE.BufferAttribute;
+      for (let i = 0; i < p.count; i++) {
+        const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+        const k = 1 + (hash2(Math.round(x * 20), Math.round(y * 20) * 3 + Math.round(z * 20) * 7, 4) - 0.5) * 0.16;
+        // bulging sides, slightly narrower top: a weathered stone rather than a cube
+        const top = y > 0 ? 0.9 : 1.0;
+        p.setXYZ(i, x * k * top, y * k, z * k * top);
+      }
+      rg.translate(0, 0.5, 0);
+      rg.computeVertexNormals();
+      const list = [...rockCols.values()];
+      const tiles = new Float32Array(list.length).fill(4);
+      rg.setAttribute('aTile', new THREE.InstancedBufferAttribute(tiles, 1));
+      const mesh = new THREE.InstancedMesh(rg, mat, list.length);
+      const e = new THREE.Euler();
+      list.forEach((c, i) => {
+        const r = (a: number) => hash2(c.x, c.z, a);
+        e.set((r(1) - 0.5) * 0.3, r(2) * Math.PI * 2, (r(3) - 0.5) * 0.3);
+        q.setFromEuler(e);
+        const w = 0.95 + r(4) * 0.4;
+        sc.set(w, c.h * (0.6 + r(5) * 0.35), w * (0.8 + r(6) * 0.3));
+        m4.compose(v3.set(c.x + 0.5 + (r(7) - 0.5) * 0.25, -0.08, c.z + 0.5 + (r(8) - 0.5) * 0.25), q, sc);
+        mesh.setMatrixAt(i, m4);
+        const colors = pal[c.b.mat] ?? [0x888888];
+        mesh.setColorAt(i, col.setHex(colors[c.b.v % colors.length]).multiplyScalar(0.95 + r(9) * 0.2));
+      });
+      mesh.castShadow = quality !== 'low';
+      mesh.receiveShadow = true;
+      mesh.computeBoundingSphere();
+      this.group.add(mesh);
+      this.disposables.push(mesh, rg);
+    }
     const shadows = quality !== 'low';
     buckets.forEach((list, i) => fill(list, vox[i], mat, shadows, i % chunks, Math.floor(i / chunks)));
     fill(glowBlocks, [], glowMat, false);

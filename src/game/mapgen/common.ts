@@ -109,7 +109,9 @@ export function rockCluster(g: GenCtx, x: number, z: number, mat: string, size: 
     const cx = x + g.rng.int(-1, 1);
     const cz = z + g.rng.int(-1, 1);
     if (!g.t.isFree(cx, cz)) continue;
+    const before = g.t.blocks.length;
     g.t.column(cx, cz, g.rng.int(1, 2), mat);
+    for (let k = before; k < g.t.blocks.length; k++) g.t.blocks[k].rock = true;
   }
 }
 
