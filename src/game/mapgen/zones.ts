@@ -22,7 +22,7 @@ const THEMES: Record<string, Theme> = {
   city: { wall: 'brick', wall2: 'stone', roof: 'roof', floor: 'plaza', road: 'road', clearing: 'grass', light: 0xffc66a, decor: [0x5a8a3a, 0x6a9a44] },
   catacombs: { wall: 'wall', wall2: 'pillar', roof: null, floor: 'tile', road: null, clearing: 'floor', light: 0xff9a3a, decor: [0xd8d0b8, 0xc8c0a8] },
   volcano: { wall: 'basalt', wall2: 'obsidian', roof: null, floor: 'basalt', road: 'basalt', clearing: 'ash', light: 0xff7a2a, decor: [0x2a2428, 0xff6a1a] },
-  tundra: { wall: 'trunk', wall2: 'rock', roof: 'snow', floor: 'trail', road: 'trail', clearing: 'snow', light: 0xffc080, decor: [0xffffff, 0x8a9a7a] },
+  tundra: { wall: 'plank', wall2: 'rock', roof: 'snow', floor: 'trail', road: 'trail', clearing: 'snow', light: 0xffc080, decor: [0xffffff, 0x8a9a7a] },
   ruins: { wall: 'sandstone', wall2: 'marble', roof: null, floor: 'marble', road: 'marble', clearing: 'sand', light: 0x9a7aff, decor: [0x5a8a4a, 0xb89a6a] },
 };
 

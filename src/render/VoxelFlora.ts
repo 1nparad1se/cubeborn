@@ -69,7 +69,7 @@ export function treeVoxels(tr: TreeInst, map: MapDef, out: Vox[]) {
   }
   // Trees from the owner's reference sheet, built from half-size blocks so they read as
   // detailed Minecraft builds while staying small on screen.
-  const V = 0.5;
+  const V = 0.36;
   const used = new Set<number>();
   const tv = (x: number, y: number, z: number, color: number, tile: number) => {
     const k = ((y + 64) * 256 + (x + 128)) * 256 + (z + 128);
@@ -107,7 +107,7 @@ export function treeVoxels(tr: TreeInst, map: MapDef, out: Vox[]) {
   };
   if (tr.kind === 'pine') {
     // spruce: straight trunk, square-ish pads shrinking to a spike
-    const T = 10 + tr.h * 2;
+    const T = 6 + tr.h;
     for (let y = 0; y < T; y++) trunk2(0, y, 0, trunkC);
     const tiers = 5;
     for (let i = 0; i < tiers; i++) {
@@ -121,7 +121,7 @@ export function treeVoxels(tr: TreeInst, map: MapDef, out: Vox[]) {
   const variant = Math.floor(r(11) * 6);
   if (variant === 0) {
     // twisted oak: a trunk that zig-zags up into one wide flat crown
-    const T = 9 + tr.h;
+    const T = 5 + (tr.h >> 1);
     let x = 0;
     roots(trunkC, 2);
     for (let y = 0; y < T; y++) {
@@ -135,7 +135,7 @@ export function treeVoxels(tr: TreeInst, map: MapDef, out: Vox[]) {
     // birch: white spotted trunk forking into a Y with airy clumps
     const bark = (x: number, y: number, z: number) => tv(x, y, z, shade(0xf2efe6, 0.96 + h3(x, y, z, 9) * 0.06), TILE.birch);
     const birchLeaf = 0x86b25a;
-    const T = 5 + tr.h;
+    const T = 3 + (tr.h >> 1);
     for (let y = 0; y < T; y++) for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) bark(i, y, j);
     const tips: [number, number][] = [[-3, 0], [3, 1], [0, -3]];
     for (const [ex, ez] of tips) {
@@ -145,10 +145,10 @@ export function treeVoxels(tr: TreeInst, map: MapDef, out: Vox[]) {
     pad(0, T + 6, 0, 3.4, 2, birchLeaf, 0.15);
   } else if (variant === 2) {
     // tiered: a tall trunk with leaf pads stacked on short side branches
-    const T = 13 + tr.h;
+    const T = 9 + (tr.h >> 1);
     for (let y = 0; y < T; y++) trunk2(0, y, 0, trunkC);
     roots(trunkC, 2);
-    const tiers: [number, number, number][] = [[5, -3, 0], [9, 3, 1]];
+    const tiers: [number, number, number][] = [[3, -3, 0], [6, 3, 1]];
     for (const [y, bx, bz] of tiers) {
       for (let k = 1; k <= Math.abs(bx); k++) wood(Math.sign(bx) * k + (bx > 0 ? 1 : 0), y, bz, trunkC);
       pad(bx + (bx > 0 ? 1 : 0), y + 1, bz, 3.4, 2, leafC);
@@ -157,7 +157,7 @@ export function treeVoxels(tr: TreeInst, map: MapDef, out: Vox[]) {
   } else if (variant === 3) {
     // gnarled dark oak: thick grey trunk splitting into crooked limbs
     const dark = 0x4c4c56;
-    const T = 7 + tr.h;
+    const T = 4 + (tr.h >> 1);
     roots(dark, 2);
     for (let y = 0; y < T; y++) trunk2(0, y, 0, dark, y < 3 ? 3 : 2);
     const limbs: [number, number][] = [[-5, 1], [5, -1], [1, 4]];
@@ -175,7 +175,7 @@ export function treeVoxels(tr: TreeInst, map: MapDef, out: Vox[]) {
     pad(0, T + 2, 0, 4.4, 2, leafC);
   } else {
     // round oak: thick trunk with roots, a dome crown and a red shelf mushroom
-    const T = 6 + tr.h;
+    const T = 3 + (tr.h >> 1);
     roots(trunkC, 3);
     for (let y = 0; y < T; y++) trunk2(0, y, 0, trunkC, 3);
     if (variant === 5) tv(2, 3, 0, 0xc8322c, TILE.smooth);
