@@ -212,13 +212,16 @@ export function makeBlockAtlas(): THREE.DataTexture {
       if ((y & 3) === 3) pv *= 0.62;
       if (x === ((row * 7 + 3) & 15)) pv *= 0.7;
       set(3, x, y, pv);
-      // 4 cobble: irregular stones with dark mortar
-      const cx = Math.floor((x + (y >> 2) * 3) / 5);
-      const cy = Math.floor((y + (x >> 3) * 2) / 4);
-      const edge = (x + (y >> 2) * 3) % 5 === 0 || (y + (x >> 3) * 2) % 4 === 0;
-      let cv = 0.72 + hash2(cx, cy, 71) * 0.24 + n * 0.06;
-      if (edge) cv = 0.45 + n * 0.08;
-      set(4, x, y, cv);
+      // 4 stone (Minecraft smooth stone): grey with blocky lighter and darker streaks, no seams
+      const sRow = y >> 1;
+      const sOff = Math.floor(hash2(sRow, 0, 76) * 4);
+      const sSeg = Math.floor((x + sOff) / (2 + Math.floor(hash2(sRow, 1, 77) * 3)));
+      const sh = hash2(sSeg, sRow, 71);
+      let cv = 0.8;
+      if (sh > 0.72) cv = 0.94;
+      else if (sh < 0.22) cv = 0.66;
+      else if (sh < 0.32) cv = 0.6;
+      set(4, x, y, cv + 0.12);
       // 5 brick
       const br = y >> 2;
       const bx = (x + (br & 1) * 4) & 7;
