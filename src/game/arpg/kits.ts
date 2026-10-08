@@ -482,6 +482,9 @@ export const KITS: ClassKit[] = [
   },
 ];
 
+// every skill and Ultimate has its own hand-drawn ability icon (src/ui/skillIcons.ts)
+for (const k of KITS) for (const sd of [...k.skills, k.ult]) sd.icon = 'sk_' + sd.id;
+
 export const KIT_BY_HERO: Record<string, ClassKit> = Object.fromEntries(KITS.map((k) => [k.hero, k]));
 
 export function kitFor(heroId: string): ClassKit {

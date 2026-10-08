@@ -5,6 +5,7 @@
  */
 
 import { drawItemIcon, hasItemIcon } from './itemIcons';
+import { hasSkillIcon, skillIconUrl } from './skillIcons';
 
 export { hasItemIcon };
 
@@ -498,6 +499,7 @@ const cache = new Map<string, string>();
  * `silhouette` renders the 32×32 art as a dark locked shape.
  */
 export function iconUrl(id: string, color: number, silhouette = false): string {
+  if (hasSkillIcon(id)) return skillIconUrl(id, color);
   const key = id + ':' + color + (silhouette ? ':sil' : '');
   const hit = cache.get(key);
   if (hit) return hit;

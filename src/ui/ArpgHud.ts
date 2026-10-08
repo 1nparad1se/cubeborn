@@ -150,7 +150,7 @@ export class ArpgHud {
         s.icon.append(iconImg(def.icon, def.color, 'icon'));
         s.root.title = `${L(def.name)}\n${L(def.desc)}`;
       } else {
-        s.icon.append(iconImg('boots', 0xd8f0ff, 'icon'));
+        s.icon.append(iconImg('sk_dodge', 0x8ab8e0, 'icon'));
         s.root.title = t('arpg_dodge_desc');
       }
       s.root.classList.toggle('ult', i === 3);

@@ -324,7 +324,7 @@ function choiceCard(run: Run, c: Choice): HTMLElement {
     tag = t('arpg_stat');
     lines = [t('arpg_stat_desc')];
   } else if (c.kind === 'dodge_up') {
-    icon = iconImg('boots', 0xd8f0ff, 'icon lg');
+    icon = iconImg('sk_dodge', 0x8ab8e0, 'icon lg');
     name = t('arpg_dodge');
     tag = t('lvl_short', { n: c.level + 1 });
     lines = [t('arpg_dodge_up')];
