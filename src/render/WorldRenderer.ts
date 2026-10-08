@@ -510,23 +510,40 @@ diffuseColor.rgb *= mix(0.62, 1.0, smoothstep(0.0, 1.3, vWPos.y));`);
     if (rockCols.size) {
       // Minecraft-style rock piles: crisp stone blocks of mixed shapes (tall, long, low)
       const rg = cube.clone();
-      const list = [...rockCols.values()];
-      const tiles = new Float32Array(list.length).fill(4);
-      rg.setAttribute('aTile', new THREE.InstancedBufferAttribute(tiles, 1));
-      const mesh = new THREE.InstancedMesh(rg, mat, list.length);
-      list.forEach((c, i) => {
-        const r = (a: number) => hash2(c.x, c.z, a);
-        const kind = r(1);
-        if (kind < 0.35) sc.set(0.9, c.h + 0.5 + r(5) * 0.5, 0.9);
-        else if (kind < 0.7) {
-          const len = 1.6 + r(6) * 0.4;
-          if (r(2) < 0.5) sc.set(len, 0.8 + r(5) * 0.25, 0.9);
-          else sc.set(0.9, 0.8 + r(5) * 0.25, len);
-        } else sc.set(1, c.h * (0.75 + r(5) * 0.25), 1);
-        m4.compose(v3.set(c.x + 0.5 + (r(7) - 0.5) * 0.2, 0, c.z + 0.5 + (r(8) - 0.5) * 0.2), q.identity(), sc);
-        mesh.setMatrixAt(i, m4);
+      // each rock cell holds a small pile of 1/3-size stones of mixed shapes
+      type Piece = { x: number; z: number; sx: number; sy: number; sz: number; color: number };
+      const pieces: Piece[] = [];
+      for (const c of rockCols.values()) {
         const colors = pal[c.b.mat] ?? [0x888888];
-        mesh.setColorAt(i, col.setHex(colors[c.b.v % colors.length]).multiplyScalar(0.95 + r(9) * 0.2));
+        const base = colors[c.b.v % colors.length];
+        const count = 3 + Math.floor(hash2(c.x, c.z, 30) * 4);
+        const used = new Set<number>();
+        for (let k = 0; k < count; k++) {
+          const r = (a: number) => hash2(c.x * 7 + k, c.z * 5 + k * 3, a);
+          const cell = Math.floor(r(1) * 9);
+          if (used.has(cell)) continue;
+          used.add(cell);
+          const gx = (cell % 3) / 3 + 1 / 6;
+          const gz = Math.floor(cell / 3) / 3 + 1 / 6;
+          const kind = r(2);
+          let sx = 0.3, sy = 0.3, sz = 0.3;
+          if (kind < 0.35) sy = (c.h + 0.5 + r(5) * 0.5) / 3;
+          else if (kind < 0.7) {
+            const len = 0.55 + r(6) * 0.12;
+            sy = 0.27 + r(5) * 0.08;
+            if (r(3) < 0.5) sx = len;
+            else sz = len;
+          } else sy = 0.25 + r(5) * 0.1;
+          pieces.push({ x: c.x + gx + (r(7) - 0.5) * 0.06, z: c.z + gz + (r(8) - 0.5) * 0.06, sx, sy, sz, color: base });
+        }
+      }
+      const tiles = new Float32Array(pieces.length).fill(4);
+      rg.setAttribute('aTile', new THREE.InstancedBufferAttribute(tiles, 1));
+      const mesh = new THREE.InstancedMesh(rg, mat, pieces.length);
+      pieces.forEach((p, i) => {
+        m4.compose(v3.set(p.x, 0, p.z), q.identity(), sc.set(p.sx, p.sy, p.sz));
+        mesh.setMatrixAt(i, m4);
+        mesh.setColorAt(i, col.setHex(p.color).multiplyScalar(0.95 + hash2(i, 3, 9) * 0.2));
       });
       mesh.castShadow = quality !== 'low';
       mesh.receiveShadow = true;
