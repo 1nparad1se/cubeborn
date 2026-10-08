@@ -1,3 +1,4 @@
+import { BAG_SIZE } from './game/arpg/Loot';
 import { iconImg } from './ui/icons';
 import { RARITY_COLOR } from './data/achievements';
 import type { AchievementDef } from './data/types';
@@ -489,7 +490,9 @@ export class App implements MenuApi {
     }
     // equipment and bag persist between runs
     const gs = run.loot.serialize();
-    p.data.gear.bag = gs.bag;
+    // the run carried the first slice of the stash as its bag; the rest stays in storage
+    p.data.gear.bag = [...gs.bag, ...p.data.gear.bag.slice(BAG_SIZE)];
+    p.data.gear.shop = [];
     p.data.gear.equipped[run.hero.id] = gs.equipped;
     const s = run.summary();
     const diff = run.diff;

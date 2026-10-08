@@ -1,3 +1,4 @@
+import { armoryScreen } from './ArmoryScreen';
 import { h, clear, hex, put } from './dom';
 import { iconImg } from './icons';
 import { thumbImg } from '../render/Thumbnails';
@@ -44,11 +45,11 @@ export interface MenuApi {
   version: string;
 }
 
-type ScreenId = 'main' | 'heroes' | 'viewer' | 'wanims' | 'maps' | 'weapons' | 'collection' | 'upgrades' | 'achievements' | 'settings';
+type ScreenId = 'main' | 'armory' | 'heroes' | 'viewer' | 'wanims' | 'maps' | 'weapons' | 'collection' | 'upgrades' | 'achievements' | 'settings';
 
 const RARITY_COLOR: Record<string, string> = { common: '#c8ccd8', uncommon: '#6aff8a', rare: '#5ab4ff', epic: '#c77dff', legendary: '#ffb02e' };
 /** Tabs along the top bar of the menu screens (Q / E cycle through them). */
-const TABS: ScreenId[] = ['viewer', 'weapons', 'wanims', 'maps', 'collection', 'upgrades', 'achievements', 'settings'];
+const TABS: ScreenId[] = ['armory', 'viewer', 'weapons', 'wanims', 'maps', 'collection', 'upgrades', 'achievements', 'settings'];
 /** Screens where the 3D showcase stays visible on the right instead of an item preview. */
 const SHOWCASE: ScreenId[] = ['main', 'heroes', 'maps'];
 
@@ -184,6 +185,11 @@ export class Menus {
         this.cleanup = () => v.dispose();
         return this.frame(v.el);
       }
+      case 'armory': {
+        const gold = h('div.gold-chip', h('i.ic-coin'), h('span', fmtNum(this.api.profile.data.gold)));
+        const el = armoryScreen(this.api.profile, (x) => this.api.sfx(x), this.selHero, (hid) => (this.selHero = hid), () => ((gold.lastChild as HTMLElement).textContent = fmtNum(this.api.profile.data.gold)));
+        return this.frame(el, { gold });
+      }
       case 'maps':
         return this.mapScreen();
       case 'weapons':
@@ -276,6 +282,7 @@ export class Menus {
         }, '.primary.big'),
         h(
           'div.main-grid',
+          this.btn(t('menu_armory'), () => this.open('armory'), '.armory-btn'),
           this.btn(t('menu_characters'), () => {
             this.selectMode = false;
             this.open('viewer');

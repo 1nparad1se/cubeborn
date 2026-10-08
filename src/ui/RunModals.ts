@@ -358,7 +358,7 @@ function choiceCard(run: Run, c: Choice): HTMLElement {
 }
 
 /** One-line description of a skill upgrade. */
-function upText(u: SkillUp | undefined): string {
+export function upText(u: SkillUp | undefined): string {
   if (!u) return '';
   const pct = Math.round(u.v * 100);
   switch (u.t) {
@@ -382,7 +382,7 @@ function upText(u: SkillUp | undefined): string {
 }
 
 /** Damage / cooldown / cost summary for a skill at a level. */
-function skillStatLine(run: Run, slot: number, level: number): string {
+export function skillStatLine(run: Run, slot: number, level: number): string {
   const sk = run.skills;
   const def: SkillDef = sk.skill(slot);
   let dmg = 1;

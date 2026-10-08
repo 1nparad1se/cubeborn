@@ -115,7 +115,7 @@ export interface SaveData {
   permSpent: number;
   last: { hero: string; map: string; diff: string; mode: 'campaign' | 'endless' };
   /** Action-RPG equipment: one shared bag, equipped sets per hero. */
-  gear: { bag: Item[]; equipped: Record<string, Partial<Record<EquipPos, Item>>> };
+  gear: { bag: Item[]; equipped: Record<string, Partial<Record<EquipPos, Item>>>; shop?: Item[] };
 }
 
 const KEY = 'cubeborn.save.v1';
@@ -217,7 +217,7 @@ export function migrate(raw: any): SaveData {
   }
   // gear: keep only well-formed items (older saves have none)
   const g = raw.gear && typeof raw.gear === 'object' ? raw.gear : {};
-  out.gear = { bag: Array.isArray(g.bag) ? g.bag.filter((x: any) => x && typeof x.slot === 'string') : [], equipped: g.equipped && typeof g.equipped === 'object' ? g.equipped : {} };
+  out.gear = { bag: Array.isArray(g.bag) ? g.bag.filter((x: any) => x && typeof x.slot === 'string') : [], equipped: g.equipped && typeof g.equipped === 'object' ? g.equipped : {}, shop: Array.isArray(g.shop) ? g.shop.filter((x: any) => x && typeof x.slot === 'string') : [] };
   out.version = VERSION;
   return out;
 }

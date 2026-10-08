@@ -3626,3 +3626,37 @@ img.icon.hi.sm,
 @keyframes sk-learn { 0%, 100% { box-shadow: 0 0 6px #ffc04066, inset 0 0 0 1px #000; } 50% { box-shadow: 0 0 18px #ffd34acc, inset 0 0 8px #ffd34a66; } }
 .ah-points { align-self: center; pointer-events: none; padding: 3px 10px; border-radius: 4px; background: #1a1408cc; border: 1px solid #ffd34a; color: #ffe080; font-size: 12px; text-shadow: 0 1px 0 #000; }
 .ah-points.hidden { display: none; }
+
+/* skill tooltip above the slot bar */
+.arpg-hud { position: absolute; }
+.sk-tip { position: absolute; bottom: calc(100% + 8px); transform: translateX(-50%); width: 280px; padding: 10px 12px; background: #12151bf2; border: 2px solid #5a6578; border-radius: 6px; box-shadow: 0 6px 18px #000a; color: #dfe6f0; font-size: 12px; line-height: 1.4; pointer-events: none; z-index: 20; }
+.sk-tip.hidden { display: none; }
+.tip-head { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; font-size: 14px; }
+.tip-head b { flex: 1; }
+.tip-key { padding: 0 5px; border: 1px solid #8892a6; border-radius: 3px; font-size: 11px; color: #fff; }
+.tip-lv { color: #ffd060; font-size: 11px; }
+.tip-desc { color: #c4ccd8; margin-bottom: 4px; }
+.tip-stat { color: #9ad0ff; }
+.tip-next { margin-top: 6px; padding-top: 6px; border-top: 1px solid #333b48; color: #b8f0a8; }
+.tip-next span { color: #8a94a6; }
+.tip-learn { margin-top: 6px; color: #ffd34a; font-weight: 700; }
+
+/* main menu: gear and shop */
+.armory { width: min(1180px, 96vw); margin: 0 auto; text-align: left; }
+.arm-heroes { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.arm-hero { display: flex; gap: 6px; align-items: baseline; padding: 6px 12px; background: #1a1e26; border: 2px solid #39414f; border-radius: 5px; color: #dfe6f0; cursor: pointer; font: inherit; }
+.arm-hero small { color: #ffd060; }
+.arm-hero.sel { border-color: #ffd060; background: #2a2618; }
+.arm-hero.locked { opacity: 0.35; cursor: default; }
+.arm-tabs { display: flex; gap: 8px; }
+.armory .inv-body { background: #0f1217e6; border: 2px solid #2c3340; border-radius: 8px; padding: 14px; }
+.arm-filter { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 8px; }
+.arm-filter .chip { padding: 3px 8px; background: #1a1e26; border: 1px solid #39414f; border-radius: 4px; color: #b8c2d0; font: inherit; font-size: 12px; cursor: pointer; }
+.arm-filter .chip.sel { border-color: #9ad0ff; color: #fff; }
+.arm-stash { max-height: 52vh; overflow-y: auto; align-content: start; padding-right: 4px; }
+.arm-shop { margin-bottom: 10px; grid-template-columns: repeat(4, 74px); }
+.arm-shop .inv-slot { width: 74px; height: 74px; }
+.arm-price { position: absolute; left: 0; right: 0; bottom: -2px; text-align: center; font-size: 11px; color: #ffd060; text-shadow: 0 1px 0 #000; }
+.arm-price.no { color: #ff7070; }
+.ist.dim { color: #8a94a6; }
+.main-grid .armory-btn { border-color: #ffd060; }

@@ -9,6 +9,7 @@ import { h, clear, hex } from './dom';
 import { iconImg } from './icons';
 import { t, L } from '../i18n';
 import { fmtNum } from './format';
+import { upText, skillStatLine } from './RunModals';
 
 interface Slot {
   root: HTMLElement;
@@ -67,6 +68,9 @@ export class ArpgHud {
   onInventory: () => void = () => {};
   onLearn: (slot: number) => void = () => {};
   private pointsBox = h('div.ah-points.hidden');
+  private tip = h('div.sk-tip.hidden');
+  private tipSlot = -1;
+  private lastRun: Run | null = null;
   private bagKey = h('span.key');
 
   constructor() {
@@ -89,11 +93,20 @@ export class ArpgHud {
         cost: h('div.sk-cost'),
       };
       s.root.append(s.icon, s.cd, s.timer, s.key, s.cost, s.pips, h('div.sk-plus', '+'));
+      s.root.addEventListener('mouseenter', () => {
+        this.tipSlot = i;
+        this.renderTip();
+      });
+      s.root.addEventListener('mouseleave', () => {
+        this.tipSlot = -1;
+        this.tip.classList.add('hidden');
+      });
       s.root.addEventListener('mousedown', (e) => {
         if (!s.root.classList.contains('learn')) return;
         e.stopPropagation();
         e.preventDefault();
         this.onLearn(i);
+        setTimeout(() => this.renderTip(), 0);
       });
       this.slots.push(s);
     }
@@ -107,6 +120,7 @@ export class ArpgHud {
       'div.arpg-hud',
       this.build,
       this.pointsBox,
+      this.tip,
       h('div.ah-main', bars, h('div.ah-slots', ...this.slots.slice(0, 4).map((s) => s.root), h('div.sk-gap'), this.slots[4].root), h('div.ah-side', h('div.ah-gold', h('i.ic-coin'), this.gold), h('button.ah-bag', { title: t('inv_title'), onclick: () => this.onInventory() }, iconImg('chest', 0xffc060, 'icon'), this.bagKey))),
       h('div.ah-xp', h('div.ah-xp-track', this.xpFill), this.xpText),
     );
@@ -161,6 +175,7 @@ export class ArpgHud {
   }
 
   update(run: Run) {
+    this.lastRun = run;
     if (run !== this.runRef) this.reset(run);
     const p = run.player;
     const sk = run.skills;
@@ -291,5 +306,38 @@ export class ArpgHud {
 
   colorOf(c: number) {
     return hex(c);
+  }
+
+  /** Tooltip over a skill slot: name, level, description, numbers and the next upgrade. */
+  private renderTip() {
+    const run = this.lastRun;
+    const i = this.tipSlot;
+    if (!run || i < 0) return;
+    const sk = run.skills;
+    const rows: (HTMLElement | null)[] = [];
+    const key = this.keyFor(i);
+    if (i === 4) {
+      rows.push(h('div.tip-head', h('b', t('arpg_dodge')), h('span.tip-key', key), h('span.tip-lv', t('arpg_tip_lv', { n: sk.dodgeLevel + 1, m: 5 }))));
+      rows.push(h('div.tip-desc', t('arpg_dodge_desc')));
+      rows.push(h('div.tip-stat', t('arpg_cd', { n: (sk.dodgeMax || 3).toFixed(1) })));
+      if (sk.dodgeLevel < 4) rows.push(h('div.tip-next', h('span', t('arpg_tip_next')), ' ', t('arpg_dodge_up')));
+    } else {
+      const def = sk.skill(i);
+      const lv = sk.level(i);
+      const maxLv = i === 3 ? 4 : SKILL_MAX;
+      rows.push(h('div.tip-head', h('b', { style: `color:#${def.color.toString(16).padStart(6, '0')}` }, L(def.name)), h('span.tip-key', key), h('span.tip-lv', i === 3 && lv === 0 ? t('arpg_tip_ult') : t('arpg_tip_lv', { n: lv, m: maxLv }))));
+      rows.push(h('div.tip-desc', L(def.desc)));
+      rows.push(h('div.tip-stat', skillStatLine(run, i, Math.max(1, lv))));
+      if (i < 3 && lv < SKILL_MAX) rows.push(h('div.tip-next', h('span', t('arpg_tip_next')), ' ', upText(def.ups[lv - 1])));
+      if (i === 3 && lv === 0) rows.push(h('div.tip-next', t('arpg_tip_ultlock')));
+      if (i === 3 && lv > 0 && lv < 4) rows.push(h('div.tip-next', h('span', t('arpg_tip_ultnext', { n: [12, 18, 22][lv - 1] })), ' ', upText(def.ups[lv - 1])));
+    }
+    if (sk.canLearn(i)) rows.push(h('div.tip-learn', t('arpg_tip_learn')));
+    clear(this.tip);
+    this.tip.append(...rows.filter(Boolean) as HTMLElement[]);
+    const r = this.slots[i].root.getBoundingClientRect();
+    const host = this.root.getBoundingClientRect();
+    this.tip.style.left = `${r.left - host.left + r.width / 2}px`;
+    this.tip.classList.remove('hidden');
   }
 }
