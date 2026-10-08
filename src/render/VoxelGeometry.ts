@@ -24,6 +24,11 @@ export interface BuildOptions {
   pivot?: [number, number, number];
   /** Darken/brighten all colors. */
   tint?: number;
+  /**
+   * Rounds box edges (0 = sharp cubes, 1 = fully soft). Creatures default to rounded so
+   * they read as sculpted figures rather than stacks of cubes.
+   */
+  round?: number;
 }
 
 /**
@@ -69,26 +74,91 @@ export function buildVoxelGeometry(m: VoxelModel, opts: BuildOptions = {}): THRE
     const y1 = (y + h) * s;
     const z0 = (z - d / 2) * s;
     const z1 = (z + d / 2) * s;
-    // faces: +x -x +y -y +z -z ; uv scaled by face dims in voxels
-    const faces: [number[], number[], number, number][] = [
-      [[x1, y0, z1, x1, y0, z0, x1, y1, z0, x1, y1, z1], [1, 0, 0], d, h],
-      [[x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0], [-1, 0, 0], d, h],
-      [[x0, y1, z1, x1, y1, z1, x1, y1, z0, x0, y1, z0], [0, 1, 0], w, d],
-      [[x0, y0, z0, x1, y0, z0, x1, y0, z1, x0, y0, z1], [0, -1, 0], w, d],
-      [[x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1], [0, 0, 1], w, h],
-      [[x1, y0, z0, x0, y0, z0, x0, y1, z0, x1, y1, z0], [0, 0, -1], w, h],
-    ];
-    for (const [v, n, fw, fh] of faces) {
-      if (n[1] === -1 && y0 <= 0.001) continue; // skip bottoms on the ground
-      const base = pos.length / 3;
-      pos.push(...v);
-      for (let k = 0; k < 4; k++) {
-        nor.push(n[0], n[1], n[2]);
-        col.push(tmpColor.r, tmpColor.g, tmpColor.b);
-        glow.push(isGlow ? 1 : 0);
+    const round = opts.round ?? 0.92;
+    // edge radius in voxels: thin parts get nearly round, big slabs keep their volume
+    const rv = round > 0 ? Math.min(Math.min(w, h, d) * 0.5 * round, 3.2) : 0;
+    if (rv < 0.05) {
+      // faces: +x -x +y -y +z -z ; uv scaled by face dims in voxels
+      const faces: [number[], number[], number, number][] = [
+        [[x1, y0, z1, x1, y0, z0, x1, y1, z0, x1, y1, z1], [1, 0, 0], d, h],
+        [[x0, y0, z0, x0, y0, z1, x0, y1, z1, x0, y1, z0], [-1, 0, 0], d, h],
+        [[x0, y1, z1, x1, y1, z1, x1, y1, z0, x0, y1, z0], [0, 1, 0], w, d],
+        [[x0, y0, z0, x1, y0, z0, x1, y0, z1, x0, y0, z1], [0, -1, 0], w, d],
+        [[x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1], [0, 0, 1], w, h],
+        [[x1, y0, z0, x0, y0, z0, x0, y1, z0, x1, y1, z0], [0, 0, -1], w, h],
+      ];
+      for (const [v, n, fw, fh] of faces) {
+        if (n[1] === -1 && y0 <= 0.001) continue; // skip bottoms on the ground
+        const base = pos.length / 3;
+        pos.push(...v);
+        for (let k = 0; k < 4; k++) {
+          nor.push(n[0], n[1], n[2]);
+          col.push(tmpColor.r, tmpColor.g, tmpColor.b);
+          glow.push(isGlow ? 1 : 0);
+        }
+        uv.push(0, 0, fw, 0, fw, fh, 0, fh);
+        idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
       }
-      uv.push(0, 0, fw, 0, fw, fh, 0, fh);
-      idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+      return;
+    }
+    // rounded box: every face is a grid whose points are pushed out from an inner box by
+    // the radius, giving soft edges and smooth normals that blend across faces
+    const r = rv * s;
+    const ix0 = x0 + r;
+    const ix1 = x1 - r;
+    const iy0 = y0 + r;
+    const iy1 = y1 - r;
+    const iz0 = z0 + r;
+    const iz1 = z1 - r;
+    const N = rv > 0.8 ? 4 : 3;
+    const cr = tmpColor.r;
+    const cg = tmpColor.g;
+    const cb = tmpColor.b;
+    // origin, u axis, v axis of each face (outward normal = u x v)
+    const F: [number[], number[], number[], number, number, number][] = [
+      [[x1, y0, z1], [0, 0, z0 - z1], [0, y1 - y0, 0], d, h, 0],
+      [[x0, y0, z0], [0, 0, z1 - z0], [0, y1 - y0, 0], d, h, 0],
+      [[x0, y1, z1], [x1 - x0, 0, 0], [0, 0, z0 - z1], w, d, 1],
+      [[x0, y0, z0], [x1 - x0, 0, 0], [0, 0, z1 - z0], w, d, -1],
+      [[x0, y0, z1], [x1 - x0, 0, 0], [0, y1 - y0, 0], w, h, 0],
+      [[x1, y0, z0], [x0 - x1, 0, 0], [0, y1 - y0, 0], w, h, 0],
+    ];
+    for (const [o, ua, va, fw, fh, up] of F) {
+      if (up === -1 && y0 <= 0.001) continue;
+      const base = pos.length / 3;
+      for (let j = 0; j <= N; j++)
+        for (let i = 0; i <= N; i++) {
+          const fu = i / N;
+          const fv = j / N;
+          const px = o[0] + ua[0] * fu + va[0] * fv;
+          const py = o[1] + ua[1] * fu + va[1] * fv;
+          const pz = o[2] + ua[2] * fu + va[2] * fv;
+          const qx = Math.min(ix1, Math.max(ix0, px));
+          const qy = Math.min(iy1, Math.max(iy0, py));
+          const qz = Math.min(iz1, Math.max(iz0, pz));
+          let nx = px - qx;
+          let ny = py - qy;
+          let nz = pz - qz;
+          const l = Math.hypot(nx, ny, nz) || 1;
+          nx /= l;
+          ny /= l;
+          nz /= l;
+          pos.push(qx + nx * r, qy + ny * r, qz + nz * r);
+          nor.push(nx, ny, nz);
+          // soft sculpted shading: lighter tops, a touch darker undersides
+          const k = 0.9 + ny * 0.12;
+          col.push(cr * k, cg * k, cb * k);
+          glow.push(isGlow ? 1 : 0);
+          uv.push(fu * fw, fv * fh);
+        }
+      for (let j = 0; j < N; j++)
+        for (let i = 0; i < N; i++) {
+          const a = base + j * (N + 1) + i;
+          const b2 = a + 1;
+          const c2 = a + N + 1;
+          const d2 = c2 + 1;
+          idx.push(a, b2, d2, a, d2, c2);
+        }
     }
   }
 

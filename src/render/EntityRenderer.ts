@@ -54,6 +54,7 @@ export class EntityRenderer {
   private aimHold = 0;
   private aimYaw = 0;
   private victoryPlayed = false;
+  private creatureTex: THREE.Texture;
   private bossModels = new Map<string, ArticulatedModel>();
   private shadows: InstancedBatch;
   private glowBox: InstancedBatch;
@@ -72,13 +73,15 @@ export class EntityRenderer {
   constructor(
     scene: THREE.Scene,
     private run: Run,
-    private blockTex: THREE.Texture,
+    blockTex: THREE.Texture,
     blobTex: THREE.Texture,
     private quality: string,
     private lights: LightPool,
   ) {
     scene.add(this.group);
-    this.voxMat = makeVoxelMaterial({ map: blockTex, instanced: true });
+    // creatures use a soft painted texture instead of the block grid, so rounded bodies read as sculpted
+    this.creatureTex = makeHeroTexture();
+    this.voxMat = makeVoxelMaterial({ map: this.creatureTex, instanced: true });
     this.enemyShadows = quality === 'high';
     const rigDef = heroRig(run.hero.model) ?? heroRig(run.hero.id);
     if (rigDef) {
@@ -133,7 +136,7 @@ export class EntityRenderer {
     if (m) return m;
     const def = BOSS_MODELS[id];
     if (!def) return null;
-    m = new ArticulatedModel(def, this.blockTex, this.quality !== 'low');
+    m = new ArticulatedModel(def, this.creatureTex, this.quality !== 'low');
     this.bossModels.set(id, m);
     this.group.add(m.root);
     return m;
@@ -604,15 +607,51 @@ export class EntityRenderer {
           break;
         }
         case 'beam': {
+          // prismatic ray: thin white-hot core, a coloured sheath, three rainbow strands
+          // twisting around it and bright pulses running out to the tip
           const dx = e.x2 - e.x;
           const dz = e.z2 - e.z;
           const len = Math.hypot(dx, dz);
           if (len < 0.01) break;
           const yaw = Math.atan2(dx, dz);
-          const w = e.w * (0.5 + k * 0.5);
-          this.glowBoxTop.push(e.x + dx / 2, e.y, e.z + dz / 2, yaw, w, w, len, c, 0, 0, 0, Math.min(1, k * 2));
-          this.glowBox.push(e.x + dx / 2, e.y, e.z + dz / 2, yaw, w * 0.35, w * 0.35, len, 0xffffff, 0, 0, 0, Math.min(1, k * 2));
-          this.glowPlane.push(e.x + dx / 2, 0.06, e.z + dz / 2, yaw, w * 2.5, 1, len, c, 0, 0, 0, k * 0.4);
+          const ux = dx / len;
+          const uz = dz / len;
+          const fade = Math.min(1, k * 3);
+          const w = e.w * (0.75 + 0.25 * Math.sin(time * 40 + e.seed));
+          const mx = e.x + dx / 2;
+          const mz = e.z + dz / 2;
+          this.glowBox.push(mx, e.y, mz, yaw, w * 0.16, w * 0.16, len, 0xffffff, 0, 0, 0, fade);
+          this.glowBoxTop.push(mx, e.y, mz, yaw, w * 0.42, w * 0.42, len, c, 0, 0, 0, fade * 0.55);
+          this.glowPlane.push(mx, 0.06, mz, yaw, w * 1.3, 1, len, c, 0, 0, 0, fade * 0.22);
+          const steps = Math.max(6, Math.ceil(len / 0.35));
+          const rad = w * 0.42;
+          for (let sIdx = 0; sIdx < 3; sIdx++) {
+            const col = hueShift(c, (sIdx - 1) * 0.3);
+            let px = e.x;
+            let py = e.y;
+            let pz = e.z;
+            for (let i = 1; i <= steps; i++) {
+              const t = i / steps;
+              const ph = t * len * 2.4 - time * 14 + (sIdx * Math.PI * 2) / 3;
+              // strands spread from the hand and tighten again at the tip
+              const r = rad * Math.min(1, t * 6) * (1 - t * 0.35);
+              const nx = e.x + dx * t - uz * Math.cos(ph) * r;
+              const nz = e.z + dz * t + ux * Math.cos(ph) * r;
+              const ny = e.y + Math.sin(ph) * r;
+              this.segment(px, py, pz, nx, ny, nz, w * 0.09, col, fade * 0.9);
+              px = nx;
+              py = ny;
+              pz = nz;
+            }
+          }
+          for (let i = 0; i < 3; i++) {
+            const t = (time * 2.2 + i / 3 + e.seed) % 1;
+            const s2 = w * (0.5 + 0.4 * Math.sin(t * Math.PI));
+            this.glowDisc.push(e.x + dx * t, e.y, e.z + dz * t, 0, s2, 1, s2, 0xffffff, 0, 0, 0, fade * 0.7);
+          }
+          const flare = w * (1.2 + 0.3 * Math.sin(time * 30));
+          this.glowDisc.push(e.x2, e.y, e.z2, 0, flare, 1, flare, c, 0, 0, 0, fade * 0.8);
+          this.glowDisc.push(e.x2, 0.07, e.z2, 0, flare * 1.6, 1, flare * 1.6, c, 0, 0, 0, fade * 0.3);
           break;
         }
         case 'bolt': {
@@ -654,8 +693,8 @@ export class EntityRenderer {
           const len = e.r * ext;
           const cx = e.x + Math.cos(e.angle) * len * 0.5;
           const cz = e.z + Math.sin(e.angle) * len * 0.5;
-          this.glowBoxTop.push(cx, 0.8, cz, yaw, e.w * 0.6, e.w * 0.4, len, c, 0, 0, 0, k);
-          this.glowPlane.push(cx, 0.07, cz, yaw, e.w * 1.8, 1, len, c, 0, 0, 0, k * 0.5);
+          // the spear model is the attack; only a faint ground streak marks the line, no glow box
+          this.glowPlane.push(cx, 0.07, cz, yaw, e.w * 0.6, 1, len, c, 0, 0, 0, k * 0.18);
           break;
         }
         case 'aura': {
@@ -716,6 +755,7 @@ export class EntityRenderer {
     this.hero?.dispose();
     this.rig?.dispose();
     this.heroTex?.dispose();
+    this.creatureTex.dispose();
     this.weaponVis.dispose();
     this.group.parent?.remove(this.group);
   }
@@ -743,4 +783,11 @@ function angleDelta(from: number, to: number): number {
 
 function modelColor(m: VoxelModel): number {
   return m.boxes[0][6];
+}
+
+const _hc = new THREE.Color();
+const _hsl = { h: 0, s: 0, l: 0 };
+function hueShift(c: number, dh: number): number {
+  _hc.setHex(c).getHSL(_hsl);
+  return _hc.setHSL((_hsl.h + dh + 1) % 1, Math.max(0.75, _hsl.s), Math.max(0.6, _hsl.l)).getHex();
 }

@@ -47,7 +47,7 @@ export class Particles {
     for (let i = 0; i < this.max; i++) this.list.push({ x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, r: 1, g: 1, b: 1, size: 1, life: 0, max: 1, rot: 0, spin: 0, kind: 0 });
     this.glow = new InstancedBatch(new THREE.BoxGeometry(1, 1, 1), makeGlowMaterial(), scene, 512);
     this.glow.mesh.renderOrder = 7;
-    const cube = buildVoxelGeometry({ boxes: [[0, -5, 0, 10, 10, 10, 0xffffff]], scale: 0.1 }, {});
+    const cube = buildVoxelGeometry({ boxes: [[0, -5, 0, 10, 10, 10, 0xffffff]], scale: 0.1 }, { round: 0 });
     this.debris = new InstancedBatch(cube, makeVoxelMaterial({ map: blockTex, instanced: true }), scene, 256, true);
     const smokeGeo = new THREE.PlaneGeometry(1, 1);
     const smokeMat = new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false, color: 0xffffff, opacity: 0.45 });

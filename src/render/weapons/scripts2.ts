@@ -520,7 +520,6 @@ const lance: WeaponScript = {
       m.body.rotation.x += a.mode === 'idle' ? -0.25 + Math.sin(t * 1.2) * 0.05 : 0;
     }
     m.halos.flash?.set(0.6 + flash * 0.8, flash * 0.8);
-    m.glow.value += flash * 1.4;
   },
   fx(a, dt, fx) {
     const q = qm(a, fx);

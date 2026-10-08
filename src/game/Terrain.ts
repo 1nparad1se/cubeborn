@@ -27,6 +27,17 @@ export interface Block {
   glow?: boolean;
 }
 
+/** A tree drawn as a rounded model; only its trunk cell collides. */
+export interface TreeInst {
+  x: number;
+  z: number;
+  h: number;
+  kind: 'oak' | 'pine';
+  leaf: string;
+  trunk: string;
+  v: number;
+}
+
 export interface Decor {
   x: number;
   z: number;
@@ -54,6 +65,7 @@ export class Terrain {
   readonly height: Uint8Array;
   readonly blocks: Block[] = [];
   readonly decor: Decor[] = [];
+  readonly trees: TreeInst[] = [];
   readonly lights: TerrainLight[] = [];
   /** Special markers used by events (rune circles etc). */
   readonly markers: { x: number; z: number; kind: string; sub?: string }[] = [];
@@ -177,6 +189,16 @@ export class Terrain {
     this.cell[i] = cell;
     this.height[i] = Math.max(this.height[i], h);
     for (let y = 0; y < h; y++) this.blocks.push({ x: cx, y, z: cz, mat, v: v < 0 ? (cx * 7 + cz * 13 + y * 3) & 7 : v, glow });
+  }
+
+  /** Marks a solid cell of the given height without drawing blocks (trees draw their own model). */
+  solidCell(cx: number, cz: number, h: number) {
+    if (!this.inBounds(cx, cz)) return false;
+    const i = this.idx(cx, cz);
+    if (this.cell[i] === CELL.wall) return false;
+    this.cell[i] = CELL.solid;
+    this.height[i] = Math.max(this.height[i], h);
+    return true;
   }
 
   /** Adds a non-colliding block (canopy, roofs overhang, ornaments). */

@@ -72,6 +72,7 @@ export class WorldRenderer {
     this.level = this.computeLevels(terrain);
     this.buildGround(terrain, map);
     this.buildBlocks(terrain, map, quality);
+    this.buildTrees(terrain, map, quality);
     this.buildDecor(terrain, quality);
     this.buildGrass(terrain, map, quality);
   }
@@ -430,6 +431,159 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
     const shadows = quality !== 'low';
     buckets.forEach((list, i) => fill(list, mat, shadows, i % chunks, Math.floor(i / chunks)));
     fill(glowBlocks, glowMat, false);
+  }
+
+  /**
+   * Rounded trees: a tapered trunk with a root flare and a canopy of faceted blobs for
+   * broadleaf trees, stacked cones with snowy tips for pines. Merged per chunk; the canopy
+   * sways in the wind and dissolves when it stands in front of the hero.
+   */
+  private buildTrees(t: Terrain, map: MapDef, quality: string) {
+    if (!t.trees.length) return;
+    const pal = map.palette.blocks;
+    const u = this.uniforms;
+    const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+    mat.onBeforeCompile = (sh) => {
+      sh.uniforms.uFocus = u.uFocus;
+      sh.uniforms.uCamDir = u.uCamDir;
+      sh.uniforms.uTime = u.uTime;
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nuniform float uTime;\nattribute float aSway;')
+        .replace(
+          '#include <begin_vertex>',
+          `#include <begin_vertex>
+float ph = position.x * 0.35 + position.z * 0.27;
+transformed.x += sin(uTime * 1.3 + ph) * 0.07 * aSway;
+transformed.z += cos(uTime * 1.1 + ph) * 0.05 * aSway;
+vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`,
+        );
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nuniform vec3 uFocus;\nuniform vec2 uCamDir;')
+        .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n' + DITHER);
+    };
+    this.disposables.push(mat);
+    const blob = new THREE.IcosahedronGeometry(1, 1);
+    const cone = new THREE.ConeGeometry(1, 1, 8, 2);
+    const trunkG = new THREE.CylinderGeometry(1, 1, 1, 7, 1);
+    const tmp = new THREE.Color();
+    const m4 = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const e = new THREE.Euler();
+    // one coloured, flat-shaded piece of a tree in world space
+    const piece = (g: THREE.BufferGeometry, px: number, py: number, pz: number, sx: number, sy: number, sz: number, ry: number, color: number, sway: number, seed: number, opts: { jitter?: number; snowAbove?: number; snow?: number; taper?: number } = {}) => {
+      const geo = g.clone().toNonIndexed();
+      geo.deleteAttribute('uv');
+      const pos = geo.getAttribute('position') as THREE.BufferAttribute;
+      const jit = opts.jitter ?? 0;
+      for (let i = 0; i < pos.count; i++) {
+        let x = pos.getX(i);
+        let y = pos.getY(i);
+        let z = pos.getZ(i);
+        if (opts.taper !== undefined) {
+          const k = 1 - (y + 0.5) * opts.taper;
+          x *= k;
+          z *= k;
+        }
+        if (jit) {
+          // lumpy, organic silhouette; the same corner moves the same way on every face
+          const n = hash2(Math.round(x * 50) + seed, Math.round(y * 50) * 7 + Math.round(z * 50) * 13, 5) - 0.5;
+          x *= 1 + n * jit;
+          y *= 1 + n * jit;
+          z *= 1 + n * jit;
+        }
+        pos.setXYZ(i, x, y, z);
+      }
+      e.set(0, ry, 0);
+      q.setFromEuler(e);
+      m4.compose(new THREE.Vector3(px, py, pz), q, new THREE.Vector3(sx, sy, sz));
+      geo.applyMatrix4(m4);
+      geo.computeVertexNormals();
+      const n = pos.count;
+      const cols = new Float32Array(n * 3);
+      const sw = new Float32Array(n);
+      const nor = geo.getAttribute('normal') as THREE.BufferAttribute;
+      const wp = geo.getAttribute('position') as THREE.BufferAttribute;
+      for (let i = 0; i < n; i += 3) {
+        // per-face tint: lit tops, darker undersides, a little variation
+        const ny = (nor.getY(i) + nor.getY(i + 1) + nor.getY(i + 2)) / 3;
+        const cy = (wp.getY(i) + wp.getY(i + 1) + wp.getY(i + 2)) / 3;
+        const v = 0.78 + ny * 0.2 + (hash2(i + seed, seed, 9) - 0.5) * 0.14;
+        tmp.setHex(opts.snowAbove !== undefined && cy > opts.snowAbove && ny > 0.1 ? opts.snow ?? 0xffffff : color).multiplyScalar(v);
+        for (let j = 0; j < 3; j++) {
+          cols[(i + j) * 3] = tmp.r;
+          cols[(i + j) * 3 + 1] = tmp.g;
+          cols[(i + j) * 3 + 2] = tmp.b;
+          sw[i + j] = sway * Math.max(0, wp.getY(i + j) - 1.2);
+        }
+      }
+      geo.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+      geo.setAttribute('aSway', new THREE.BufferAttribute(sw, 1));
+      return geo;
+    };
+    const chunks = Math.ceil(t.size / CHUNK);
+    const buckets: THREE.BufferGeometry[][] = Array.from({ length: chunks * chunks }, () => []);
+    for (const tr of t.trees) {
+      const cx = tr.x + 0.5;
+      const cz = tr.z + 0.5;
+      const seed = tr.x * 131 + tr.z * 17;
+      const r = (a: number) => hash2(tr.x, tr.z, a);
+      const trunkCols = pal[tr.trunk] ?? [0x6e4c2c];
+      const leafCols = pal[tr.leaf] ?? [0x3f8a30];
+      const trunkC = trunkCols[tr.v % trunkCols.length];
+      const leafC = leafCols[tr.v % leafCols.length];
+      const parts: THREE.BufferGeometry[] = [];
+      const ry = r(1) * Math.PI * 2;
+      if (tr.kind === 'oak') {
+        const h = tr.h;
+        const big = h >= 4;
+        parts.push(piece(trunkG, cx, h / 2, cz, 0.24, h, 0.24, ry, trunkC, 0, seed, { taper: 0.35 }));
+        parts.push(piece(trunkG, cx, 0.15, cz, 0.42, 0.3, 0.42, ry, trunkC, 0, seed + 1, { taper: 0.4 }));
+        // a branch reaching out under the canopy
+        parts.push(piece(trunkG, cx + Math.cos(ry) * 0.45, h - 0.9, cz + Math.sin(ry) * 0.45, 0.1, 0.9, 0.1, ry, trunkC, 0.2, seed + 2));
+        const crown = big ? 1.55 : 1.1;
+        const blobs = big ? 6 : 4;
+        parts.push(piece(blob, cx, h + 0.35, cz, crown, crown * 0.82, crown, ry, leafC, 1, seed + 3, { jitter: 0.22 }));
+        for (let i = 0; i < blobs; i++) {
+          const a = ry + (i / blobs) * Math.PI * 2 + r(10 + i) * 0.5;
+          const d = crown * (0.62 + r(20 + i) * 0.25);
+          const s = crown * (0.48 + r(30 + i) * 0.22);
+          tmp.setHex(leafC).offsetHSL((r(40 + i) - 0.5) * 0.03, 0, (r(50 + i) - 0.5) * 0.08);
+          parts.push(piece(blob, cx + Math.cos(a) * d, h - 0.1 + r(60 + i) * 0.7, cz + Math.sin(a) * d, s, s * 0.85, s, a, tmp.getHex(), 1, seed + 10 + i, { jitter: 0.25 }));
+        }
+        parts.push(piece(blob, cx + (r(70) - 0.5) * 0.4, h + 0.35 + crown * 0.6, cz + (r(71) - 0.5) * 0.4, crown * 0.6, crown * 0.5, crown * 0.6, ry, leafC, 1, seed + 30, { jitter: 0.2 }));
+      } else {
+        const h = tr.h;
+        parts.push(piece(trunkG, cx, 0.7, cz, 0.2, 1.4, 0.2, ry, trunkC, 0, seed, { taper: 0.3 }));
+        const tiers = 3;
+        for (let i = 0; i < tiers; i++) {
+          const k = i / tiers;
+          const rad = (1.45 - k * 0.95) * (0.85 + h * 0.05);
+          const ht = 1.5 - k * 0.3;
+          const y = 1.2 + i * (h - 1.6) / tiers + ht / 2;
+          parts.push(piece(cone, cx, y, cz, rad, ht, rad, ry + i * 0.4, leafC, 0.6, seed + i, { jitter: 0.12, snowAbove: y + ht * 0.05, snow: 0xf2f6fa }));
+        }
+      }
+      const bx = Math.min(chunks - 1, Math.max(0, Math.floor(tr.x / CHUNK)));
+      const bz = Math.min(chunks - 1, Math.max(0, Math.floor(tr.z / CHUNK)));
+      buckets[bz * chunks + bx].push(...parts);
+    }
+    blob.dispose();
+    cone.dispose();
+    trunkG.dispose();
+    const shadows = quality !== 'low';
+    buckets.forEach((list, i) => {
+      if (!list.length) return;
+      const geo = mergeGeometries(list, false);
+      for (const g of list) g.dispose();
+      if (!geo) return;
+      geo.computeBoundingSphere();
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.castShadow = shadows;
+      mesh.receiveShadow = true;
+      this.group.add(mesh);
+      this.disposables.push(geo);
+      this.chunks.push({ mesh, x: ((i % chunks) + 0.5) * CHUNK, z: (Math.floor(i / chunks) + 0.5) * CHUNK });
+    });
   }
 
   private buildDecor(t: Terrain, quality: string) {

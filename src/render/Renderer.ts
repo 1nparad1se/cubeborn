@@ -41,6 +41,18 @@ export interface FxHooks {
 }
 
 /** Gentle color grade applied before tone mapping: richer saturation and warm highlights. */
+/** Replaces NaN / infinite pixels so bloom cannot smear one bad pixel into a black square. */
+const ScrubShader = {
+  uniforms: { tDiffuse: { value: null as THREE.Texture | null } },
+  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: `uniform sampler2D tDiffuse; varying vec2 vUv;
+void main() {
+  vec4 c = texture2D(tDiffuse, vUv);
+  bool bad = !(c.r == c.r && c.g == c.g && c.b == c.b) || max(max(c.r, c.g), c.b) > 6e4;
+  gl_FragColor = bad ? vec4(0.0, 0.0, 0.0, 1.0) : vec4(min(c.rgb, vec3(64.0)), c.a);
+}`,
+};
+
 const GradeShader = {
   uniforms: { tDiffuse: { value: null }, uSat: { value: 1.06 }, uWarm: { value: 0.04 } },
   vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
@@ -190,6 +202,7 @@ export class Renderer {
     const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: this.msaa ? 4 : 0 });
     const c = new EffectComposer(this.gl, rt);
     c.addPass(new RenderPass(this.scene, this.rig.camera));
+    c.addPass(new ShaderPass(ScrubShader));
     this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.42, 0.55, 0.82);
     c.addPass(this.bloom);
     this.grade = new ShaderPass(GradeShader);

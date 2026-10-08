@@ -81,6 +81,11 @@ export function disk(g: GenCtx, cx: number, cz: number, r: number, tile: string 
 /** Blocky tree: trunk column (solid) and a cuboid canopy. */
 export function tree(g: GenCtx, x: number, z: number, trunkMat: string, leafMat: string, h: number, leafV = -1) {
   const { t } = g;
+  if (leafMat === 'leaves') {
+    // real trees get a rounded model; huts made with this helper stay blocky
+    if (t.solidCell(x, z, h)) t.trees.push({ x, z, h, kind: 'oak', leaf: leafMat, trunk: trunkMat, v: leafV < 0 ? g.rng.int(0, 2) : leafV });
+    return;
+  }
   t.column(x, z, h, trunkMat);
   const r = h >= 4 ? 2 : 1;
   for (let y = h - 1; y <= h + 1; y++) {
@@ -96,16 +101,7 @@ export function tree(g: GenCtx, x: number, z: number, trunkMat: string, leafMat:
 
 export function pine(g: GenCtx, x: number, z: number, h: number) {
   const { t } = g;
-  t.column(x, z, 2, 'trunk');
-  for (let y = 1; y < h; y++) {
-    const r = Math.max(0, Math.round((h - y) / 2));
-    for (let dz = -r; dz <= r; dz++)
-      for (let dx = -r; dx <= r; dx++) {
-        if (Math.abs(dx) + Math.abs(dz) > r + 0.5) continue;
-        if (dx === 0 && dz === 0 && y < 2) continue;
-        t.addBlock(x + dx, y, z + dz, y === h - 1 || (r > 0 && g.rng.chance(0.25)) ? 'snow' : 'pine');
-      }
-  }
+  if (t.solidCell(x, z, 2)) t.trees.push({ x, z, h, kind: 'pine', leaf: 'pine', trunk: 'trunk', v: g.rng.int(0, 1) });
 }
 
 export function rockCluster(g: GenCtx, x: number, z: number, mat: string, size: number) {

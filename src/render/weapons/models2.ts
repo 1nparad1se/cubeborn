@@ -375,7 +375,7 @@ export const FIST: ModelDef = {
 // ------------------------------------------------------------------ Sky Lance / Dragon Lance: a winged spear
 export const LANCE: ModelDef = {
   vox: 0.05,
-  rim: 0.45,
+  rim: 0,
   nodes: [{ n: 'lance' }, { n: 'tassel', parent: 'lance', at: [0, -0.8, 8] }, { n: 'dragon', parent: 'lance', tier: 4 }, { n: 'tip', parent: 'lance', at: [0, 0, 19] }],
   parts: [
     ...on(
@@ -386,19 +386,16 @@ export const LANCE: ModelDef = {
       { s: 'cyl', p: [0, 0, 11], d: [1.8, 1.6, 1.8], r: [90, 0, 0], c: GOLD, n: 8 },
       // leaf blade and side wings
       { s: 'box', p: [0, 0, 15.6], d: [3.2, 8, 0.7], t: [0.06, 1], r: [90, 0, 0], c: 0xe8f0ff },
-      { s: 'box', p: [0, 0, 15.2], d: [0.7, 6, 0.3], t: [0.2, 1], r: [90, 0, 0], c: 0xa8c0f0, g: true, flat: true, grp: 't2' },
+      { s: 'box', p: [0, 0, 15.2], d: [0.7, 6, 0.3], t: [0.2, 1], r: [90, 0, 0], c: 0xa8c0f0, flat: true, grp: 't2' },
       { s: 'box', p: [2.2, 0, 12], d: [2.4, 0.5, 1.4], r: [0, -35, 0], c: GOLD_D },
       { s: 'box', p: [-2.2, 0, 12], d: [2.4, 0.5, 1.4], r: [0, 35, 0], c: GOLD_D },
-      { s: 'box', p: [0, 0, 15.8], d: [1.8, 7, 0.5], t: [0.06, 1], r: [90, 0, 0], c: 0xbfe0ff, g: true, grp: 't3' },
+      { s: 'box', p: [0, 0, 15.8], d: [1.8, 7, 0.5], t: [0.06, 1], r: [90, 0, 0], c: 0xbfe0ff, grp: 't3' },
     ),
     ...on('tassel', { s: 'box', p: [0, -1.4, 0], d: [0.8, 2.8, 0.8], c: 0xd84a3a }, { s: 'box', p: [0, -2.9, 0], d: [1.2, 0.8, 1.2], c: 0xe85a4a }),
     // evolution: a dragon head grips the blade
     ...on('dragon', { s: 'rbox', p: [0, 0.4, 10.4], d: [3, 2.6, 3.6], c: 0xc83a2a, bv: [0.6, 0.6, 0.4] }, { s: 'box', p: [0, -0.2, 12.6], d: [2.2, 1.2, 2], t: [0.6, 1], c: 0xd84a3a }, { s: 'gem', p: [1.1, 1.4, 11.6], d: [0.7, 0.7, 0.7], c: 0xffe070, g: true }, { s: 'gem', p: [-1.1, 1.4, 11.6], d: [0.7, 0.7, 0.7], c: 0xffe070, g: true }, { s: 'cyl', p: [1, 2.4, 9.4], d: [0.6, 2.6, 0.6], r: [-60, 0, 0], t: [0.1, 0.1], c: GOLD, n: 5 }, { s: 'cyl', p: [-1, 2.4, 9.4], d: [0.6, 2.6, 0.6], r: [-60, 0, 0], t: [0.1, 0.1], c: GOLD, n: 5 }),
   ],
-  halos: [
-    { name: 'glow', node: 'lance', at: [0, 0, 15], size: 14, color: 0xd9e6ff, opacity: 0.3 },
-    { name: 'flash', node: 'lance', at: [0, 0, 19], size: 40, color: 0xffffff, opacity: 0 },
-  ],
+  // no halos: Jeyhun wants the spear itself without a glow around it
 };
 
 // ------------------------------------------------------------------ Prism Ray / Rainbow Lattice: a floating prism

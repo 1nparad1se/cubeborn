@@ -224,6 +224,11 @@ export class WeaponActor {
     m.glow.value = d.glow * (0.55 + 0.45 * pulse) * d.intensity + this.charge * 1.2;
     const script = SCRIPTS[d.script];
     script?.pose(this, dt, pulse);
+    // a zero or negative scale makes the normal matrix singular: lighting turns NaN and bloom
+    // smears it into a black square across the screen, so keep scales tiny but positive
+    const mdl = this.model;
+    fixScale(mdl.body);
+    for (const k in mdl.nodes) fixScale(mdl.nodes[k]);
     m.root.updateMatrixWorld(true);
     script?.fx?.(this, dt, fx, pulse);
     // trail from the object's actual centre so it never lags sideways
@@ -295,4 +300,20 @@ export interface WeaponScript {
   spinMul?(a: WeaponActor): number;
   /** Node whose centre the trail follows. */
   trailNode?: string;
+}
+
+function fixScale(g: THREE.Object3D) {
+  const sc = g.scale;
+  if (sc.x < 1e-3) sc.x = 1e-3;
+  if (sc.y < 1e-3) sc.y = 1e-3;
+  if (sc.z < 1e-3) sc.z = 1e-3;
+  // hide collapsed nodes, and show again only the ones hidden here (tiers hide nodes too)
+  const tiny = sc.x <= 2e-3 || sc.y <= 2e-3 || sc.z <= 2e-3;
+  if (tiny && g.visible) {
+    g.visible = false;
+    g.userData.scaleHidden = true;
+  } else if (!tiny && g.userData.scaleHidden) {
+    g.visible = true;
+    g.userData.scaleHidden = false;
+  }
 }
