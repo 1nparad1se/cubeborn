@@ -104,15 +104,8 @@ export function pine(g: GenCtx, x: number, z: number, h: number) {
   if (t.solidCell(x, z, 2)) t.trees.push({ x, z, h, kind: 'pine', leaf: 'pine', trunk: 'trunk', v: g.rng.int(0, 1) });
 }
 
-export function rockCluster(g: GenCtx, x: number, z: number, mat: string, size: number) {
-  for (let i = 0; i < size; i++) {
-    const cx = x + g.rng.int(-1, 1);
-    const cz = z + g.rng.int(-1, 1);
-    if (!g.t.isFree(cx, cz)) continue;
-    const before = g.t.blocks.length;
-    g.t.column(cx, cz, g.rng.int(1, 2), mat);
-    for (let k = before; k < g.t.blocks.length; k++) g.t.blocks[k].rock = true;
-  }
+export function rockCluster(_g: GenCtx, _x: number, _z: number, _mat: string, _size: number) {
+  // rock piles were removed at the owner's request
 }
 
 /** Water/lava pond with optional bank decoration. */
