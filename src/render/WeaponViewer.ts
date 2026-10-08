@@ -18,7 +18,27 @@ const KIT: Record<string, { main: string; sub?: string }> = {
   meteor: { main: '', sub: 'star' },
   chain: { main: '' },
   summon: { main: '' },
+  directional: { main: '' },
+  bolt: { main: '' },
+  frost: { main: '' },
+  arrow: { main: '' },
+  radial: { main: '' },
+  boomerang: { main: '' },
+  orbit: { main: '' },
+  wisp: { main: '', sub: 'wispshot' },
+  lob: { main: '' },
+  mine: { main: '' },
+  slash: { main: '' },
+  fists: { main: '' },
+  lance: { main: '' },
+  beam: { main: '' },
+  aura: { main: '' },
+  nova: { main: '' },
 };
+/** Thrown and shot weapons share one demo. */
+const MISSILES = new Set(['directional', 'bolt', 'frost', 'arrow', 'radial']);
+/** Height of a weapon's object when it rests on the stage. */
+const REST_Y: Record<string, number> = { mine: 0.03, aura: 1.7, nova: 1.3, beam: 1.4, slash: 1.0, lance: 1.0, fists: 1.1, wisp: 1.35 };
 /** Target posts used by attack and hit demos. */
 const DUMMY_AT: [number, number][] = [
   [1.9, -1.5],
@@ -204,6 +224,8 @@ export class WeaponViewer {
   setWeapon(id: string, tier: number) {
     this.weaponId = id;
     this.tier = tier;
+    // smoke and sparks of the previous weapon must not drift into this one's demo
+    this.particles.clear();
     const c = WEAPON_BY_ID[id]?.color ?? 0xffffff;
     ((this.bg[0] as THREE.Mesh).material as THREE.MeshBasicMaterial).color.setHex(c);
     this.play(this.mode);
@@ -284,6 +306,9 @@ export class WeaponViewer {
   /** Size of the main object on the stage (projectiles are small in the game). */
   private mainSize(): number {
     const b = this.behavior;
+    if (MISSILES.has(b) || b === 'wisp') return 1.7;
+    if (b === 'slash' || b === 'lance') return 1.15;
+    if (b === 'aura') return 1.2;
     return b === 'fireball' || b === 'chain' ? 1.6 : b === 'pool' ? 1.5 : b === 'summon' ? 1.5 : b === 'tornado' ? 1.25 : 1.35;
   }
 
@@ -300,7 +325,7 @@ export class WeaponViewer {
 
     if (m === 'idle') {
       if (first) {
-        const l = this.spawn(kit.main, 0, b === 'tornado' ? 1.3 : 1.15, 0, S);
+        const l = this.spawn(kit.main, 0, b === 'tornado' ? 1.3 : REST_Y[b] ?? 1.15, 0, S);
         if (l) {
           l.a.play('idle');
           l.a.facing = 'fixed';
@@ -335,7 +360,7 @@ export class WeaponViewer {
         const w = 0.55 * (def.flightSpeed / 3);
         l.t += dt * w;
         const t = l.t;
-        const ground = b === 'tornado';
+        const ground = b === 'tornado' || b === 'mine';
         l.a.pos.set(Math.sin(t) * 2.3, ground ? 0.02 : 1.35 + Math.sin(t * 1.5) * 0.65, Math.sin(t * 2) * 1.35);
         if (ground && l.a.mode === 'attack' && l.a.finished) l.a.play('fly');
       }
@@ -358,7 +383,27 @@ export class WeaponViewer {
         return this.demoSpark(m, T, dt, first, S);
       case 'summon':
         return this.demoFamiliar(m, T, dt, first, S);
+      case 'boomerang':
+        return this.demoGlaive(m, T, dt, first, S);
+      case 'orbit':
+        return this.demoSaw(m, T, dt, first, S);
+      case 'wisp':
+        return this.demoWisp(m, T, dt, first, S);
+      case 'lob':
+        return this.demoBomb(m, T, dt, first, S);
+      case 'mine':
+        return this.demoMine(m, T, dt, first, S);
+      case 'slash':
+      case 'fists':
+      case 'lance':
+        return this.demoMelee(m, T, dt, first, S);
+      case 'beam':
+        return this.demoPrism(m, T, dt, first, S);
+      case 'aura':
+      case 'nova':
+        return this.demoPulse(m, T, dt, first, S);
     }
+    if (MISSILES.has(b)) return this.demoMissile(m, T, dt, first, S);
     return true;
   }
 
@@ -718,6 +763,322 @@ export class WeaponViewer {
       }
     }
     return false;
+  }
+
+  // ---------------------------------------------------------------- the rest of the arsenal
+  /** Daggers, arcane bolts, frost shards, arrows and siege bolts: launched, fly, hit the posts. */
+  private demoMissile(m: WeaponAnim, T: number, dt: number, first: boolean, S: number): boolean {
+    const b = this.behavior;
+    if (m === 'destroy') {
+      if (first) {
+        const l = this.spawn('', -2.2, 1.2, 0.6, S);
+        if (l) {
+          l.from = l.a.pos.clone();
+          l.to = new THREE.Vector3(0.6, 1.25, -0.2);
+          l.dur = 0.55;
+        }
+      }
+      const l = this.live[0];
+      if (l && l.a.mode === 'fly' && this.travel(l, dt)) l.a.play('destroy');
+      return this.allDone(T > 0.6);
+    }
+    if (m === 'hit') {
+      if (first) {
+        const to = this.dummyHead(0, new THREE.Vector3());
+        const l = this.spawn('', to.x - 1.3, to.y + 0.1, to.z + 1.1, S);
+        if (l) {
+          l.from = l.a.pos.clone();
+          l.to = to;
+          l.dur = 0.22;
+          l.dummy = 0;
+        }
+      }
+    } else if (m === 'attack') {
+      // a volley: each shot leaves the centre and flies at its own post (radial: all four)
+      const n = b === 'radial' ? 4 : b === 'directional' ? 3 : 2;
+      const gap = b === 'radial' ? 0 : 0.14;
+      for (let i = 0; i < n; i++) {
+        if (this.d['s' + i] || T < i * gap) continue;
+        this.d['s' + i] = 1;
+        const di = b === 'radial' ? i : b === 'directional' ? 0 : i;
+        const to = this.dummyHead(di, new THREE.Vector3());
+        if (b === 'directional') to.y += (i - 1) * 0.12;
+        const l = this.spawn('', 0, 1.05, 0, S);
+        if (!l) continue;
+        l.a.play('attack');
+        l.from = new THREE.Vector3(0, 1.05, 0);
+        l.to = to;
+        // homing bolts curve in; the rest fly straight
+        if (b === 'bolt') l.mid = l.from.clone().lerp(to, 0.5).add(new THREE.Vector3((i ? -1 : 1) * 1.4, 0.8, 0.6));
+        l.dur = (l.from.distanceTo(to) / l.a.def.flightSpeed) * (b === 'bolt' ? 1.4 : 1);
+        l.dummy = di;
+      }
+    }
+    for (const l of this.live) {
+      if (l.a.mode === 'hit' || l.a.mode === 'destroy' || !l.to) continue;
+      if (l.a.mode === 'attack' && l.a.finished) l.a.play('fly');
+      if (this.travel(l, dt)) {
+        l.a.play('hit');
+        this.hitDummy(l.dummy ?? 0);
+      }
+    }
+    return this.allDone(T > 0.6);
+  }
+
+  /** Moon Glaive: flies out through a post and comes back. */
+  private demoGlaive(m: WeaponAnim, T: number, dt: number, first: boolean, S: number): boolean {
+    if (m !== 'attack') return this.demoMissile(m, T, dt, first, S);
+    if (first) {
+      const l = this.spawn('', 0, 1.0, 0, S);
+      if (!l) return true;
+      l.a.play('attack');
+      l.from = new THREE.Vector3(0, 1.0, 0);
+      l.to = this.dummyHead(0, new THREE.Vector3()).add(new THREE.Vector3(0.8, 0, -0.6));
+      l.mid = l.from.clone().lerp(l.to, 0.5).add(new THREE.Vector3(-1.2, 0.2, -0.6));
+      l.dur = 0.75;
+    }
+    const l = this.live[0];
+    if (!l) return true;
+    if (l.a.mode === 'attack' && l.a.finished) l.a.play('fly');
+    if (!this.d.hit1 && T > 0.55) {
+      this.d.hit1 = 1;
+      this.hitDummy(0);
+    }
+    if (this.travel(l, dt)) {
+      if (!this.d.back) {
+        // swing round and come home on the other side
+        this.d.back = 1;
+        l.from = l.a.pos.clone();
+        l.to = new THREE.Vector3(0, 1.0, 0);
+        l.mid = l.from.clone().lerp(l.to, 0.5).add(new THREE.Vector3(1.4, 0.2, 1));
+        l.t = 0;
+        l.dur = 0.8;
+      } else if (!this.d.end) {
+        this.d.end = 1;
+        l.a.play('destroy');
+      }
+    }
+    return this.allDone(!!this.d.end);
+  }
+
+  /** Whirling Saws: orbit the centre and cut through the posts. */
+  private demoSaw(m: WeaponAnim, T: number, dt: number, first: boolean, S: number): boolean {
+    if (m === 'hit') {
+      if (first) {
+        const to = this.dummyHead(0, new THREE.Vector3()).setY(0.85);
+        const l = this.spawn('', to.x, to.y, to.z, S);
+        l?.a.play('hit');
+        this.hitDummy(0);
+      }
+      return this.allDone();
+    }
+    const n = m === 'attack' ? 2 : 1;
+    if (first) for (let i = 0; i < n; i++) this.spawn('', 0, 0.85, 0, S)!.a.play(m === 'attack' ? 'attack' : 'fly');
+    const R = 2.45;
+    this.live.forEach((l, i) => {
+      if (l.a.mode === 'destroy') return;
+      if (l.a.mode === 'attack' && l.a.finished) l.a.play('fly');
+      const ang = T * 2.6 + (i / n) * Math.PI * 2;
+      const r = Math.min(R, T * 4);
+      l.a.pos.set(Math.cos(ang) * r, 0.85, Math.sin(ang) * r);
+      // cut every post it passes
+      this.dummies.forEach((dm, k) => {
+        const key = 'cut' + i + k;
+        if (Math.hypot(dm.x - l.a.pos.x, dm.z - l.a.pos.z) < 0.6) {
+          if (!this.d[key]) {
+            this.d[key] = 1;
+            this.hitDummy(k);
+          }
+        } else this.d[key] = 0;
+      });
+    });
+    const end = m === 'destroy' ? 0.9 : 3;
+    if (T > end && !this.d.end) {
+      this.d.end = 1;
+      for (const l of this.live) l.a.play('destroy');
+    }
+    return this.allDone(!!this.d.end);
+  }
+
+  /** Guardian Wisp: hovers and fires spirit sparks at the posts. */
+  private demoWisp(m: WeaponAnim, T: number, dt: number, first: boolean, S: number): boolean {
+    if (m === 'destroy') {
+      if (first) this.spawn('', 0, 1.35, 0, S)?.a.play('destroy');
+      return this.allDone();
+    }
+    if (m === 'hit') {
+      if (first) {
+        const to = this.dummyHead(0, new THREE.Vector3());
+        const l = this.spawn('wispshot', to.x - 1.2, to.y + 0.2, to.z + 1, 1.6);
+        if (l) {
+          l.from = l.a.pos.clone();
+          l.to = to;
+          l.dur = 0.2;
+          l.dummy = 0;
+        }
+      }
+    } else if (first) {
+      const w = this.spawn('', 0, 1.35, 0, S);
+      if (w) w.a.facing = 'aim';
+    }
+    const w = this.live.find((l) => l.key === '');
+    if (w && m === 'attack') {
+      const shot = Math.floor((T - 0.2) / 0.55);
+      const di = Math.max(0, shot) % 3;
+      this.dummyHead(di, w.a.aim).sub(w.a.pos).normalize();
+      if (shot >= 0 && shot < 3 && !this.d['w' + shot]) {
+        this.d['w' + shot] = 1;
+        w.a.play('attack');
+        const to = this.dummyHead(di, new THREE.Vector3());
+        const l = this.spawn('wispshot', w.a.pos.x, w.a.pos.y, w.a.pos.z, 1.6);
+        if (l) {
+          l.from = w.a.pos.clone();
+          l.to = to;
+          l.dur = l.from.distanceTo(to) / 6;
+          l.dummy = di;
+        }
+      }
+      if (w.a.mode === 'attack' && w.a.finished) w.a.play('fly');
+    }
+    for (const l of this.live) {
+      if (l.key !== 'wispshot' || l.a.mode === 'hit') continue;
+      if (this.travel(l, dt)) {
+        l.a.play('hit');
+        this.hitDummy(l.dummy ?? 0);
+      }
+    }
+    if (m === 'attack') return T > 2.2 && this.live.every((l) => l.key === '' || l.a.finished);
+    return this.allDone(T > 0.3);
+  }
+
+  /** Powder Keg: lobbed, lands, the fuse burns down, blast. */
+  private demoBomb(m: WeaponAnim, T: number, dt: number, first: boolean, S: number): boolean {
+    const land = new THREE.Vector3(DUMMY_AT[0][0] - 0.7, 0.32, DUMMY_AT[0][1] + 0.6);
+    if (first) {
+      const from = m === 'attack' ? new THREE.Vector3(0, 1.1, 0) : land.clone();
+      const l = this.spawn('', from.x, from.y, from.z, S);
+      if (!l) return true;
+      if (m === 'attack') {
+        l.from = from;
+        l.to = land;
+        l.mid = from.clone().lerp(land, 0.5).add(new THREE.Vector3(0, 2.6, 0));
+        l.dur = 0.9;
+      } else l.a.play(m === 'hit' ? 'hit' : 'destroy');
+      if (m === 'hit') this.blast(land, 2.4);
+    }
+    const l = this.live[0];
+    if (!l) return true;
+    if (m === 'attack' && l.to && !this.d.landed && this.travel(l, dt)) {
+      this.d.landed = 1;
+      l.a.play('attack');
+    }
+    if (m === 'attack' && l.a.mode === 'attack' && l.a.finished) {
+      l.a.play('hit');
+      this.blast(l.a.pos, 2.4);
+    }
+    return this.allDone(m !== 'attack' || this.d.landed === 1);
+  }
+
+  /** Rune Trap: planted, armed, a post comes too close, blast. */
+  private demoMine(m: WeaponAnim, T: number, _dt: number, first: boolean, S: number): boolean {
+    const at = new THREE.Vector3(DUMMY_AT[0][0] - 0.8, 0.03, DUMMY_AT[0][1] + 0.7);
+    if (first) {
+      const l = this.spawn('', at.x, at.y, at.z, S);
+      if (!l) return true;
+      l.a.facing = 'fixed';
+      l.a.play(m === 'attack' ? 'attack' : m);
+      if (m === 'hit') this.blast(at, 2.2);
+    }
+    const l = this.live[0];
+    if (!l) return true;
+    if (m === 'attack' && l.a.mode === 'attack' && l.a.finished && T > 1.6) {
+      l.a.play('hit');
+      this.blast(at, 2.2);
+    }
+    return this.allDone(m !== 'attack' || T > 1.7);
+  }
+
+  /** Hits every post within a radius of a point. */
+  private blast(p: THREE.Vector3, r: number) {
+    this.dummies.forEach((dm, i) => {
+      if (Math.hypot(dm.x - p.x, dm.z - p.z) < r) this.hitDummy(i);
+    });
+  }
+
+  /** Rune Blade, Spirit Fists and Sky Lance: the spectral weapon appears and strikes a post. */
+  private demoMelee(m: WeaponAnim, T: number, _dt: number, first: boolean, S: number): boolean {
+    const b = this.behavior;
+    const head = this.dummyHead(0, new THREE.Vector3());
+    // stand the weapon a step short of the post, facing it
+    const dir = head.clone().setY(0).normalize();
+    const reach = b === 'lance' ? 2.4 : b === 'slash' ? 1.25 : 1.1;
+    const base = head.clone().addScaledVector(dir, -reach).setY(b === 'fists' ? 0.95 : 0.9);
+    const n = b === 'fists' && m === 'attack' ? 3 : 1;
+    for (let i = 0; i < n; i++) {
+      if (this.d['m' + i] || T < i * 0.16 || (!first && i === 0)) continue;
+      this.d['m' + i] = 1;
+      const off = b === 'fists' ? (i - 1) * 0.35 : 0;
+      const side = new THREE.Vector3(-dir.z, 0, dir.x);
+      const l = this.spawn('', base.x + side.x * off, base.y + (i === 1 ? 0.2 : 0), base.z + side.z * off, S);
+      if (!l) continue;
+      l.a.facing = 'aim';
+      l.a.aim.copy(dir);
+      l.a.s.arc = 140;
+      l.a.target.copy(head);
+      l.a.play(m === 'attack' ? 'attack' : m);
+    }
+    const hitAt = m === 'attack' ? (b === 'slash' ? 0.25 : b === 'lance' ? 0.26 : 0.15) : 0.02;
+    for (let i = 0; i < n; i++) {
+      const k = 'h' + i;
+      if (!this.d[k] && m !== 'destroy' && T > hitAt + i * 0.16) {
+        this.d[k] = 1;
+        this.hitDummy(0, i % 2 ? -1 : 1);
+      }
+    }
+    return this.allDone(T > 0.3) && T > 0.9;
+  }
+
+  /** Prism Ray: charges and burns a beam into a post. */
+  private demoPrism(m: WeaponAnim, T: number, _dt: number, first: boolean, S: number): boolean {
+    if (first) {
+      const l = this.spawn('', 0, 1.4, 0, S);
+      if (!l) return true;
+      l.a.s.beam = 1;
+      this.dummyHead(0, l.a.target);
+      l.a.play(m);
+    }
+    const l = this.live[0];
+    if (!l) return true;
+    if (m === 'attack') {
+      const p = T / l.a.def.attackTime;
+      const tick = Math.floor(T / 0.15);
+      if (p > 0.3 && p < 0.88 && this.d.tick !== tick) {
+        this.d.tick = tick;
+        this.hitDummy(0, 0.5);
+      }
+    } else if (m === 'hit' && first) this.hitDummy(0);
+    return l.a.finished;
+  }
+
+  /** Sanctified Halo and Pulse Heart: a wave rolls out and strikes every post. */
+  private demoPulse(m: WeaponAnim, T: number, _dt: number, first: boolean, S: number): boolean {
+    const b = this.behavior;
+    if (first) {
+      const l = this.spawn('', 0, REST_Y[b] ?? 1.3, 0, S);
+      if (!l) return true;
+      l.a.facing = 'fixed';
+      l.a.s.radius = 3.2;
+      l.a.play(m);
+      if (m === 'hit') this.blast(new THREE.Vector3(), 9);
+    }
+    const l = this.live[0];
+    if (!l) return true;
+    const hitT = l.a.def.attackTime * (b === 'nova' ? 0.6 : 0.55);
+    if (m === 'attack' && !this.d.hit && T > hitT) {
+      this.d.hit = 1;
+      this.blast(new THREE.Vector3(), 9);
+    }
+    return l.a.finished && T > 0.5;
   }
 
   /** True when every live object has finished (finished hits/destroys are removed; idle ones don't count). */

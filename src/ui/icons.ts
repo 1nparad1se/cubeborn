@@ -4,6 +4,10 @@
  * and highlight pass gives them a consistent chunky look. Results are cached as data URLs.
  */
 
+import { drawItemIcon, hasItemIcon } from './itemIcons';
+
+export { hasItemIcon };
+
 type Px = (x: number, y: number, c?: string) => void;
 interface Pen {
   p: Px;
@@ -488,11 +492,21 @@ const ALIASES: Record<string, string> = {};
 
 const cache = new Map<string, string>();
 
-/** Returns a data URL for the icon. Unknown ids fall back to a coloured gem. */
-export function iconUrl(id: string, color: number): string {
-  const key = id + ':' + color;
+/**
+ * Returns a data URL for the icon. Passive items and relics have detailed 32×32 art
+ * (see itemIcons.ts); everything else uses the 16×16 glyphs. Unknown ids fall back to a coloured gem.
+ * `silhouette` renders the 32×32 art as a dark locked shape.
+ */
+export function iconUrl(id: string, color: number, silhouette = false): string {
+  const key = id + ':' + color + (silhouette ? ':sil' : '');
   const hit = cache.get(key);
   if (hit) return hit;
+  const hi = drawItemIcon(id, color, silhouette);
+  if (hi) {
+    const url = hi.toDataURL();
+    cache.set(key, url);
+    return url;
+  }
   const cv = document.createElement('canvas');
   cv.width = cv.height = N;
   const g = cv.getContext('2d')!;
@@ -542,10 +556,10 @@ export function iconUrl(id: string, color: number): string {
   return url;
 }
 
-export function iconImg(id: string, color: number, cls = 'icon'): HTMLImageElement {
+export function iconImg(id: string, color: number, cls = 'icon', silhouette = false): HTMLImageElement {
   const img = new Image();
-  img.src = iconUrl(id, color);
-  img.className = cls;
+  img.src = iconUrl(id, color, silhouette);
+  img.className = cls + (hasItemIcon(id) ? ' hi' : '') + (silhouette ? ' sil' : '');
   img.draggable = false;
   img.alt = '';
   return img;

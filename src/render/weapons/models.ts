@@ -1,5 +1,5 @@
 import type { RigPart, V3 } from '../rig/shapes';
-import { bowlTris, lumpTris, noise3, swirlTris, torusTris, wedgeTris, type CustomGeo, type ModelDef, type NodeDef } from './build';
+import { bowlTris, lumpTris, noise3, torusTris, wedgeTris, type CustomGeo, type ModelDef, type NodeDef } from './build';
 
 /**
  * Weapon model library. Forward is +Z (direction of travel), up is +Y. Sizes are in voxels and
@@ -174,35 +174,22 @@ export const FAN: ModelDef = {
   halos: [{ name: 'pivot', node: 'fan', at: [0, 0, 1], size: 10, color: 0x9af0ff, opacity: 0.6 }],
 };
 
-const RINGS = 6;
-const ringNodes: NodeDef[] = Array.from({ length: RINGS }, (_, i) => ({ n: 'r' + i, at: [0, 2 + i * 6.2, 0] as V3 }));
 const leafNodes: NodeDef[] = Array.from({ length: 9 }, (_, i) => ({ n: 'lf' + i, tier: i < 5 ? 1 : i < 7 ? 2 : 3 }));
 export const CYCLONE: ModelDef = {
   vox: 0.06,
   rim: 0.35,
   glassOpacity: 0.3,
-  nodes: [...ringNodes, ...leafNodes, { n: 'core' }, { n: 'base' }, { n: 'runes', tier: 3 }, { n: 'eye', tier: 4, at: [0, 36, 0] }],
+  // the funnel itself is a shader whirlwind (vortex.ts); the model carries the debris, runes and eye
+  nodes: [...leafNodes, { n: 'core' }, { n: 'base' }, { n: 'runes', tier: 3 }, { n: 'eye', tier: 4, at: [0, 38, 0] }],
   parts: [
-    ...on('core', { s: 'cyl', p: [0, 18, 0], d: [2.6, 36, 2.6], t: [3, 3], c: 0xe8fbff, n: 10, grp: 'glass' }),
     ...on('eye', { s: 'gem', p: [0, 0, 0], d: [4.4, 5.4, 4.4], c: 0x6ae0ff, g: true }, { s: 'gem', p: [0, 0, 0], d: [2, 2.6, 2], c: 0xffffff, g: true }),
     ...leafNodes.map((l, i) => ({ b: l.n, s: i % 3 === 2 ? 'gem' : 'rbox', p: [0, 0, 0], d: i % 3 === 2 ? [1.2, 1, 1.2] : [1.8, 0.3, 1.1], c: [0x6aa040, 0xa8c050, 0x8a6a3a][i % 3] }) as RigPart),
   ],
-  custom: [
-    ...ringNodes.flatMap((r, i): CustomGeo[] =>
-      [0, 1, 2].map((k) => ({
-        node: r.n,
-        tris: swirlTris(5 + i * 3.4, k * 120 + i * 17, k * 120 + i * 17 + 95, 3 + i * 0.55, 2.6, 0.8 + i * 0.12, 9),
-        paint: (): [number, number] => (k === 0 ? [0xd8f6ff, 0] : [k === 1 ? 0xb8e8f8 : 0x8ac8e0, 0]),
-        glass: k !== 0,
-      })),
-    ),
-    { node: 'base', tris: torusTris(7, 1.8, 16, 5, [0, 0.8, 0]), paint: () => [0xd8c8a8, 0], glass: true },
-    { node: 'runes', tris: torusTris(9.5, 0.35, 28, 3, [0, 0.4, 0]), paint: () => [0x9af0ff, 1] },
-  ],
+  custom: [{ node: 'runes', tris: torusTris(9.5, 0.35, 28, 3, [0, 0.4, 0]), paint: () => [0x9af0ff, 1] }],
   halos: [
-    { name: 'dust', node: 'base', at: [0, 1, 0], size: 26, color: 0xd8c8a8, opacity: 0.35 },
-    { name: 'inner', node: 'core', at: [0, 14, 0], size: 22, color: 0xc8f4ff, opacity: 0.35 },
-    { name: 'eye', node: 'eye', at: [0, 0, 0], size: 16, color: 0x6ae0ff, opacity: 0.8, tier: 4 },
+    { name: 'dust', node: 'base', at: [0, 1, 0], size: 30, color: 0xd8c8a8, opacity: 0.3 },
+    { name: 'inner', node: 'core', at: [0, 16, 0], size: 20, color: 0xc8f4ff, opacity: 0.2 },
+    { name: 'eye', node: 'eye', at: [0, 0, 0], size: 18, color: 0x6ae0ff, opacity: 0.8, tier: 4 },
   ],
 };
 

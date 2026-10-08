@@ -3470,3 +3470,13 @@ h2.glow {
     min-width: 96px;
   }
 }
+
+/* 32×32 item/relic art: smooth when shrunk below native size, plain silhouette when locked */
+img.icon.hi.sm,
+.hud .slots.passives .slot img.icon.hi {
+  image-rendering: auto;
+}
+.icon-cell.locked img.sil {
+  filter: none;
+  opacity: 0.85;
+}

@@ -3,8 +3,11 @@ import type { EmitLayer } from '../../config/vfx';
 import type { WeaponAnim, WeaponVisualDef } from '../../config/weaponVisuals';
 import { WeaponModel } from './build';
 import { MODELS } from './models';
-import { ArcLine, Lightning, Ribbon, RuneCircle, type StrikeOpts } from './fxkit';
-import { SCRIPTS } from './scripts';
+import { MODELS2 } from './models2';
+import { ArcLine, Lightning, Ribbon, RuneCircle, WaveRing, type StrikeOpts } from './fxkit';
+import { SCRIPTS as SCRIPTS1 } from './scripts';
+import { SCRIPTS2 } from './scripts2';
+import { Vortex, type VortexOpts } from './vortex';
 
 /** Where an actor sends particles and lights: the game's particle system or the viewer's own. */
 export interface FxPort {
@@ -29,6 +32,8 @@ export class WeaponActor {
   readonly ribbon: Ribbon | null;
   readonly arcs: ArcLine[] = [];
   readonly bolts: Lightning[] = [];
+  readonly vortices: Vortex[] = [];
+  readonly waves: WaveRing[] = [];
   circle: RuneCircle | null = null;
   readonly pos = new THREE.Vector3();
   readonly vel = new THREE.Vector3();
@@ -63,7 +68,7 @@ export class WeaponActor {
     readonly world: THREE.Object3D,
     tier = 1,
   ) {
-    this.model = new WeaponModel(MODELS[def.model]);
+    this.model = new WeaponModel(MODELS[def.model] ?? MODELS2[def.model]);
     this.model.setTier(tier);
     world.add(this.model.root);
     this.ribbon = def.trail > 0 ? new Ribbon(def.trailColor, def.trailLife, def.trail, 1) : null;
@@ -98,6 +103,21 @@ export class WeaponActor {
     return b;
   }
 
+  /** Adds a whirlwind shell (or spiral cloud disc) on the model root; scripts animate its fade. */
+  addVortex(kind: 'funnel' | 'disc', o?: VortexOpts): Vortex {
+    const v = new Vortex(kind, o);
+    this.model.root.add(v.mesh);
+    this.vortices.push(v);
+    return v;
+  }
+
+  addWave(color: number): WaveRing {
+    const w = new WaveRing(color);
+    this.world.add(w.mesh);
+    this.waves.push(w);
+    return w;
+  }
+
   addCircle(color: number, size: number): RuneCircle {
     this.circle = new RuneCircle(color, size);
     this.world.add(this.circle.mesh);
@@ -127,6 +147,7 @@ export class WeaponActor {
     this.ribbon?.reset();
     for (const a of this.arcs) a.intensity = 0;
     for (const b of this.bolts) b.stop();
+    for (const w of this.waves) w.set(0, 0, 0, 0, 0);
     if (this.circle) this.circle.mat.opacity = 0;
     this.setVisible(true);
     SCRIPTS[this.def.script]?.start?.(this, 'fly');
@@ -137,6 +158,7 @@ export class WeaponActor {
     if (this.ribbon) this.ribbon.mesh.visible = v;
     for (const a of this.arcs) a.mesh.visible = v && a.intensity > 0.01;
     for (const b of this.bolts) b.mesh.visible = v && b.alive;
+    for (const w of this.waves) if (!v) w.mesh.visible = false;
     if (this.circle) this.circle.mesh.visible = v && this.circle.mat.opacity > 0.01;
   }
 
@@ -213,6 +235,7 @@ export class WeaponActor {
     }
     for (const a of this.arcs) a.update(dt, camera);
     for (const b of this.bolts) b.update(dt, camera);
+    for (const v of this.vortices) v.update(dt);
     if (this.circle) this.circle.mesh.visible = this.circle.mat.opacity > 0.01;
   }
 
@@ -245,12 +268,20 @@ export class WeaponActor {
       b.mesh.removeFromParent();
       b.dispose();
     }
+    for (const v of this.vortices) v.dispose();
+    for (const w of this.waves) {
+      w.mesh.removeFromParent();
+      w.dispose();
+    }
     if (this.circle) {
       this.circle.mesh.removeFromParent();
       this.circle.dispose();
     }
   }
 }
+
+/** Every weapon's motion script (the first seven weapons and the rest of the arsenal). */
+const SCRIPTS: Record<string, WeaponScript> = { ...SCRIPTS1, ...SCRIPTS2 };
 
 const FLIP = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
 

@@ -674,7 +674,7 @@ export class Menus {
               style: `--rc:${RARITY_COLOR.legendary}`,
               onclick: () => {
                 clear(detail);
-                if (got) look(iconImg('crystal', r.color, 'icon xl'), RARITY_COLOR.legendary);
+                if (got) look(iconImg('relic_' + r.id, r.color, 'icon xl'), RARITY_COLOR.legendary);
                 const boss = BOSSES.find((b) => b.relic === r.id);
                 put(detail, 
                   h('div.detail-title', h('h3', got ? L(r.name) : '???'), got ? pill(t('relic'), RARITY_COLOR.legendary) : null),
@@ -682,7 +682,7 @@ export class Menus {
                   got ? h('div.mods', ...statModLines(r.stats).map((s) => h('div.mod', s))) : null,
                 );
               },
-            }, iconImg(got ? 'crystal' : 'crystal', got ? r.color : 0x3a3a48)),
+            }, iconImg('relic_' + r.id, r.color, 'icon', !got)),
           );
         }
       }

@@ -584,3 +584,48 @@ function strokeTexture(): THREE.Texture {
   strokeTex.colorSpace = THREE.SRGBColorSpace;
   return strokeTex;
 }
+
+let waveTex: THREE.Texture | null = null;
+/** Soft ring texture for shock waves and aura pulses. */
+function waveTexture(): THREE.Texture {
+  if (waveTex) return waveTex;
+  const S = 128;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d')!;
+  const grd = g.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+  grd.addColorStop(0, 'rgba(255,255,255,0)');
+  grd.addColorStop(0.62, 'rgba(255,255,255,0.05)');
+  grd.addColorStop(0.86, 'rgba(255,255,255,0.9)');
+  grd.addColorStop(0.93, 'rgba(255,255,255,0.4)');
+  grd.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, S, S);
+  waveTex = new THREE.CanvasTexture(c);
+  waveTex.colorSpace = THREE.SRGBColorSpace;
+  return waveTex;
+}
+
+/** A flat expanding ring on the ground (nova waves, aura pulses, explosions). */
+export class WaveRing {
+  readonly mesh: THREE.Mesh;
+  readonly mat: THREE.MeshBasicMaterial;
+  constructor(color: number) {
+    this.mat = new THREE.MeshBasicMaterial({ map: waveTexture(), color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, opacity: 0 });
+    this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.mat);
+    this.mesh.rotation.x = -Math.PI / 2;
+    this.mesh.renderOrder = 6;
+    this.mesh.visible = false;
+  }
+  /** Radius in world units and opacity. */
+  set(x: number, y: number, z: number, r: number, opacity: number) {
+    this.mesh.position.set(x, y, z);
+    this.mesh.scale.set(r, r, 1);
+    this.mat.opacity = opacity;
+    this.mesh.visible = opacity > 0.01 && r > 0.01;
+  }
+  dispose() {
+    this.mesh.geometry.dispose();
+    this.mat.dispose();
+  }
+}

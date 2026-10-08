@@ -287,19 +287,26 @@ const CY_DUST = L('smoke', 1, 0xd8c8a8, 1.6, 0.5, 0.8, PI, 0.3, 0xb8a888);
 const CY_LEAF = L('debris', 1, 0x6aa040, 2.4, 0.08, 0.9, PI, 2.4, 0xa8c050);
 const CY_WISP = L('wisp', 1, 0xffffff, 2.2, 0.06, 0.6, PI, 1.6, 0xc8f5ff);
 
+const CY_SWIRL = L('wisp', 1, 0xffffff, 1.2, 0.05, 0.7, PI, 3.2, 0xc8f5ff);
+
 const cyclone: WeaponScript = {
+  init(a) {
+    // whirlwind shells: wide outer funnel, a faster inner one, a bright core and a dust skirt
+    a.addVortex('funnel', { height: 2.35, r0: 0.16, r1: 1.25, twist: 1.6, spin: 0.85, sway: 0.16, opacity: 0.62, density: 0.45 });
+    a.addVortex('funnel', { height: 2.25, r0: 0.09, r1: 0.72, twist: 2.2, spin: 1.5, sway: 0.14, opacity: 0.5, density: 0.65 });
+    a.addVortex('funnel', { height: 2.05, r0: 0.05, r1: 0.26, twist: 1.8, spin: 2.4, sway: 0.12, opacity: 0.45, density: 0.8, air: 0xffffff, dust: 0xd8c8a8 });
+    a.addVortex('funnel', { height: 0.5, r0: 0.62, r1: 0.42, twist: 0.4, spin: 1.1, sway: 0.03, opacity: 0.55, density: 0.6, air: 0xd8c8a8, dust: 0xa89878 });
+    // hurricane: the spiral cloud bands around the eye at the top
+    const disc = a.addVortex('disc', { spin: 0.35, opacity: 0.75, air: 0xf0fbff, dust: 0x7a8aa8, glow: 0x6ae0ff });
+    disc.mesh.position.y = 2.3;
+  },
   start(a) {
     resetBody(a);
   },
   pose(a, dt, pulse) {
     const m = a.model;
     const t = a.t;
-    for (let i = 0; i < 6; i++) {
-      m.pose('r' + i, Math.sin(t * 1.3 + i) * 0.06, t * (2 + i * 0.9) * (i % 2 ? 1 : 1.3), Math.cos(t * 1.1 + i * 0.7) * 0.06);
-      // the funnel snakes: higher rings swing further
-      m.offset('r' + i, Math.sin(t * 2.1 + i * 0.8) * i * 0.4, 0, Math.cos(t * 1.7 + i * 0.9) * i * 0.4);
-      m.nodes['r' + i].scale.setScalar(1 + Math.sin(t * 3 + i) * 0.06);
-    }
+    const tier = a.tier;
     for (let i = 0; i < 9; i++) {
       const h = (t * (0.35 + (i % 3) * 0.08) + i * 0.13) % 1;
       const ang = t * (5 + (i % 3)) + i * 0.7;
@@ -307,25 +314,50 @@ const cyclone: WeaponScript = {
       m.offset('lf' + i, Math.cos(ang) * r, 1 + h * 34, Math.sin(ang) * r);
       m.pose('lf' + i, t * 7 + i, t * 5, t * 3);
     }
-    m.pose('core', 0, -t * 3, 0);
     m.pose('runes', 0, -t * 2.5, 0);
     m.pose('eye', 0, t * 2, 0);
-    m.offset('eye', Math.sin(t * 2.1 + 4) * 2, Math.sin(t * 3) * 0.6, Math.cos(t * 1.7 + 4.5) * 2);
+    m.offset('eye', Math.sin(t * 2.1 + 4) * 1.5, Math.sin(t * 3) * 0.6, Math.cos(t * 1.7 + 4.5) * 1.5);
     // lean into the travel direction
     m.body.rotation.x += Math.min(0.3, a.speed * 0.05);
-    m.halos.dust?.set(1 + 0.15 * pulse, 0.18 + 0.08 * pulse);
-    m.halos.inner?.set(1 + 0.1 * pulse, 0.12 + 0.08 * pulse);
+    m.halos.dust?.set(1 + 0.15 * pulse, 0.16 + 0.08 * pulse);
+    m.halos.inner?.set(1 + 0.1 * pulse, 0.08 + 0.06 * pulse);
     m.halos.eye?.set(0.9 + 0.3 * pulse);
+    let grow = 1;
+    let fade = 1;
     if (a.mode === 'attack' || a.mode === 'fanOpen') {
-      // spin up out of the fan's gust
+      // spins up out of the fan's gust: the core first, then the funnel widens upward
       const p = prog(a, a.def.attackTime * 0.6);
-      const k = easeOut(p);
-      m.body.scale.set(0.25 + 0.75 * k, 0.1 + 0.9 * k, 0.25 + 0.75 * k);
+      grow = easeOut(p);
+      fade = Math.min(1, p * 2);
+      m.body.scale.set(0.25 + 0.75 * grow, 0.1 + 0.9 * grow, 0.25 + 0.75 * grow);
     } else if (a.mode === 'destroy') {
+      // unravels: the funnel lifts off the ground, widens and thins out
       const p = prog(a, a.def.destroyTime);
+      grow = 1 + p * 0.5;
+      fade = 1 - smooth(p);
       m.body.scale.set(1 + p * 0.8, 1 - smooth(p), 1 + p * 0.8);
       if (p >= 1) m.body.visible = false;
     } else m.body.scale.setScalar(1);
+    // bigger funnels as the weapon grows; the hurricane is wide and crowned by the cloud disc
+    const wide = tier >= 4 ? 1.35 : 1 + (tier - 1) * 0.08;
+    const lean = Math.min(0.3, a.speed * 0.05);
+    a.vortices.forEach((v, i) => {
+      const disc = i === 4;
+      if (disc) {
+        v.fade = tier >= 4 ? fade : 0;
+        v.mesh.scale.setScalar(1.9 * grow);
+        v.mesh.rotation.y = -t * 0.3;
+        v.mesh.rotation.x = lean;
+        return;
+      }
+      // the core spins up first and the outer shell last
+      const k = a.mode === 'attack' || a.mode === 'fanOpen' ? clamp01(grow * 1.4 - (i === 2 ? 0 : i === 1 ? 0.15 : 0.3)) : grow;
+      v.fade = fade * (i === 3 ? 1 : 0.85 + 0.15 * pulse);
+      const sx = (i === 3 ? 1 : wide) * Math.max(0.05, k);
+      v.mesh.scale.set(sx, i === 3 ? 1 : Math.max(0.05, k) * (a.mode === 'destroy' ? grow : 1), sx);
+      v.mesh.position.y = a.mode === 'destroy' && i !== 3 ? (grow - 1) * 1.2 : 0;
+      v.mesh.rotation.x = lean;
+    });
   },
   spinMul(a) {
     return a.mode === 'destroy' ? 1 + a.modeT * 2 : a.mode === 'attack' ? 1.4 : 1;
@@ -335,12 +367,14 @@ const cyclone: WeaponScript = {
     const sc = a.def.scale * a.size;
     const ang = Math.random() * TAU;
     v1.set(a.pos.x + Math.cos(ang) * 0.5 * sc, a.pos.y + 0.15, a.pos.z + Math.sin(ang) * 0.5 * sc);
-    stream(a, fx, 'd', CY_DUST, a.def.particles * 0.5, dt, v1, false);
+    stream(a, fx, 'd', CY_DUST, a.def.particles * 0.6, dt, v1, false);
     stream(a, fx, 'l', CY_LEAF, a.def.particles * 0.25, dt, v1, false);
-    const h = Math.random() * 2 * sc;
-    const r = (0.3 + h * 0.35) * 1;
+    // air streaks spiral up the funnel wall
+    const h = Math.random() * 2.1 * sc;
+    const r = (0.15 + Math.pow(h / (2.3 * sc), 1.7) * 1.1) * sc;
     v2.set(a.pos.x + Math.cos(ang + 1) * r, a.pos.y + h, a.pos.z + Math.sin(ang + 1) * r);
-    stream(a, fx, 'w', CY_WISP, a.def.particles * 0.5, dt, v2, false);
+    stream(a, fx, 'w', CY_WISP, a.def.particles * 0.4, dt, v2, false);
+    stream(a, fx, 's', CY_SWIRL, a.def.particles * 0.3, dt, v2, false);
   },
 };
 
@@ -892,3 +926,4 @@ const familiar: WeaponScript = {
 };
 
 export const SCRIPTS: Record<string, WeaponScript> = { ember, flask, puddle, cyclone, fan, rod, stormcloud, tome, star, spark, familiar };
+export { L, PI, TAU, clamp01, smooth, easeOut, bump, prog, at, flying, qm, emitAt, stream, haloToRoot, resetBody };
