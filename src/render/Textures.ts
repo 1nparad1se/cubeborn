@@ -178,7 +178,7 @@ export function makeBlobTexture(): THREE.CanvasTexture {
  */
 export function makeBlockAtlas(): THREE.DataTexture {
   const px = 16;
-  const tiles = 8;
+  const tiles = 9;
   const W = px * tiles;
   const data = new Uint8Array(W * px * 4);
   const set = (t: number, x: number, y: number, v: number, a = 255) => {
@@ -234,6 +234,9 @@ export function makeBlockAtlas(): THREE.DataTexture {
       set(6, x, y, sv);
       // 7 log top rings
       const d = Math.max(Math.abs(x - 7.5), Math.abs(y - 7.5));
+      // 8 birch bark: white with short dark horizontal streaks and knots
+      const streak = hash2(x >> 2, y, 74) > 0.8 || (hash2(x >> 1, y >> 1, 75) > 0.94);
+      set(8, x, y, streak ? n * 0.08 : 1.0);
       set(7, x, y, d > 6.5 ? 0.6 : 0.8 + ((Math.floor(d) & 1) ? 0.08 : 0) + n * 0.04);
     }
   const tex = new THREE.DataTexture(data, W, px, THREE.RGBAFormat);

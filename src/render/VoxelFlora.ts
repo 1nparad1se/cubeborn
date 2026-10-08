@@ -3,8 +3,8 @@ import type { RoofInst, TreeInst } from '../game/Terrain';
 import { hash2 } from '../core/Rng';
 
 /** Atlas tiles of the Minecraft-style block texture (see makeBlockAtlas). */
-export const TILE = { smooth: 0, leaves: 1, bark: 2, planks: 3, cobble: 4, brick: 5, shingle: 6, logTop: 7 } as const;
-export const TILE_COUNT = 8;
+export const TILE = { smooth: 0, leaves: 1, bark: 2, planks: 3, cobble: 4, brick: 5, shingle: 6, logTop: 7, birch: 8 } as const;
+export const TILE_COUNT = 9;
 
 /** Which pixel texture a terrain material uses. */
 export function tileOf(mat: string): number {
@@ -133,15 +133,16 @@ export function treeVoxels(tr: TreeInst, map: MapDef, out: Vox[]) {
     pad(x + 3, T + 1, -2, 2.6, 2, leafC);
   } else if (variant === 1) {
     // birch: white spotted trunk forking into a Y with airy clumps
-    const bark = (x: number, y: number, z: number) => tv(x, y, z, h3(x, y, z, 8) < 0.22 ? 0x2e2a28 : shade(0xe8e4da, 0.94 + h3(x, y, z, 9) * 0.08), TILE.smooth);
+    const bark = (x: number, y: number, z: number) => tv(x, y, z, shade(0xf2efe6, 0.96 + h3(x, y, z, 9) * 0.06), TILE.birch);
+    const birchLeaf = 0x86b25a;
     const T = 5 + tr.h;
-    for (let y = 0; y < T; y++) bark(0, y, 0);
+    for (let y = 0; y < T; y++) for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) bark(i, y, j);
     const tips: [number, number][] = [[-3, 0], [3, 1], [0, -3]];
     for (const [ex, ez] of tips) {
       for (let k = 1; k <= 3; k++) bark(Math.round((ex * k) / 3), T + k, Math.round((ez * k) / 3));
-      pad(ex, T + 4, ez, 2.8, 2, leafC, 0.15);
+      pad(ex, T + 4, ez, 2.8, 2, birchLeaf, 0.15);
     }
-    pad(0, T + 6, 0, 3.4, 2, leafC, 0.15);
+    pad(0, T + 6, 0, 3.4, 2, birchLeaf, 0.15);
   } else if (variant === 2) {
     // tiered: a tall trunk with leaf pads stacked on short side branches
     const T = 13 + tr.h;
