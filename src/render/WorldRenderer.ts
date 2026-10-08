@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import type { MapDef } from '../data/types';
-import { CELL, type Terrain } from '../game/Terrain';
+import { CELL, type Block, type Terrain } from '../game/Terrain';
 import { hash2 } from '../core/Rng';
 import { ATLAS_VARIANTS, makeGroundAtlas, makeTerrainBlockTexture } from './Textures';
 import { unitCube } from './VoxelGeometry';
@@ -405,28 +406,102 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
       buckets[cz * chunks + cx].push(b);
     }
     const m4 = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const v3 = new THREE.Vector3();
+    const sc = new THREE.Vector3();
     const col = new THREE.Color();
     const pal = map.palette.blocks;
+    // Blocks are drawn by material: stone as rounded masonry (lone stones as boulders), wood
+    // as stacked horizontal logs, everything else as plain blocks.
+    const occ = new Set<number>();
+    const key = (x: number, y: number, z: number) => (y * n + z) * n + x;
+    for (const b of t.blocks) if ((b.s ?? 1) === 1) occ.add(key(b.x, b.y, b.z));
+    const STONE = /stone|rock|basalt|brick|marble|sandstone|^wall|pillar|bone|obsidian|cobble/;
+    const WOOD = /plank|trunk|log/;
+    type Style = 'cube' | 'stone' | 'boulder' | 'logX' | 'logZ';
+    const styleOf = (b: Block): Style => {
+      if ((b.s ?? 1) !== 1) return 'cube';
+      const nx = occ.has(key(b.x - 1, b.y, b.z)) || occ.has(key(b.x + 1, b.y, b.z));
+      const nz = occ.has(key(b.x, b.y, b.z - 1)) || occ.has(key(b.x, b.y, b.z + 1));
+      if (WOOD.test(b.mat)) return nz && !nx ? 'logZ' : 'logX';
+      if (STONE.test(b.mat)) {
+        const ci = b.z * n + b.x;
+        const lone = (t.height[ci] ?? 0) <= 2 && !(nx && nz) && !(occ.has(key(b.x - 1, b.y, b.z)) && occ.has(key(b.x + 1, b.y, b.z))) && !(occ.has(key(b.x, b.y, b.z - 1)) && occ.has(key(b.x, b.y, b.z + 1)));
+        return lone ? 'boulder' : 'stone';
+      }
+      return 'cube';
+    };
+    const stoneGeo = new RoundedBoxGeometry(0.94, 0.94, 0.94, 2, 0.16);
+    stoneGeo.translate(0, 0.47, 0);
+    const boulderGeo = (() => {
+      const g = new THREE.IcosahedronGeometry(0.62, 1).toNonIndexed();
+      const p = g.getAttribute('position') as THREE.BufferAttribute;
+      for (let i = 0; i < p.count; i++) {
+        const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+        const k = 1 + (hash2(Math.round(x * 40), Math.round(y * 40) * 3 + Math.round(z * 40) * 7, 3) - 0.5) * 0.28;
+        p.setXYZ(i, x * k, Math.max(-0.1, y * k * 0.8), z * k);
+      }
+      g.translate(0, 0.42, 0);
+      g.computeVertexNormals();
+      return g;
+    })();
+    const logGeo = (() => {
+      const parts: THREE.BufferGeometry[] = [];
+      for (const [y, o] of [[0.25, 0.04], [0.75, -0.04]] as [number, number][]) {
+        const c = new THREE.CylinderGeometry(0.26, 0.26, 1.02, 9, 1);
+        c.rotateZ(Math.PI / 2);
+        c.translate(o, y, 0);
+        parts.push(c);
+      }
+      const g = mergeGeometries(parts, false)!;
+      for (const c of parts) c.dispose();
+      return g;
+    })();
+    const GEO: Record<Style, THREE.BufferGeometry> = { cube, stone: stoneGeo, boulder: boulderGeo, logX: logGeo, logZ: logGeo };
+    this.disposables.push(stoneGeo, boulderGeo, logGeo);
     const fill = (list: typeof t.blocks, material: THREE.Material, shadows: boolean, cx = -1, cz = -1) => {
       if (!list.length) return;
-      const mesh = new THREE.InstancedMesh(cube, material, list.length);
-      list.forEach((b, i) => {
-        const s = b.s ?? 1;
-        m4.makeScale(s, s, s);
-        m4.setPosition(b.x + 0.5, b.y, b.z + 0.5);
-        mesh.setMatrixAt(i, m4);
-        const colors = pal[b.mat] ?? [0x888888];
-        col.setHex(colors[b.v % colors.length]);
-        const shade = 0.9 + hash2(b.x * 3 + b.y, b.z, 11) * 0.16;
-        col.multiplyScalar(shade);
-        mesh.setColorAt(i, col);
-      });
-      mesh.castShadow = shadows;
-      mesh.receiveShadow = true;
-      mesh.computeBoundingSphere();
-      this.group.add(mesh);
-      this.disposables.push(mesh);
-      if (cx >= 0) this.chunks.push({ mesh, x: (cx + 0.5) * CHUNK, z: (cz + 0.5) * CHUNK });
+      const groups = new Map<Style, Block[]>();
+      for (const b of list) {
+        const st = material === glowMat ? 'cube' : styleOf(b);
+        let g = groups.get(st);
+        if (!g) groups.set(st, (g = []));
+        g.push(b);
+      }
+      for (const [st, items] of groups) {
+        const mesh = new THREE.InstancedMesh(GEO[st], material, items.length);
+        items.forEach((b, i) => {
+          const s = b.s ?? 1;
+          const h = hash2(b.x * 3 + b.y, b.z, 23);
+          let yaw = 0;
+          sc.set(s, s, s);
+          if (st === 'logZ') yaw = Math.PI / 2;
+          else if (st === 'stone') {
+            // masonry: each stone slightly different in size and turn
+            yaw = (h - 0.5) * 0.12;
+            const k = 0.94 + hash2(b.x, b.z * 5 + b.y, 24) * 0.08;
+            sc.set(k, 0.96 + h * 0.06, k);
+          } else if (st === 'boulder') {
+            yaw = h * Math.PI * 2;
+            const k = 0.85 + hash2(b.x, b.z, 25) * 0.4;
+            sc.set(k, 0.8 + hash2(b.z, b.x, 26) * 0.5, k);
+          }
+          q.setFromAxisAngle(v3.set(0, 1, 0), yaw);
+          m4.compose(v3.set(b.x + 0.5, b.y, b.z + 0.5), q, sc);
+          mesh.setMatrixAt(i, m4);
+          const colors = pal[b.mat] ?? [0x888888];
+          col.setHex(colors[b.v % colors.length]);
+          const shade = 0.9 + hash2(b.x * 3 + b.y, b.z, 11) * 0.16;
+          col.multiplyScalar(shade);
+          mesh.setColorAt(i, col);
+        });
+        mesh.castShadow = shadows;
+        mesh.receiveShadow = true;
+        mesh.computeBoundingSphere();
+        this.group.add(mesh);
+        this.disposables.push(mesh);
+        if (cx >= 0) this.chunks.push({ mesh, x: (cx + 0.5) * CHUNK, z: (cz + 0.5) * CHUNK });
+      }
     };
     const shadows = quality !== 'low';
     buckets.forEach((list, i) => fill(list, mat, shadows, i % chunks, Math.floor(i / chunks)));
@@ -439,7 +514,7 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
    * sways in the wind and dissolves when it stands in front of the hero.
    */
   private buildTrees(t: Terrain, map: MapDef, quality: string) {
-    if (!t.trees.length) return;
+    if (!t.trees.length && !t.roofs.length) return;
     const pal = map.palette.blocks;
     const u = this.uniforms;
     const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
@@ -465,6 +540,10 @@ vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`,
     const blob = new THREE.IcosahedronGeometry(1, 1);
     const cone = new THREE.ConeGeometry(1, 1, 8, 2);
     const trunkG = new THREE.CylinderGeometry(1, 1, 1, 7, 1);
+    const dome = new THREE.SphereGeometry(1, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2);
+    const disc = new THREE.CylinderGeometry(1, 1, 1, 12, 1);
+    const slab = new THREE.BoxGeometry(1, 1, 1, 4, 1, 4);
+    const prism = new THREE.CylinderGeometry(1, 1, 1, 3, 1);
     const tmp = new THREE.Color();
     const m4 = new THREE.Matrix4();
     const q = new THREE.Quaternion();
@@ -551,6 +630,29 @@ vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`,
           parts.push(piece(blob, cx + Math.cos(a) * d, h - 0.1 + r(60 + i) * 0.7, cz + Math.sin(a) * d, s, s * 0.85, s, a, tmp.getHex(), 1, seed + 10 + i, { jitter: 0.25 }));
         }
         parts.push(piece(blob, cx + (r(70) - 0.5) * 0.4, h + 0.35 + crown * 0.6, cz + (r(71) - 0.5) * 0.4, crown * 0.6, crown * 0.5, crown * 0.6, ry, leafC, 1, seed + 30, { jitter: 0.2 }));
+      } else if (tr.kind === 'mushroom') {
+        // giant toadstool: pale curved stem, wide red dome with white warts, gills below
+        const capC = leafCols[0];
+        const stemC = leafCols[1 % leafCols.length];
+        const h = tr.h + 0.4;
+        const lean = (r(2) - 0.5) * 0.3;
+        parts.push(piece(trunkG, cx, h / 2, cz, 0.32, h, 0.32, ry, stemC, 0, seed, { taper: -0.25, jitter: 0.06 }));
+        parts.push(piece(trunkG, cx, 0.12, cz, 0.5, 0.24, 0.5, ry, stemC, 0, seed + 1, { taper: 0.3 }));
+        const capR = 1.25 + r(3) * 0.35;
+        const capX = cx + lean;
+        parts.push(piece(disc, capX, h - 0.02, cz, capR * 0.96, 0.06, capR * 0.96, ry, 0xb89a80, 0, seed + 2));
+        parts.push(piece(dome, capX, h, cz, capR, capR * 0.62, capR, ry, capC, 0, seed + 3, { jitter: 0.05 }));
+        const warts = 7;
+        for (let i = 0; i < warts; i++) {
+          const a = ry + (i / warts) * Math.PI * 2 + r(80 + i);
+          const el = 0.35 + r(90 + i) * 0.7;
+          const px = Math.cos(a) * Math.cos(el) * capR;
+          const pz = Math.sin(a) * Math.cos(el) * capR;
+          const py = Math.sin(el) * capR * 0.62;
+          const ws = 0.12 + r(100 + i) * 0.1;
+          parts.push(piece(blob, capX + px, h + py, cz + pz, ws, ws * 0.5, ws, 0, 0xf4eee2, 0, seed + 20 + i));
+        }
+        parts.push(piece(blob, capX, h + capR * 0.62, cz, 0.16, 0.08, 0.16, 0, 0xf4eee2, 0, seed + 40));
       } else {
         const h = tr.h;
         parts.push(piece(trunkG, cx, 0.7, cz, 0.2, 1.4, 0.2, ry, trunkC, 0, seed, { taper: 0.3 }));
@@ -567,9 +669,65 @@ vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;`,
       const bz = Math.min(chunks - 1, Math.max(0, Math.floor(tr.z / CHUNK)));
       buckets[bz * chunks + bx].push(...parts);
     }
+    // pitched roofs: two shingled panels with an overhang, gable ends and a ridge beam
+    for (const rf of t.roofs) {
+      const cols = pal[rf.mat] ?? [0x8a4a3a];
+      let rc = cols[0];
+      if (rf.mat === 'leaves') rc = 0x9a7a4a; // forest huts get straw thatch, not a green slab
+      if (rf.mat === 'snow') rc = 0xeef3f8;
+      const seed = rf.x * 31 + rf.z * 7;
+      const alongX = rf.w >= rf.d;
+      const L = (alongX ? rf.w : rf.d) + 0.5;
+      const S = (alongX ? rf.d : rf.w) / 2 + 0.35;
+      const rise = Math.min(1.6, S * 0.75);
+      const ang = Math.atan2(rise, S);
+      const slant = Math.hypot(S, rise);
+      const cx = rf.x + rf.w / 2;
+      const cz = rf.z + rf.d / 2;
+      const ry = alongX ? 0 : Math.PI / 2;
+      const parts: THREE.BufferGeometry[] = [];
+      for (const side of [-1, 1]) {
+        // panel centre sits halfway down the slope on this side
+        const off = (S / 2) * side;
+        const px = alongX ? cx : cx + off;
+        const pz = alongX ? cz + off : cz;
+        const g = slab.clone();
+        g.scale(L, 0.16, slant + 0.05);
+        g.rotateX(side * ang);
+        g.rotateY(ry);
+        g.translate(px - cx, 0, pz - cz);
+        parts.push(piece(g, cx, rf.y + rise / 2 + 0.08, cz, 1, 1, 1, 0, rc, 0, seed + side, { jitter: 0 }));
+        g.dispose();
+      }
+      // gable fill under the panels (triangular prism along the ridge)
+      const gp = prism.clone();
+      gp.rotateZ(Math.PI / 2);
+      gp.rotateX(Math.PI / 2);
+      gp.rotateX(Math.PI);
+      gp.scale(L - 0.55, 1, 1);
+      parts.push(piece(gp, cx, rf.y + rise * 0.33, cz, 1, rise * 0.68, S * 0.83, ry, cols[cols.length > 1 ? 1 : 0] === rc ? 0x7a5a3a : 0x8a6a48, 0, seed + 5));
+      gp.dispose();
+      parts.push(piece(trunkG, cx, rf.y + rise + 0.12, cz, 0.12, L + 0.1, 0.12, 0, 0x5a3a24, 0, seed + 6));
+      const last = parts.length;
+      // the ridge beam is a cylinder: lay it along the ridge
+      const beam = parts[last - 1];
+      beam.translate(-cx, -(rf.y + rise + 0.12), -cz);
+      beam.rotateZ(alongX ? Math.PI / 2 : 0);
+      if (!alongX) beam.rotateX(Math.PI / 2);
+      beam.translate(cx, rf.y + rise + 0.12, cz);
+      // a chimney on bigger roofs
+      if (L > 4) parts.push(piece(slab, cx + (alongX ? L * 0.22 : S * 0.35), rf.y + rise * 0.7, cz + (alongX ? S * 0.35 : L * 0.22), 0.45, rise * 0.9, 0.45, 0, 0x7a7a80, 0, seed + 7));
+      const bx = Math.min(chunks - 1, Math.max(0, Math.floor(cx / CHUNK)));
+      const bz = Math.min(chunks - 1, Math.max(0, Math.floor(cz / CHUNK)));
+      buckets[bz * chunks + bx].push(...parts);
+    }
     blob.dispose();
     cone.dispose();
     trunkG.dispose();
+    dome.dispose();
+    disc.dispose();
+    slab.dispose();
+    prism.dispose();
     const shadows = quality !== 'low';
     buckets.forEach((list, i) => {
       if (!list.length) return;

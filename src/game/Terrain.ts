@@ -32,10 +32,20 @@ export interface TreeInst {
   x: number;
   z: number;
   h: number;
-  kind: 'oak' | 'pine';
+  kind: 'oak' | 'pine' | 'mushroom';
   leaf: string;
   trunk: string;
   v: number;
+}
+
+/** A pitched roof over a building footprint (cells x..x+w, z..z+d), resting at height y. */
+export interface RoofInst {
+  x: number;
+  z: number;
+  w: number;
+  d: number;
+  y: number;
+  mat: string;
 }
 
 export interface Decor {
@@ -66,6 +76,7 @@ export class Terrain {
   readonly blocks: Block[] = [];
   readonly decor: Decor[] = [];
   readonly trees: TreeInst[] = [];
+  readonly roofs: RoofInst[] = [];
   readonly lights: TerrainLight[] = [];
   /** Special markers used by events (rune circles etc). */
   readonly markers: { x: number; z: number; kind: string; sub?: string }[] = [];

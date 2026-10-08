@@ -234,7 +234,7 @@ function village(g: GenCtx, p: Poi, th: Theme) {
         if (isDoor) continue;
         t.column(hx + dx, hz + dz, 2, th.wall);
       }
-    if (th.roof) for (let dz = 0; dz <= w; dz++) for (let dx = 0; dx <= w; dx++) t.addBlock(hx + dx, 2, hz + dz, th.roof, 0);
+    if (th.roof) t.roofs.push({ x: hx, z: hz, w: w + 1, d: w + 1, y: 2, mat: th.roof });
   }
   t.addBlock(p.x, 0, p.z, th.wall2, 0, false, 0.6);
   t.lights.push({ x: p.x + 0.5, z: p.z + 0.5, y: 1.2, color: th.light, intensity: 1.8 });
@@ -319,7 +319,7 @@ function secret(g: GenCtx, p: Poi, th: Theme) {
       t.column(x, z, 3, th.wall);
     }
   // canopy over the room hides it until the player walks in
-  for (let z = p.z - r + 1; z <= p.z + r - 1; z++) for (let x = p.x - r + 1; x <= p.x + r - 1; x++) t.addBlock(x, 3, z, th.roof ?? th.wall, 0);
+  t.roofs.push({ x: p.x - r, z: p.z - r, w: 2 * r + 1, d: 2 * r + 1, y: 3, mat: th.roof ?? th.wall });
   paint(g, p.x, p.z, r - 1, th.floor);
   t.lights.push({ x: p.x + 0.5, z: p.z + 0.5, y: 1, color: 0xffd23d, intensity: 1.2 });
   t.markers.push({ x: p.x + 0.5, z: p.z + 0.5, kind: 'secret' });

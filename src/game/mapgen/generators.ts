@@ -43,9 +43,7 @@ const forest: Gen = (g) => {
     const x = rng.int(6, t.size - 6);
     const z = rng.int(6, t.size - 6);
     if (!t.areaFree(x, z, 1) || distToCenter(g, x, z) < 10) continue;
-    t.column(x, z, 2, 'mushroom', 1);
-    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) t.addBlock(x + dx, 2, z + dz, 'mushroom', 0);
-    t.addBlock(x, 3, z, 'mushroom', 0);
+    if (t.solidCell(x, z, 2)) t.trees.push({ x, z, h: rng.int(2, 3), kind: 'mushroom', leaf: 'mushroom', trunk: 'mushroom', v: 0 });
   }
   // abandoned wooden huts (narrow interiors)
   for (let i = 0; i < 7 * g.k; i++) {
