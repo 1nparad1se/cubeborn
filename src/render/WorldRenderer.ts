@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { MapDef } from '../data/types';
 import { CELL, type Block, type Terrain } from '../game/Terrain';
@@ -509,29 +508,22 @@ diffuseColor.rgb *= mix(0.62, 1.0, smoothstep(0.0, 1.3, vWPos.y));`);
       if (cx >= 0) this.chunks.push({ mesh, x: (cx + 0.5) * CHUNK, z: (cz + 0.5) * CHUNK });
     };
     if (rockCols.size) {
-      const rg = new RoundedBoxGeometry(1, 1, 1, 3, 0.2);
-      const p = rg.getAttribute('position') as THREE.BufferAttribute;
-      for (let i = 0; i < p.count; i++) {
-        const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-        const k = 1 + (hash2(Math.round(x * 20), Math.round(y * 20) * 3 + Math.round(z * 20) * 7, 4) - 0.5) * 0.16;
-        // bulging sides, slightly narrower top: a weathered stone rather than a cube
-        const top = y > 0 ? 0.9 : 1.0;
-        p.setXYZ(i, x * k * top, y * k, z * k * top);
-      }
-      rg.translate(0, 0.5, 0);
-      rg.computeVertexNormals();
+      // Minecraft-style rock piles: crisp stone blocks of mixed shapes (tall, long, low)
+      const rg = cube.clone();
       const list = [...rockCols.values()];
       const tiles = new Float32Array(list.length).fill(4);
       rg.setAttribute('aTile', new THREE.InstancedBufferAttribute(tiles, 1));
       const mesh = new THREE.InstancedMesh(rg, mat, list.length);
-      const e = new THREE.Euler();
       list.forEach((c, i) => {
         const r = (a: number) => hash2(c.x, c.z, a);
-        e.set((r(1) - 0.5) * 0.3, r(2) * Math.PI * 2, (r(3) - 0.5) * 0.3);
-        q.setFromEuler(e);
-        const w = 0.95 + r(4) * 0.4;
-        sc.set(w, c.h * (0.6 + r(5) * 0.35), w * (0.8 + r(6) * 0.3));
-        m4.compose(v3.set(c.x + 0.5 + (r(7) - 0.5) * 0.25, -0.08, c.z + 0.5 + (r(8) - 0.5) * 0.25), q, sc);
+        const kind = r(1);
+        if (kind < 0.35) sc.set(0.9, c.h + 0.5 + r(5) * 0.5, 0.9);
+        else if (kind < 0.7) {
+          const len = 1.6 + r(6) * 0.4;
+          if (r(2) < 0.5) sc.set(len, 0.8 + r(5) * 0.25, 0.9);
+          else sc.set(0.9, 0.8 + r(5) * 0.25, len);
+        } else sc.set(1, c.h * (0.75 + r(5) * 0.25), 1);
+        m4.compose(v3.set(c.x + 0.5 + (r(7) - 0.5) * 0.2, 0, c.z + 0.5 + (r(8) - 0.5) * 0.2), q.identity(), sc);
         mesh.setMatrixAt(i, m4);
         const colors = pal[c.b.mat] ?? [0x888888];
         mesh.setColorAt(i, col.setHex(colors[c.b.v % colors.length]).multiplyScalar(0.95 + r(9) * 0.2));
