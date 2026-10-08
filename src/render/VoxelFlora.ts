@@ -67,81 +67,128 @@ export function treeVoxels(tr: TreeInst, map: MapDef, out: Vox[]) {
         }
     return;
   }
-  if (tr.kind === 'pine') {
-    // spruce: tall trunk, layered rings that shrink and widen again like the Minecraft ones
-    const H = tr.h + 1;
-    for (let y = 0; y < H; y++) put(0, y, 0, trunkC, TILE.bark);
-    const snow = !!pal.snow;
-    let rad = 0;
-    for (let y = H + 1; y >= 2; y--) {
-      for (let dx = -rad; dx <= rad; dx++)
-        for (let dz = -rad; dz <= rad; dz++) {
-          if (!dx && !dz && y < H) continue;
-          if (Math.abs(dx) + Math.abs(dz) > rad + (rad > 1 ? 1 : 0)) continue;
-          const top = snow && (y === H + 1 || r(500 + y * 13 + dx * 3 + dz) < 0.1);
-          put(dx, y, dz, top ? 0xeef3f8 : shade(leafC, 0.9 + r(600 + y * 7 + dx + dz * 5) * 0.16), TILE.leaves);
-        }
-      rad = rad >= 2 ? 1 : rad + 1;
-    }
-    return;
-  }
-  // broadleaf: thick trunk with a root flare, branches and a wide lumpy crown
-  const big = tr.h >= 4;
-  const H = tr.h + (big ? 1 : 0);
-  const tw = big ? 2 : 1;
-  const ox = big ? -0.5 : 0;
-  for (let y = 0; y < H; y++)
-    for (let i = 0; i < tw; i++)
-      for (let j = 0; j < tw; j++) put(ox + i, y, ox + j, shade(trunkC, 0.94 + r(y + i * 3 + j * 5) * 0.1), TILE.bark);
-  // roots: half-height logs spreading at the base
-  for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-    if (r(700 + dx * 3 + dz) < 0.35) continue;
-    const off = big ? 1.5 : 1;
-    put(dx * off, 0, dz * off, shade(trunkC, 0.85), TILE.bark, 0.5);
-  }
-  // branches climbing diagonally out of the trunk
-  const branches = big ? 2 : 0;
-  const crowns: [number, number, number][] = [[0, H + 1, 0]];
-  for (let b = 0; b < branches; b++) {
-    const a = r(800 + b) * Math.PI * 2 + (b / branches) * Math.PI * 2;
-    const dx = Math.cos(a);
-    const dz = Math.sin(a);
-    let px = 0;
-    let pz = 0;
-    let py = H - 2 - (b % 2);
-    const len = big ? 2 : 1;
-    for (let k = 1; k <= len; k++) {
-      px = Math.round(dx * k);
-      pz = Math.round(dz * k);
-      put(px, py, pz, shade(trunkC, 0.9), TILE.bark);
-      if (k % 2 === 0) py++;
-    }
-    crowns.push([px, py + 1, pz]);
-  }
-  // crown: overlapping leafy ellipsoids around the trunk top and branch tips
-  const seen = new Set<string>();
-  const R = big ? 1.9 : 1.4;
-  crowns.forEach(([bx, by, bz], ci) => {
-    const rx = ci === 0 ? R : R * 0.72;
-    const ry = ci === 0 ? R * 0.7 : R * 0.55;
-    const n = Math.ceil(rx);
-    for (let dy = -Math.ceil(ry); dy <= Math.ceil(ry); dy++)
+  // Trees from the owner's reference sheet, built from half-size blocks so they read as
+  // detailed Minecraft builds while staying small on screen.
+  const V = 0.5;
+  const used = new Set<number>();
+  const tv = (x: number, y: number, z: number, color: number, tile: number) => {
+    const k = ((y + 64) * 256 + (x + 128)) * 256 + (z + 128);
+    if (used.has(k)) return;
+    used.add(k);
+    out.push({ x: cx + (x - 0.5) * V, y: y * V, z: cz + (z - 0.5) * V, sx: V, sy: V, sz: V, color, tile });
+  };
+  const h3 = (x: number, y: number, z: number, a: number) => hash2(tr.x * 31 + x * 7 + z, tr.z * 17 + y * 13 + z * 3, a);
+  const leaf = (x: number, y: number, z: number, base: number) => tv(x, y, z, shade(base, 0.86 + h3(x, y, z, 1) * 0.2), TILE.leaves);
+  const wood = (x: number, y: number, z: number, base: number) => tv(x, y, z, shade(base, 0.9 + h3(x, y, z, 2) * 0.14), TILE.bark);
+  /** A flat, ragged leaf pad: the signature canopy shape of the reference trees. */
+  const pad = (px: number, py: number, pz: number, rad: number, thick: number, base: number, sparse = 0) => {
+    for (let l = 0; l < thick; l++) {
+      const rr = rad - l * 1.2;
+      const n = Math.ceil(rr);
       for (let dx = -n; dx <= n; dx++)
         for (let dz = -n; dz <= n; dz++) {
-          const d = (dx * dx + dz * dz) / (rx * rx) + (dy * dy) / (ry * ry);
-          const x = bx + dx;
-          const y = by + dy;
-          const z = bz + dz;
-          if (y < 2) continue;
-          if (d > 1 - (hash2(tr.x * 7 + x, tr.z * 5 + z, 900 + y) - 0.3) * 0.35) continue;
-          if (d < 0.35) continue; // hollow inside: never seen, saves blocks
-          const k = `${x},${y},${z}`;
-          if (seen.has(k)) continue;
-          seen.add(k);
-          const tint = 0.84 + (dy / Math.max(1, ry)) * 0.1 + hash2(x, z * 3 + y, 950) * 0.12;
-          put(x, y, z, shade(leafC, tint), TILE.leaves);
+          const d = Math.hypot(dx, dz) / Math.max(0.5, rr);
+          if (d > 1.05 - h3(px + dx, py + l, pz + dz, 3) * 0.3) continue;
+          if (sparse && h3(px + dx, py + l, pz + dz, 4) < sparse) continue;
+          leaf(px + dx, py + l, pz + dz, base);
+          // leaves hanging off the rim
+          if (l === 0 && d > 0.6) {
+            if (h3(px + dx, py, pz + dz, 5) < 0.28) leaf(px + dx, py - 1, pz + dz, base);
+            if (h3(px + dx, py, pz + dz, 6) < 0.08) leaf(px + dx, py - 2, pz + dz, base);
+          }
         }
-  });
+    }
+  };
+  const trunk2 = (x: number, y: number, z: number, base: number, w = 2) => {
+    for (let i = 0; i < w; i++) for (let j = 0; j < w; j++) wood(x + i - (w > 2 ? 1 : 0), y, z + j - (w > 2 ? 1 : 0), base);
+  };
+  const roots = (base: number, w: number) => {
+    for (const [dx, dz] of [[-1, 0], [w, 0], [0, -1], [0, w], [w, 1], [-1, 1]]) if (h3(dx, 0, dz, 7) < 0.6) wood(dx, 0, dz, base);
+  };
+  if (tr.kind === 'pine') {
+    // spruce: straight trunk, square-ish pads shrinking to a spike
+    const T = 10 + tr.h * 2;
+    for (let y = 0; y < T; y++) trunk2(0, y, 0, trunkC);
+    const tiers = 5;
+    for (let i = 0; i < tiers; i++) {
+      const y = 3 + Math.round((i * (T - 3)) / tiers);
+      pad(0, y, 0, 4.6 - i * 0.8, 2, leafC);
+    }
+    for (let y = T; y < T + 3; y++) leaf(0, y, 0, leafC);
+    if (pal.snow) for (let i = 0; i < 14; i++) tv(Math.round((r(30 + i) - 0.5) * 6), 4 + Math.round(r(50 + i) * (T - 3)), Math.round((r(70 + i) - 0.5) * 6), 0xeef3f8, TILE.leaves);
+    return;
+  }
+  const variant = Math.floor(r(11) * 6);
+  if (variant === 0) {
+    // twisted oak: a trunk that zig-zags up into one wide flat crown
+    const T = 9 + tr.h;
+    let x = 0;
+    roots(trunkC, 2);
+    for (let y = 0; y < T; y++) {
+      if (y > 2 && y % 3 === 0) x += y % 6 === 0 ? -1 : 1;
+      trunk2(x, y, 0, trunkC);
+    }
+    pad(x, T, 0, 5.5, 2, leafC);
+    pad(x - 3, T + 1, 2, 2.6, 2, leafC);
+    pad(x + 3, T + 1, -2, 2.6, 2, leafC);
+  } else if (variant === 1) {
+    // birch: white spotted trunk forking into a Y with airy clumps
+    const bark = (x: number, y: number, z: number) => tv(x, y, z, h3(x, y, z, 8) < 0.22 ? 0x2e2a28 : shade(0xe8e4da, 0.94 + h3(x, y, z, 9) * 0.08), TILE.smooth);
+    const T = 5 + tr.h;
+    for (let y = 0; y < T; y++) bark(0, y, 0);
+    const tips: [number, number][] = [[-3, 0], [3, 1], [0, -3]];
+    for (const [ex, ez] of tips) {
+      for (let k = 1; k <= 3; k++) bark(Math.round((ex * k) / 3), T + k, Math.round((ez * k) / 3));
+      pad(ex, T + 4, ez, 2.8, 2, leafC, 0.15);
+    }
+    pad(0, T + 6, 0, 3.4, 2, leafC, 0.15);
+  } else if (variant === 2) {
+    // tiered: a tall trunk with leaf pads stacked on short side branches
+    const T = 13 + tr.h;
+    for (let y = 0; y < T; y++) trunk2(0, y, 0, trunkC);
+    roots(trunkC, 2);
+    const tiers: [number, number, number][] = [[5, -3, 0], [9, 3, 1]];
+    for (const [y, bx, bz] of tiers) {
+      for (let k = 1; k <= Math.abs(bx); k++) wood(Math.sign(bx) * k + (bx > 0 ? 1 : 0), y, bz, trunkC);
+      pad(bx + (bx > 0 ? 1 : 0), y + 1, bz, 3.4, 2, leafC);
+    }
+    pad(0, T, 0, 4.6, 2, leafC);
+  } else if (variant === 3) {
+    // gnarled dark oak: thick grey trunk splitting into crooked limbs
+    const dark = 0x4c4c56;
+    const T = 7 + tr.h;
+    roots(dark, 2);
+    for (let y = 0; y < T; y++) trunk2(0, y, 0, dark, y < 3 ? 3 : 2);
+    const limbs: [number, number][] = [[-5, 1], [5, -1], [1, 4]];
+    for (const [ex, ez] of limbs) {
+      let y = T - 2;
+      for (let k = 1; k <= 5; k++) {
+        const x = Math.round((ex * k) / 5);
+        const z = Math.round((ez * k) / 5);
+        wood(x, y, z, dark);
+        wood(x, y + 1, z, dark);
+        if (k % 2 === 0) y++;
+      }
+      pad(ex, y + 2, ez, 3.2, 2, leafC);
+    }
+    pad(0, T + 2, 0, 4.4, 2, leafC);
+  } else {
+    // round oak: thick trunk with roots, a dome crown and a red shelf mushroom
+    const T = 6 + tr.h;
+    roots(trunkC, 3);
+    for (let y = 0; y < T; y++) trunk2(0, y, 0, trunkC, 3);
+    if (variant === 5) tv(2, 3, 0, 0xc8322c, TILE.smooth);
+    const R = 5.4;
+    const Ry = 3.6;
+    const cy = T + 2;
+    for (let dy = -4; dy <= 4; dy++)
+      for (let dx = -6; dx <= 6; dx++)
+        for (let dz = -6; dz <= 6; dz++) {
+          const d = (dx * dx + dz * dz) / (R * R) + (dy * dy) / (Ry * Ry);
+          if (d > 1 - (h3(dx, dy, dz, 10) - 0.4) * 0.3 || d < 0.45) continue;
+          leaf(dx, cy + dy, dz, leafC);
+        }
+  }
 }
 
 /** Minecraft stair roof: shingle steps rising to a ridge, plank gables and dark trim. */
