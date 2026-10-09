@@ -209,19 +209,15 @@ export class Player {
     this.moving = len > 0.08;
     this.moveDirX = this.moving ? ix / Math.max(len, 1e-6) : 0;
     this.moveDirZ = this.moving ? iz / Math.max(len, 1e-6) : 0;
-    // the hero faces the cursor (or the locked cast direction) while walking any way
+    // facing is separate from the cursor: an action locks it to its attack direction,
+    // otherwise the hero looks where it walks (the renderer turns smoothly toward it)
     const lock = act.facing;
     if (lock) {
       this.fx = lock[0];
       this.fz = lock[1];
-    } else {
-      const ax = run.ctl.aimX - this.x;
-      const az = run.ctl.aimZ - this.z;
-      const al = Math.hypot(ax, az);
-      if (al > 0.2) {
-        this.fx = ax / al;
-        this.fz = az / al;
-      }
+    } else if (this.moving) {
+      this.fx = this.moveDirX;
+      this.fz = this.moveDirZ;
     }
     const speed = this.moveSpeed;
     const onIce = t.cellAt(this.x, this.z) === CELL.ice && !this.airborne;

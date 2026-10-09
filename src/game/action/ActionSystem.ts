@@ -41,6 +41,19 @@ export const SLOT_ULT = 8;
 export const SLOT_SPECIAL = 9;
 const SRC_BASIC = 20;
 const MELEE = new Set(['berserker', 'paladin', 'steelfist', 'deathblade', 'reaper', 'templar']);
+
+/**
+ * Basic-attack step-forward per melee class: distance in world units and the part of the
+ * wind-up (time before the first hit) when the body travels. Ranged classes have none.
+ */
+const BASIC_STEP: Record<string, { dist: number; from: number; to: number }> = {
+  berserker: { dist: 0.9, from: 0.35, to: 0.95 },
+  paladin: { dist: 0.6, from: 0.25, to: 0.9 },
+  steelfist: { dist: 0.45, from: 0.1, to: 0.7 },
+  deathblade: { dist: 0.75, from: 0.1, to: 0.8 },
+  reaper: { dist: 0.5, from: 0.15, to: 0.85 },
+  templar: { dist: 0.7, from: 0.25, to: 0.9 },
+};
 const SRC_SKILL = 21;
 const SRC_SUMMON = 22;
 
@@ -62,8 +75,13 @@ interface Playing {
   rate: number;
   dirX: number;
   dirZ: number;
+  /** Aim point snapshot taken when the input was pressed; never re-read from the cursor. */
   tx: number;
   tz: number;
+  /** Basic-attack step-forward: distance left to travel and its time window. */
+  stepLeft?: number;
+  stepFrom?: number;
+  stepTo?: number;
   /** Damage multiplier (charge, tripods). */
   mul: number;
   stagMul: number;
@@ -171,7 +189,7 @@ export class ActionSystem {
   private basicIdx = 0;
   private basicT = 0;
   /** Buffered press (slot, -2 dodge, -3 identity) and its time left. */
-  private buf = { slot: -1, t: 0 };
+  private buf = { slot: -1, t: 0, ax: 0, az: 0 };
   private buffs: ActiveBuff[] = [];
   readonly buff = { dmg: 0, speed: 0, atkSpeed: 0, armor: 0, dr: 0, crit: 0 };
   private counter: { ev: Omit<HitEv, 'do' | 't'>; cd: number } | null = null;
@@ -242,8 +260,9 @@ export class ActionSystem {
   /** Facing the action locks the hero into (or null to face the cursor). */
   get facing(): [number, number] | null {
     const c = this.cur;
-    if (this.mover) return null;
-    if (!c || c.step.track) return null;
+    if (this.mover || !c) return null;
+    // a basic attack hands facing back to movement once its recovery can be cancelled
+    if (c.src === 'basic' && c.phase === 'play' && c.t >= (c.step.cancel ?? c.step.dur) && this.run.player.moving) return null;
     return [c.dirX, c.dirZ];
   }
 
@@ -465,9 +484,9 @@ export class ActionSystem {
       return;
     }
     // inputs
-    if (c.dodge) this.press(-2);
-    if (c.identity) this.press(-3);
-    for (const s of c.casts) this.press(s);
+    if (c.dodge) this.press(-2, c);
+    if (c.identity) this.press(-3, c);
+    for (const s of c.casts) this.press(s, c);
     if (this.mover) this.updateMover(dt);
     if (this.cur) this.updateAction(dt, c);
     // buffered press
@@ -478,13 +497,28 @@ export class ActionSystem {
 
   private lastHitTime = -99;
 
-  private press(slot: number) {
+  /** Aim point the next started action uses instead of the live cursor (the press snapshot). */
+  private lockAim: [number, number] | null = null;
+
+  private press(slot: number, c: Controls) {
     this.buf.slot = slot;
     this.buf.t = 0.4;
+    // the target point is fixed the moment the key goes down
+    this.buf.ax = c.aimX;
+    this.buf.az = c.aimZ;
   }
 
   /** Attempts the buffered press; keeps it buffered while the current action cannot be cancelled. */
   private tryPress(slot: number, c: Controls) {
+    this.lockAim = [this.buf.ax, this.buf.az];
+    try {
+      this.tryPressAt(slot, c);
+    } finally {
+      this.lockAim = null;
+    }
+  }
+
+  private tryPressAt(slot: number, c: Controls) {
     if (this.stunT > 0 && slot !== -2) return;
     const cur = this.cur;
     if (slot === -2) {
@@ -551,8 +585,9 @@ export class ActionSystem {
   // ------------------------------------------------------------------ starting actions
   private aimDir(c: Controls): [number, number] {
     const p = this.run.player;
-    const dx = c.aimX - p.x;
-    const dz = c.aimZ - p.z;
+    const [ax, az] = this.lockAim ?? [c.aimX, c.aimZ];
+    const dx = ax - p.x;
+    const dz = az - p.z;
     const l = Math.hypot(dx, dz);
     if (l < 0.05) return [p.fx, p.fz];
     return [dx / l, dz / l];
@@ -584,11 +619,13 @@ export class ActionSystem {
     else if (src === 'skill') rate *= 1 + this.buff.atkSpeed * 0.5;
     const play: Playing = {
       src, slot, def, step, idx, phase, t: 0, evs: sortedEvents(step), next: 0, rate,
-      dirX: dx, dirZ: dz, tx: c.aimX, tz: c.aimZ, mul, stagMul, areaMul, extraSt, superArmor, prep: 0, gained: false,
+      dirX: dx, dirZ: dz, tx: this.lockAim ? this.lockAim[0] : c.aimX, tz: this.lockAim ? this.lockAim[1] : c.aimZ,
+      stepLeft: 0, stepFrom: 0, stepTo: 0, mul, stagMul, areaMul, extraSt, superArmor, prep: 0, gained: false,
     };
     this.cur = play;
     p.fx = dx;
     p.fz = dz;
+    if (src === 'basic' && phase === 'play') this.planStep(play);
     if (!step.move && phase === 'play') {
       p.clearPath();
       p.vx *= 0.2;
@@ -759,32 +796,32 @@ export class ActionSystem {
       const def = cur.def!;
       cur.prep += dt;
       const max = def.chargeMax ?? 1;
-      if (cur.step.track !== false) [cur.dirX, cur.dirZ] = this.aimDir(c);
       p.fx = cur.dirX;
       p.fz = cur.dirZ;
       if (!c.held[cur.slot] || cur.prep >= max + 0.25) {
         const k = Math.min(1, cur.prep / max);
         const mul = cur.mul * (1 + ((def.chargeMul ?? 2) - 1) * k);
         if (k >= 1) this.run.fx.sound('select', 0.4);
+        this.lockAim = [cur.tx, cur.tz];
         this.start('skill', cur.slot, def, cur.step, 0, c, 'play', mul / (1 + (this.levels[cur.slot] - 1) * 0.12) / this.tripodDmg(cur.slot));
       }
+      this.lockAim = null;
       return;
     }
     if (cur.phase === 'cast') {
       cur.prep -= dt;
       if (cur.prep <= 0) {
         const def = cur.def!;
+        this.lockAim = [cur.tx, cur.tz];
         this.start('skill', cur.slot, def, cur.step, 0, c, 'play', cur.mul / (1 + (cur.slot < 8 ? (this.levels[cur.slot] - 1) * 0.12 : 0)) / this.tripodDmg(cur.slot));
-        // the target is where the cursor is when the cast completes
+        // the target is the point locked when the key was pressed
       }
+      this.lockAim = null;
       return;
     }
     cur.t += dt * cur.rate;
-    if (cur.step.track) {
-      [cur.dirX, cur.dirZ] = this.aimDir(c);
-      cur.tx = c.aimX;
-      cur.tz = c.aimZ;
-    }
+    // directions and points stay as snapshotted at the press; the cursor is not re-read
+    if ((cur.stepLeft ?? 0) > 0) this.updateStep(cur, dt);
     // invulnerability window
     const iw = cur.step.iframes;
     if (iw && cur.t >= iw[0] && cur.t <= iw[1]) p.invulnT = Math.max(p.invulnT, 0.06);
@@ -796,6 +833,51 @@ export class ActionSystem {
     if (cur.t >= cur.step.dur) this.finish(cur, c);
   }
 
+  /** Plans the melee basic step-forward: shorter when the target is already close, none when touching. */
+  private planStep(cur: Playing) {
+    const cfg = BASIC_STEP[this.cls.id];
+    if (!cfg || this.stunT > 0) return;
+    const p = this.run.player;
+    const firstHit = cur.evs.find((e) => e.do === 'hit');
+    const th = firstHit ? firstHit.t : cur.step.dur * 0.4;
+    let dist = cfg.dist;
+    // stop short of the nearest enemy in the swing direction (keep body radii apart)
+    const e = this.run.enemies.nearest(p.x + cur.dirX * 1.2, p.z + cur.dirZ * 1.2, 2.4, undefined, false);
+    if (e) {
+      const ahead = (e.x - p.x) * cur.dirX + (e.z - p.z) * cur.dirZ;
+      const gap = ahead - e.radius - p.radius - 0.25;
+      dist = Math.max(0, Math.min(dist, gap));
+    }
+    if (dist < 0.05) return;
+    cur.stepLeft = dist;
+    cur.stepFrom = th * cfg.from;
+    cur.stepTo = Math.max(cur.stepFrom + 0.02, th * cfg.to);
+  }
+
+  /** Moves the body forward during the wind-up through the normal wall-sliding movement. */
+  private updateStep(cur: Playing, dt: number) {
+    if (this.stunT > 0) {
+      cur.stepLeft = 0;
+      return;
+    }
+    const t0 = cur.t - dt * cur.rate;
+    const from = cur.stepFrom ?? 0;
+    const to = cur.stepTo ?? 0;
+    const left = cur.stepLeft ?? 0;
+    const a = Math.max(t0, from);
+    const b = Math.min(cur.t, to);
+    if (b <= a) return;
+    const total = BASIC_STEP[this.cls.id]?.dist ?? 0;
+    const want = Math.min(left, (total * (b - a)) / (to - from));
+    const p = this.run.player;
+    // never walk into an enemy body mid-step
+    let d = want;
+    const e = this.run.enemies.nearest(p.x + cur.dirX * d, p.z + cur.dirZ * d, 1.5, undefined, false);
+    if (e && Math.hypot(e.x - p.x - cur.dirX * d, e.z - p.z - cur.dirZ * d) < e.radius + p.radius) d = 0;
+    if (d > 0) p.slide(cur.dirX * d, cur.dirZ * d);
+    cur.stepLeft = d > 0 ? left - want : 0;
+  }
+
   private tripodDmg(slot: number): number {
     if (slot < 0 || slot >= 8) return 1;
     const t = this.tripod(slot, 1);
@@ -803,6 +885,15 @@ export class ActionSystem {
   }
 
   private finish(cur: Playing, c: Controls) {
+    this.lockAim = [cur.tx, cur.tz];
+    try {
+      this.finishAt(cur, c);
+    } finally {
+      this.lockAim = null;
+    }
+  }
+
+  private finishAt(cur: Playing, c: Controls) {
     const def = cur.def;
     this.cur = null;
     if (cur.src === 'basic') {
