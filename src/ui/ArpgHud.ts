@@ -311,7 +311,6 @@ export class ArpgHud {
     for (let i = 0; i < 8; i++) {
       const s = this.slots[i];
       const lv = a.levels[i];
-      const def = c.skills[i];
       const cd = a.cds[i];
       this.cool(s, cd, a.cdMax[i] || 1);
       const ready = lv > 0 && a.ready(i);
@@ -320,7 +319,7 @@ export class ArpgHud {
       this.fb(s, a);
       const can = a.canLearn(i);
       this.set('ln' + i, can ? 1 : 0, () => s.root.classList.toggle('learn', can));
-      const sub = lv === 0 ? t('ak_unlock_short', { n: def.unlock }) : String(lv);
+      const sub = lv === 0 ? t('ak_unlock_short', { n: i + 1 }) : String(lv);
       this.set('sub' + i, sub, () => {
         s.sub.textContent = sub;
         s.sub.classList.toggle('lock', lv === 0);

@@ -29,7 +29,7 @@ import { generateTerrain } from './game/mapgen/generators';
 import type { BossController } from './game/bosses/Boss';
 import { WAVE_TYPE_COLOR, MODIFIERS, type RunMode, type Wave } from './game/Waves';
 
-export const VERSION = 'v3.2.0';
+export const VERSION = 'v3.3.0';
 
 /** Discrete camera zoom steps for the mouse wheel (camera distance multipliers). */
 const ZOOM_STEPS = [0.75, 0.88, 1, 1.15, 1.35];
@@ -155,6 +155,14 @@ export class App implements MenuApi {
 
   setShowcase(modelId: string) {
     this.renderer.setShowcase(modelId);
+  }
+
+  setCampfire(members: { id: string; cls: string }[], activeId: string | null) {
+    this.renderer.setCampfire(members, activeId);
+  }
+
+  pickCampfire(clientX: number, clientY: number): string | null {
+    return this.renderer.pickCampfire(clientX, clientY);
   }
 
   private backdropPaused = false;

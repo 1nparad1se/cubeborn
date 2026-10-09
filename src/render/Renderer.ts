@@ -23,6 +23,7 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { Pass, FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { AmbientFx } from './AmbientFx';
+import { MenuCampfire, type CampMember } from './MenuCampfire';
 
 import type { Settings } from '../meta/Save';
 
@@ -232,6 +233,7 @@ export class Renderer {
   private heroTex: THREE.Texture | null = null;
   private showId = '';
   private menuMode = false;
+  private camp: MenuCampfire | null = null;
   private menuAngle = 0;
   /** 0 keeps the menu showcase centred; 1 slides it into the right third of the screen. */
   menuShift = 0;
@@ -427,6 +429,7 @@ export class Renderer {
   startRun(run: Run, hooks: FxHooks): FxSink {
     this.menuMode = false;
     this.clearShowcase();
+    this.clearCamp();
     this.run = run;
     this.buildWorld(run.terrain, run.map);
     this.entities = new EntityRenderer(this.scene, run, this.blockTex, this.blobTex, this.detail === 'high' && this.s.shadows !== 'low' ? 'high' : this.detail === 'low' ? 'low' : 'medium', this.lights);
@@ -496,10 +499,40 @@ export class Renderer {
     this.menuMode = true;
     this.buildWorld(terrain, map);
     this.scene.fog = new THREE.Fog(map.palette.fog, 14, 44);
-    this.setShowcase(heroModel);
+    if (!this.camp) this.setShowcase(heroModel);
+  }
+
+  /** Menu campfire with the player's characters (an empty party falls back to the single showcase). */
+  setCampfire(members: CampMember[], activeId: string | null) {
+    if (!members.length) {
+      this.clearCamp();
+      return;
+    }
+    this.clearShowcase();
+    if (!this.camp) {
+      this.heroTex ??= makeHeroTexture();
+      this.camp = new MenuCampfire(this.heroTex);
+      this.scene.add(this.camp.group);
+    }
+    this.camp.setParty(members, activeId);
+  }
+
+  /** Character id of the campfire party under a client point, or null. */
+  pickCampfire(clientX: number, clientY: number): string | null {
+    if (!this.camp || !this.menuMode) return null;
+    const r = this.gl.domElement.getBoundingClientRect();
+    return this.camp.pick(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1, this.rig.camera);
+  }
+
+  private clearCamp() {
+    if (!this.camp) return;
+    this.scene.remove(this.camp.group);
+    this.camp.dispose();
+    this.camp = null;
   }
 
   setShowcase(modelId: string) {
+    this.clearCamp();
     if (this.showId === modelId && (this.showModel || this.showRig)) return;
     this.clearShowcase();
     const rd = heroRig(modelId);
@@ -563,10 +596,13 @@ export class Renderer {
 
   private menuFrame(dt: number) {
     const c = (this.torchTerrain?.size ?? 64) / 2;
-    this.menuAngle += dt * 0.12;
+    const camp = this.camp;
+    // around the campfire the camera only sways a little in front of the party
+    if (camp) this.menuAngle = Math.sin(this.time * 0.07) * 0.22;
+    else this.menuAngle += dt * 0.12;
     const cam = this.rig.camera;
     const portrait = this.h > this.w;
-    const dist = portrait ? 13 : 10;
+    const dist = camp ? (portrait ? 14 : 10.5) : portrait ? 13 : 10;
     this.menuShiftNow += (this.menuShift - this.menuShiftNow) * (1 - Math.exp(-6 * dt));
     // pan the camera sideways so the model sits right of centre, leaving room for panels
     const off = portrait ? 0 : this.menuShiftNow * dist * Math.tan((cam.fov * Math.PI) / 360) * cam.aspect * 0.58;
@@ -574,8 +610,13 @@ export class Renderer {
     const fz = -Math.cos(this.menuAngle);
     const ox = fz * off;
     const oz = -fx * off;
-    cam.position.set(c + Math.sin(this.menuAngle) * dist + ox, portrait ? 7.5 : 6, c + Math.cos(this.menuAngle) * dist + oz);
-    cam.lookAt(c + ox, 1.4, c + oz);
+    cam.position.set(c + Math.sin(this.menuAngle) * dist + ox, portrait ? 7.5 : camp ? 5 : 6, c + Math.cos(this.menuAngle) * dist + oz);
+    cam.lookAt(c + ox, camp ? 0.9 : 1.4, c + oz - (camp ? 0.6 : 0));
+    if (camp) {
+      camp.group.position.set(c, 0, c);
+      camp.update(dt);
+      this.lights.request(c, 1.4, c, 0xff9a40, 2.6 * camp.flicker, 11, c, c);
+    }
     this.sun.position.set(c + 10, 25, c + 6);
     this.sun.target.position.set(c, 0, c);
     if (this.showModel) {
@@ -680,6 +721,7 @@ export class Renderer {
   }
 
   dispose() {
+    this.clearCamp();
     this.endRun();
     this.gl.dispose();
   }

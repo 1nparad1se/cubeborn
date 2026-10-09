@@ -1,4 +1,5 @@
 import { armoryScreen } from './ArmoryScreen';
+import { heroScreen as charHeroScreen, inventoryScreen, forgeScreen } from './ProgressScreens';
 import { h, clear, hex, put } from './dom';
 import { iconImg } from './icons';
 import { thumbImg } from '../render/Thumbnails';
@@ -20,6 +21,9 @@ import type { AchievementCategory, AchievementDef } from '../data/types';
 import { settingsPanel } from './Settings';
 import { viewerScreen } from './ViewerScreen';
 import { classInfo, classStage, tr } from './ClassPreview';
+import { createScreen, rosterScreen } from './CharScreens';
+import { dev } from '../dev/DevMode';
+import { MAX_CHARS } from '../meta/Characters';
 
 export interface MenuApi {
   profile: Profile;
@@ -30,6 +34,10 @@ export interface MenuApi {
   /** True when a setting changed that only applies after a restart. */
   needsRestart(): boolean;
   setShowcase(modelId: string): void;
+  /** Menu campfire with the created characters (empty = single showcase). */
+  setCampfire(members: { id: string; cls: string }[], activeId: string | null): void;
+  /** Character of the campfire under a client point. */
+  pickCampfire(clientX: number, clientY: number): string | null;
   /** Slides the menu showcase model toward the right edge (0 = centred, 1 = right third). */
   setMenuShift(v: number): void;
   applySettings(): void;
@@ -43,15 +51,15 @@ export interface MenuApi {
   version: string;
 }
 
-type ScreenId = 'main' | 'armory' | 'heroes' | 'viewer' | 'maps' | 'collection' | 'achievements' | 'settings';
+type ScreenId = 'main' | 'roster' | 'create' | 'hero' | 'inventory' | 'forge' | 'armory' | 'heroes' | 'viewer' | 'maps' | 'collection' | 'achievements' | 'settings';
 
 const RARITY_COLOR: Record<string, string> = { common: '#c8ccd8', uncommon: '#6aff8a', rare: '#5ab4ff', epic: '#c77dff', legendary: '#ffb02e' };
 /** Tabs along the top bar of the menu screens (Q / E cycle through them). */
-const TABS: ScreenId[] = ['armory', 'viewer', 'maps', 'collection', 'achievements', 'settings'];
+const TABS: ScreenId[] = ['hero', 'inventory', 'forge', 'armory', 'viewer', 'maps', 'collection', 'achievements', 'settings'];
 /** Screens where the 3D showcase stays visible on the right instead of an item preview. */
-const SHOWCASE: ScreenId[] = ['main', 'maps'];
+const SHOWCASE: ScreenId[] = ['main', 'maps', 'roster'];
 /** Screens with their own 3D view (the menu backdrop stops drawing). */
-const OWN_3D: ScreenId[] = ['viewer', 'heroes'];
+const OWN_3D: ScreenId[] = ['viewer', 'heroes', 'create'];
 
 function pill(text: string, color: string): HTMLElement {
   return h('span.pill', { style: `--pc:${color}` }, text);
@@ -79,7 +87,51 @@ export class Menus {
     this.selHero = HERO_BY_ID[last.hero] ? last.hero : HEROES[0].id;
     this.selMap = last.map;
     this.selDiff = last.diff;
+    this.syncHero();
     window.addEventListener('keydown', (e) => this.onKey(e));
+    // clicking a character at the campfire makes it the active one
+    this.root.addEventListener('click', (e) => {
+      const cur = this.current;
+      if (cur !== 'main' && cur !== 'roster') return;
+      if ((e.target as HTMLElement).closest('button, input, a, .detail, .modal-back, .gold-chip, .main-char')) return;
+      const id = this.api.pickCampfire(e.clientX, e.clientY);
+      if (!id || id === this.api.profile.char?.id) return;
+      this.api.sfx('select');
+      this.api.profile.selectChar(id);
+      this.syncHero();
+      this.render();
+    });
+  }
+
+  /** The class played is the active character's class. */
+  private syncHero() {
+    const c = this.api.profile.char;
+    if (c) this.selHero = c.cls;
+  }
+
+  /** Puts the created characters around the menu campfire. */
+  private showCamp() {
+    const p = this.api.profile;
+    const chars = p.data.chars;
+    if (chars.length) this.api.setCampfire(chars.map((c) => ({ id: c.id, cls: c.cls })), p.char?.id ?? null);
+    else this.api.setShowcase(HERO_BY_ID[this.selHero]?.model ?? HEROES[0].model);
+  }
+
+  /** Play flow: no character → creation; otherwise the map choice for the active character. */
+  private play(preset: RunMode | null) {
+    const p = this.api.profile;
+    this.selectMode = true;
+    this.presetMode = preset;
+    if (!p.char) {
+      this.open('create');
+      return;
+    }
+    this.syncHero();
+    if (!p.data.seenIntro) {
+      this.api.startRun(this.selHero, MAPS[0].id, 'normal');
+      return;
+    }
+    this.open('maps');
   }
 
   private get current(): ScreenId {
@@ -102,7 +154,7 @@ export class Menus {
   }
 
   private tabs(): ScreenId[] {
-    return this.selectMode ? ['heroes', 'maps'] : TABS;
+    return this.selectMode ? ['roster', 'maps'] : TABS;
   }
 
   private cycleTab(dir: number) {
@@ -110,7 +162,7 @@ export class Menus {
     const i = tabs.indexOf(this.current);
     if (i < 0) return;
     const next = tabs[(i + dir + tabs.length) % tabs.length];
-    if (this.selectMode && next === 'maps' && !this.api.profile.isHeroUnlocked(this.selHero)) return;
+    if (this.selectMode && next === 'maps' && !this.api.profile.char) return;
     this.api.sfx('ui');
     this.switchTo(next);
   }
@@ -171,12 +223,24 @@ export class Menus {
         return this.mainScreen();
       case 'heroes':
         return this.heroScreen();
+      case 'roster':
+        return this.rosterScreen();
+      case 'create':
+        return this.createScreen();
       case 'viewer': {
         const v = viewerScreen(this.api.profile, this.selHero, (x) => this.api.sfx(x), (hid) => {
           if (this.api.profile.isHeroUnlocked(hid)) this.selHero = hid;
         });
         this.cleanup = () => v.dispose();
         return this.frame(v.el);
+      }
+      case 'hero':
+        return this.frame(charHeroScreen(this.api.profile, (x) => this.api.sfx(x)));
+      case 'inventory':
+        return this.frame(inventoryScreen(this.api.profile, (x) => this.api.sfx(x)));
+      case 'forge': {
+        const gold = h('div.gold-chip', h('i.ic-coin'), h('span', fmtNum(this.api.profile.data.gold)));
+        return this.frame(forgeScreen(this.api.profile, (x) => this.api.sfx(x), () => ((gold.lastChild as HTMLElement).textContent = fmtNum(this.api.profile.data.gold))), { gold });
       }
       case 'armory': {
         const gold = h('div.gold-chip', h('i.ic-coin'), h('span', fmtNum(this.api.profile.data.gold)));
@@ -203,12 +267,12 @@ export class Menus {
     const tabs = this.tabs();
     const bar = h('div.mtabs');
     tabs.forEach((tid, i) => {
-      const label = this.selectMode ? `${i + 1}. ${t(tid === 'heroes' ? 'choose_hero' : 'choose_map')}` : t('menu_' + tid);
+      const label = this.selectMode ? `${i + 1}. ${tid === 'roster' ? tr('Персонаж', 'Character') : t('choose_map')}` : t('menu_' + tid);
       bar.append(
         h('button.mtab' + (tid === id ? '.sel' : ''), {
           onclick: () => {
             if (tid === id) return;
-            if (this.selectMode && tid === 'maps' && !this.api.profile.isHeroUnlocked(this.selHero)) return;
+            if (this.selectMode && tid === 'maps' && !this.api.profile.char) return;
             this.api.sfx('ui');
             this.switchTo(tid);
           },
@@ -254,23 +318,42 @@ export class Menus {
   // ------------------------------------------------------------------ main
   private mainScreen(): HTMLElement {
     const p = this.api.profile;
-    this.api.setShowcase(HERO_BY_ID[this.selHero]?.model ?? HEROES[0].model);
+    this.syncHero();
+    this.showCamp();
     const newAch = ACHIEVEMENTS.length;
+    const ch = p.char;
     return h(
       'div.main-menu',
       h('div.logo', h('div.logo-title', 'CUBEBORN'), h('div.logo-sub', t('game_subtitle'))),
       h(
         'div.main-buttons',
-        this.btn(t('menu_play'), () => {
-          if (!p.data.seenIntro) {
-            this.api.startRun(this.selHero, MAPS[0].id, 'normal');
-            return;
-          }
+        ch
+          ? h(
+              'div.main-char',
+              {
+                title: tr('Сменить персонажа', 'Switch character'),
+                onclick: () => {
+                  this.api.sfx('ui');
+                  this.selectMode = true;
+                  this.presetMode = null;
+                  this.open('roster');
+                },
+              },
+              h('b', ch.name),
+              h('span', `${L(classDef(ch.cls).name)} · ${tr('Ур.', 'Lv')} ${ch.level}`),
+            )
+          : null,
+        this.btn(t('menu_play'), () => this.play(null), '.primary.big'),
+        this.btn(ch ? tr('Мои персонажи', 'My characters') + ` ${p.data.chars.length}/${MAX_CHARS}` : tr('Создать персонажа', 'Create character'), () => {
           this.selectMode = true;
-          this.open('heroes');
-        }, '.primary.big'),
+          this.presetMode = null;
+          this.open(ch ? 'roster' : 'create');
+        }),
         h(
           'div.main-grid',
+          this.btn(t('menu_hero'), () => this.open('hero')),
+          this.btn(t('menu_inventory'), () => this.open('inventory')),
+          this.btn(t('menu_forge'), () => this.open('forge')),
           this.btn(t('menu_armory'), () => this.open('armory'), '.armory-btn'),
           this.btn(t('menu_characters'), () => {
             this.selectMode = false;
@@ -282,16 +365,48 @@ export class Menus {
           }),
           this.btn(t('menu_collection'), () => this.open('collection')),
           this.btn(`${t('menu_achievements')} ${p.data.achievements.length}/${newAch}`, () => this.open('achievements')),
-          this.btn(t('menu_endless'), () => {
-            this.selectMode = true;
-            this.presetMode = 'endless';
-            this.open('heroes');
-          }),
+          this.btn(t('menu_endless'), () => this.play('endless')),
           this.btn(t('menu_settings'), () => this.open('settings')),
         ),
       ),
       h('div.main-foot', h('div.gold-chip', h('i.ic-coin'), fmtNum(p.data.gold)), h('div.power', t('power_level', { n: p.powerLevel() })), h('div.version', this.api.version)),
     );
+  }
+
+  // ------------------------------------------------------------------ characters
+  private charApi() {
+    return { profile: this.api.profile, sfx: (x: string) => this.api.sfx(x), btn: (l: string, f: () => void, c = '') => this.btn(l, f, c) };
+  }
+
+  private rosterScreen(): HTMLElement {
+    this.syncHero();
+    this.showCamp();
+    const el = rosterScreen(this.charApi(), {
+      onSelect: () => {
+        this.syncHero();
+        this.showCamp();
+      },
+      onCreate: () => this.open('create'),
+      onPlay: () => this.play(this.presetMode),
+      confirm: (text, yes) => confirmBox(this.root, text, yes),
+      onDevClass: dev.enabled ? () => this.open('heroes') : undefined,
+    });
+    return this.frame(el);
+  }
+
+  private createScreen(): HTMLElement {
+    const fromPlay = !this.stack.includes('roster');
+    const v = createScreen(this.charApi(), this.selHero, () => {
+      this.api.sfx('select');
+      this.syncHero();
+      this.showCamp();
+      // straight from Play: go on to the map (or the tutorial); otherwise back to the roster
+      this.stack.pop();
+      if (fromPlay) this.play(this.presetMode);
+      else this.render();
+    });
+    this.cleanup = () => v.dispose();
+    return this.frame(v.el);
   }
 
   // ------------------------------------------------------------------ heroes

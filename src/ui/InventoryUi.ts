@@ -1,6 +1,6 @@
 import type { Run } from '../game/Run';
 import { BAG_SIZE } from '../game/arpg/Loot';
-import { EQUIP_POS, baseIcon, isPct, itemName, itemStats, RARITY_COLOR, RARITY_HEX, score, sellPrice, slotOf, type Affix, type AffixStat, type EquipPos, type Item } from '../game/arpg/Gear';
+import { EQUIP_POS, baseIcon, reqLevel, isPct, itemName, itemStats, RARITY_COLOR, RARITY_HEX, score, sellPrice, slotOf, type Affix, type AffixStat, type EquipPos, type Item } from '../game/arpg/Gear';
 import { POWER_BY_ID } from '../game/action/powers';
 import { h, clear } from './dom';
 import { iconImg } from './icons';
@@ -18,7 +18,7 @@ function fmtDiff(stat: AffixStat, d: number): string {
 }
 
 /** Tooltip body for an item, with comparison lines against `cmp` when given. */
-export function itemCard(it: Item, cmp: Item | null, title?: string): HTMLElement {
+export function itemCard(it: Item, cmp: Item | null, title?: string, heroLevel?: number): HTMLElement {
   const lang = getLang();
   const col = RARITY_COLOR[it.rarity];
   const lines: HTMLElement[] = [];
@@ -39,7 +39,16 @@ export function itemCard(it: Item, cmp: Item | null, title?: string): HTMLElemen
     'div.it-card',
     { style: `--rc:${col}` },
     title ? h('div.it-title', title) : null,
-    h('div.it-head', h('div.it-icon', iconImg(baseIcon(it), RARITY_HEX[it.rarity], 'icon lg')), h('div', h('div.it-name', itemName(it, lang)), h('div.it-sub', `${t('rar_' + it.rarity)} · ${t('slot_' + it.slot)} · ${t('inv_ilvl', { n: it.ilvl })}`))),
+    h(
+      'div.it-head',
+      h('div.it-icon', iconImg(baseIcon(it), RARITY_HEX[it.rarity], 'icon lg'), it.enh ? h('i.it-enh', '+' + it.enh) : null),
+      h(
+        'div',
+        h('div.it-name', (it.enh ? `+${it.enh} ` : '') + itemName(it, lang)),
+        h('div.it-sub', h('b', { style: `color:${col}` }, t('rar_' + it.rarity)), ` · ${t('slot_' + it.slot)} · ${t('inv_ilvl', { n: it.ilvl })}`),
+        h('div.it-req' + (heroLevel !== undefined && reqLevel(it) > heroLevel ? '.no' : ''), t('inv_req_level', { n: reqLevel(it) })),
+      ),
+    ),
     ...lines,
     power ? h('div.it-power', h('b', L(power.name) + ': '), L(power.desc)) : null,
     verdict ? h('div.it-verdict.' + verdict, t('inv_' + verdict)) : null,
@@ -95,6 +104,7 @@ export class InventoryUi {
           onmouseenter: () => it && this.show(it, null, t('inv_worn')),
         },
         it ? iconImg(baseIcon(it), RARITY_HEX[it.rarity], 'icon') : h('span.inv-ph', t('slot_' + slotOf(pos))),
+        it?.enh ? h('i.inv-enh', '+' + it.enh) : null,
       );
       this.doll.append(cell);
     }
@@ -124,6 +134,8 @@ export class InventoryUi {
           },
           iconImg(baseIcon(it), RARITY_HEX[it.rarity], 'icon'),
           up ? h('i.inv-up', '▲') : null,
+          it.enh ? h('i.inv-enh', '+' + it.enh) : null,
+          reqLevel(it) > run.player.level ? h('i.inv-req', String(reqLevel(it))) : null,
         ),
       );
     }
@@ -167,8 +179,8 @@ export class InventoryUi {
   private show(it: Item, cmp: Item | null, title?: string) {
     const loot = this.run.loot;
     clear(this.detail);
-    this.detail.append(itemCard(it, cmp, title));
-    if (cmp) this.detail.append(itemCard(cmp, null, t('inv_worn')));
+    this.detail.append(itemCard(it, cmp, title, this.run.player.level));
+    if (cmp) this.detail.append(itemCard(cmp, null, t('inv_worn'), this.run.player.level));
     const sel = this.sel?.item === it ? this.sel : null;
     if (!sel) return;
     const acts = h('div.inv-acts');

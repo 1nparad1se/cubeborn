@@ -1,6 +1,7 @@
 import type { Profile } from '../meta/Profile';
-import { HEROES, HERO_BY_ID } from '../data/heroes';
-import { EQUIP_POS, baseIcon, itemStats, makeItem, rollRarity, sellPrice, score, slotOf, RARITY_COLOR, RARITY_HEX, type AffixStat, type EquipPos, type Item } from '../game/arpg/Gear';
+import { classDef } from '../game/action/classes';
+import { CHAR_BAG } from '../meta/Characters';
+import { EQUIP_POS, baseIcon, reqLevel, itemStats, makeItem, rollRarity, sellPrice, score, slotOf, RARITY_COLOR, RARITY_HEX, type AffixStat, type EquipPos, type Item } from '../game/arpg/Gear';
 import { RARITIES as RARITIES_ORDER } from '../data/types';
 import { affixText, itemCard } from './InventoryUi';
 import { h, clear } from './dom';
@@ -18,10 +19,12 @@ export function buyPrice(it: Item): number {
 
 /** Item level the shop sells at: follows the best gear the player has found. */
 function shopIlvl(p: Profile): number {
-  let best = 3;
-  for (const it of p.data.gear.bag) best = Math.max(best, it.ilvl);
-  for (const set of Object.values(p.data.gear.equipped)) for (const it of Object.values(set)) if (it) best = Math.max(best, it.ilvl);
-  return best;
+  const c = p.char;
+  if (!c) return 3;
+  let best = Math.max(1, c.level);
+  for (const it of c.bag) best = Math.max(best, it.ilvl);
+  for (const it of Object.values(c.equipped)) if (it) best = Math.max(best, it.ilvl);
+  return Math.min(best, c.level + 2);
 }
 
 /** Fresh shop stock (common to epic, a legendary now and then). */
@@ -39,7 +42,11 @@ type Sel = { kind: 'stash' | 'eq' | 'shop'; item: Item; pos?: EquipPos };
  * found, sell what is not needed, and buy new pieces in the shop for gold.
  */
 export function armoryScreen(profile: Profile, sfx: (id: string) => void, heroId: string, onHero: (id: string) => void, onGold: () => void): HTMLElement {
-  let hero = profile.isHeroUnlocked(heroId) ? heroId : (HEROES.find((x) => profile.isHeroUnlocked(x.id))?.id ?? HEROES[0].id);
+  void heroId;
+  void onHero;
+  const ch0 = profile.char;
+  if (!ch0) return h('div.armory', h('div.inv-empty.char-none', t('ch_none')));
+  const ch = ch0;
   let tab: 'gear' | 'shop' = 'gear';
   let sel: Sel | null = null;
   let filter: 'all' | EquipPos = 'all';
@@ -49,8 +56,9 @@ export function armoryScreen(profile: Profile, sfx: (id: string) => void, heroId
     profile.save();
   }
   const root = h('div.armory');
+  const bag = ch.bag;
 
-  const worn = () => (g.equipped[hero] ??= {});
+  const worn = () => ch.equipped;
   const compareTarget = (it: Item): Item | null => {
     const ps = EQUIP_POS.filter((p) => slotOf(p) === it.slot);
     const w = worn();
@@ -63,15 +71,19 @@ export function armoryScreen(profile: Profile, sfx: (id: string) => void, heroId
     render();
   };
   const equip = (it: Item) => {
-    const i = g.bag.indexOf(it);
+    const i = bag.indexOf(it);
     if (i < 0) return;
+    if (reqLevel(it) > ch.level) {
+      sfx('uiBack');
+      return;
+    }
     const ps = EQUIP_POS.filter((p) => slotOf(p) === it.slot);
     const w = worn();
     const pos = ps.find((p) => !w[p]) ?? ps[0];
     const old = w[pos];
-    g.bag.splice(i, 1);
+    bag.splice(i, 1);
     w[pos] = it;
-    if (old) g.bag.splice(i, 0, old);
+    if (old) bag.splice(i, 0, old);
     sfx('select');
     sel = null;
     save();
@@ -80,16 +92,20 @@ export function armoryScreen(profile: Profile, sfx: (id: string) => void, heroId
     const w = worn();
     const it = w[pos];
     if (!it) return;
+    if (bag.length >= CHAR_BAG) {
+      sfx('uiBack');
+      return;
+    }
     delete w[pos];
-    g.bag.unshift(it);
+    bag.unshift(it);
     sfx('ui');
     sel = null;
     save();
   };
   const sell = (it: Item) => {
-    const i = g.bag.indexOf(it);
+    const i = bag.indexOf(it);
     if (i < 0) return;
-    g.bag.splice(i, 1);
+    bag.splice(i, 1);
     profile.data.gold += sellPrice(it);
     sfx('coin');
     sel = null;
@@ -97,13 +113,13 @@ export function armoryScreen(profile: Profile, sfx: (id: string) => void, heroId
   };
   const buy = (it: Item) => {
     const price = buyPrice(it);
-    if (profile.data.gold < price) {
+    if (profile.data.gold < price || bag.length >= CHAR_BAG) {
       sfx('uiBack');
       return;
     }
     profile.data.gold -= price;
     g.shop!.splice(g.shop!.indexOf(it), 1);
-    g.bag.unshift(it);
+    bag.unshift(it);
     sfx('coin');
     sel = null;
     save();
@@ -134,35 +150,15 @@ export function armoryScreen(profile: Profile, sfx: (id: string) => void, heroId
         },
       },
       iconImg(baseIcon(it), RARITY_HEX[it.rarity], 'icon'),
+      it.enh ? h('i.inv-enh', '+' + it.enh) : null,
+      reqLevel(it) > ch.level ? h('i.inv-req', String(reqLevel(it))) : null,
       s.kind === 'stash' && score(it) > score(compareTarget(it)) + 0.05 ? h('i.inv-up', '▲') : null,
       extra ?? null,
     );
 
   function render() {
     clear(root);
-    // hero picker
-    const heroes = h('div.arm-heroes');
-    for (const def of HEROES) {
-      const ok = profile.isHeroUnlocked(def.id);
-      const n = Object.values(g.equipped[def.id] ?? {}).filter(Boolean).length;
-      heroes.append(
-        h(
-          'button.arm-hero' + (def.id === hero ? '.sel' : '') + (ok ? '' : '.locked'),
-          {
-            disabled: !ok,
-            onclick: () => {
-              hero = def.id;
-              onHero(def.id);
-              sel = null;
-              sfx('ui');
-              render();
-            },
-          },
-          h('span', L(def.name)),
-          n ? h('small', `${n}/9`) : null,
-        ),
-      );
-    }
+    const heroes = h('div.arm-heroes', h('div.arm-hero.sel', h('span', `${ch.name} · ${L(classDef(ch.cls).name)}`), h('small', t('ch_lv', { n: ch.level }))));
     const tabs = h(
       'div.arm-tabs',
       h('button.btn.small' + (tab === 'gear' ? '.primary' : ''), { onclick: () => ((tab = 'gear'), (sel = null), render()) }, t('arm_gear')),
@@ -182,19 +178,19 @@ export function armoryScreen(profile: Profile, sfx: (id: string) => void, heroId
     const sums = new Map<AffixStat, number>();
     for (const pos of EQUIP_POS) if (w[pos]) for (const a of itemStats(w[pos]!)) sums.set(a.stat, (sums.get(a.stat) ?? 0) + a.v);
     const totals = h('div.inv-stats', h('div.inv-label', t('arm_totals')), ...(sums.size ? [...sums].map(([stat, v]) => h('div.ist', h('span', affixText({ stat, v })))) : [h('div.ist.dim', t('arm_none'))]));
-    const left = h('div.inv-left', h('div.inv-label', L(HERO_BY_ID[hero].name)), doll, totals);
+    const left = h('div.inv-left', h('div.inv-label', ch.name), doll, totals);
 
     // middle: stash or shop
     let mid: HTMLElement;
     if (tab === 'gear') {
       const filters = h('div.arm-filter', ...(['all', 'weapon', 'helm', 'armor', 'gloves', 'boots', 'amulet', 'ring1', 'trinket'] as const).map((f) => h('button.chip' + (filter === f ? '.sel' : ''), { onclick: () => ((filter = f), render()) }, f === 'all' ? t('arm_all') : t('slot_' + slotOf(f)))));
-      const items = g.bag
+      const items = bag
         .filter((it) => filter === 'all' || it.slot === slotOf(filter))
         .sort((a, b) => RARITIES_ORDER.indexOf(b.rarity) - RARITIES_ORDER.indexOf(a.rarity) || b.ilvl - a.ilvl);
       const grid = h('div.inv-bag.arm-stash');
       for (const it of items) grid.append(cell(it, { kind: 'stash', item: it }));
       if (!items.length) grid.append(h('div.inv-empty', t('arm_empty')));
-      mid = h('div.inv-mid', h('div.inv-label', t('arm_stash', { n: g.bag.length })), filters, grid);
+      mid = h('div.inv-mid', h('div.inv-label', t('arm_stash', { n: bag.length }) + ' / ' + CHAR_BAG), filters, grid);
     } else {
       const grid = h('div.inv-bag.arm-shop');
       for (const it of g.shop!) {
@@ -212,14 +208,14 @@ export function armoryScreen(profile: Profile, sfx: (id: string) => void, heroId
 
     // detail with comparison and actions
     const detail = h('div.inv-detail');
-    if (sel && (sel.kind === 'eq' ? w[sel.pos!] === sel.item : sel.kind === 'stash' ? g.bag.includes(sel.item) : g.shop!.includes(sel.item))) {
+    if (sel && (sel.kind === 'eq' ? w[sel.pos!] === sel.item : sel.kind === 'stash' ? bag.includes(sel.item) : g.shop!.includes(sel.item))) {
       const it = sel.item;
       const cmp = sel.kind === 'eq' ? null : compareTarget(it);
-      detail.append(itemCard(it, cmp, sel.kind === 'eq' ? t('inv_worn') : undefined));
-      if (cmp) detail.append(itemCard(cmp, null, t('inv_worn')));
+      detail.append(itemCard(it, cmp, sel.kind === 'eq' ? t('inv_worn') : undefined, ch.level));
+      if (cmp) detail.append(itemCard(cmp, null, t('inv_worn'), ch.level));
       const acts = h('div.inv-acts');
       const s = sel;
-      if (s.kind === 'stash') acts.append(h('button.btn.small.primary', { onclick: () => equip(it) }, t('inv_equip')), h('button.btn.small.danger', { onclick: () => sell(it) }, t('inv_sell', { n: sellPrice(it) })));
+      if (s.kind === 'stash') acts.append(h('button.btn.small.primary', { disabled: reqLevel(it) > ch.level, onclick: () => equip(it) }, t('inv_equip')), h('button.btn.small.danger', { onclick: () => sell(it) }, t('inv_sell', { n: sellPrice(it) })));
       else if (s.kind === 'eq') acts.append(h('button.btn.small', { onclick: () => unequip(s.pos!) }, t('inv_unequip')));
       else acts.append(h('button.btn.small.primary', { disabled: profile.data.gold < buyPrice(it), onclick: () => buy(it) }, t('arm_buy', { n: buyPrice(it) })));
       detail.append(acts);

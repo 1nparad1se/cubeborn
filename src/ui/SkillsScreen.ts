@@ -156,7 +156,7 @@ export function slotDetails(run: Run, slot: number, binds: Keybinds | null): HTM
   const rows: HTMLElement[] = [];
   const key = slotKey(binds, slot);
   let lvTxt = m.kind;
-  if (slot < 8) lvTxt = a.levels[slot] > 0 ? t('ak_lv', { n: a.levels[slot], m: SKILL_MAX }) : t('ak_unlock_short', { n: c.skills[slot].unlock });
+  if (slot < 8) lvTxt = a.levels[slot] > 0 ? t('ak_lv', { n: a.levels[slot], m: SKILL_MAX }) : t('ak_unlock_short', { n: slot + 1 });
   rows.push(h('div.tip-head', h('b', { style: `color:${hex(m.color)}` }, m.name), h('span.tip-key', key), h('span.tip-lv', lvTxt)));
   const def = slot < 8 || slot === SLOT_ULT ? a.skill(slot) : null;
   const grid: HTMLElement[] = [];
@@ -189,7 +189,7 @@ export function slotDetails(run: Run, slot: number, binds: Keybinds | null): HTM
         if (a.levels[slot] < lvNeed) rows.push(h('div.tip-tri.locked', label, t('ak_tri_locked', { n: lvNeed })));
         else rows.push(h('div.tip-tri' + (on ? '.on' : ''), label, on ? h('b', L(on.name)) : t('ak_tri_none'), on ? ' — ' + L(on.desc) : ''));
       }
-      if (a.levels[slot] === 0) rows.push(h('div.tip-next', t('ak_unlock', { n: c.skills[slot].unlock })));
+      if (a.levels[slot] === 0) rows.push(h('div.tip-next', t('ak_unlock', { n: slot + 1 })));
       else if (a.levels[slot] < SKILL_MAX) rows.push(h('div.tip-next', t('ak_next')));
       else rows.push(h('div.tip-next', t('ak_maxed')));
       if (a.canLearn(slot)) rows.push(h('div.tip-learn', t('ak_learn_hint')));
@@ -372,7 +372,7 @@ export class SkillsScreen {
     // level column
     const lvBox = h('div.sks-lv');
     if (slot < 8) {
-      if (lv === 0) lvBox.append(h('div.sks-lock', t('ak_unlock_short', { n: c.skills[slot].unlock })));
+      if (lv === 0) lvBox.append(h('div.sks-lock', t('ak_unlock_short', { n: slot + 1 })));
       else {
         const pips = h('div.sks-pips');
         for (let i = 0; i < SKILL_MAX; i++) pips.append(h('i' + (i < lv ? '.on' : '') + (TRIPOD_LEVELS.includes(i + 1) ? '.tp' : '')));

@@ -937,6 +937,31 @@ const ITEM: Record<string, Draw> = {
     d.pts([5, 9, 27, 23], STEEL[4]);
     d.sparkle(28, 3, false, GOLD[4]);
   },
+  /** Enhancement stone: a rough slate shard with a faceted crystal of the tier colour growing out of it. */
+  enh_stone: (d, C) => {
+    const tex = (x: number, y: number) => (hash(x, y, 41) < 0.14 ? -0.8 : hash(x, y, 42) < 0.07 ? 0.6 : 0);
+    const rock = poly([3.5, 21, 8, 15.5, 14, 17, 19, 14.5, 26, 16.5, 29, 22, 26.5, 28.5, 16, 30, 6, 28.5]);
+    d.shade(rock, STONE, { b: 1.9, g: 1, tex });
+    d.line(9, 21, 13, 24, STONE[0]);
+    d.line(21, 20, 24, 26, STONE[0]);
+    // main crystal: tall hexagonal prism, left face lit, right face in shadow
+    const left = poly([10.5, 22, 10.5, 9, 15.5, 3, 15.5, 24]);
+    const right = poly([15.5, 3, 20.5, 9, 20.5, 22, 15.5, 24]);
+    d.shade(left, C, { b: 3, g: 0.8 });
+    d.shade(right, C, { b: 1.6, g: 0.6 });
+    d.line(15, 4, 15, 23, C[4]);
+    d.line(16, 4, 16, 23, C[1]);
+    d.line(11, 10, 15, 5, C[4]);
+    // small side crystals
+    d.shade(poly([20, 23, 22, 15.5, 25.5, 13, 26, 21, 23.5, 24]), C, { b: 2.2, g: 1 });
+    d.line(22, 16, 25, 14, C[4]);
+    d.shade(poly([6, 23, 6.5, 17, 9, 14.5, 11, 18, 10.5, 23.5]), C, { b: 2, g: 1 });
+    d.line(7, 17, 9, 15, C[4]);
+    d.pts([12, 12, 13, 15, 12, 18], C[4]);
+    d.glow(disc(15.5, 13, 9), C[3], 0.18);
+    d.sparkle(26, 6, true, C[4]);
+    d.sparkle(5, 9, false, C[4]);
+  },
   relic_hollow_crown: (d, C) => {
     const spikes = poly([4.5, 17, 5.5, 5.5, 10.5, 12, 16, 2.5, 21.5, 12, 26.5, 5.5, 27.5, 17]);
     d.shade(spikes, VOID, { b: 2.3, g: 1 });
