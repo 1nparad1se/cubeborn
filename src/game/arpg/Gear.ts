@@ -230,7 +230,7 @@ export function itemStats(it: Item): Affix[] {
 
 /** Hero level needed to wear an item. */
 export function reqLevel(it: Item): number {
-  return Math.max(1, Math.min(PROG.maxLevel, it.ilvl));
+  return PROG.tierLevel[RARITIES.indexOf(it.rarity)] ?? 1;
 }
 
 /** Gear totals: StatMods for resolveStats plus the action-RPG extras. */

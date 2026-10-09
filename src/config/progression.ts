@@ -30,11 +30,16 @@ export const PROG = {
   perLevel: { might: 0.03, maxHpPct: 0.045, armor: 0.25, regen: 0.04 },
 
   /** Zone level of a map on a difficulty: map base + difficulty step. */
-  mapLevel: { blightwood: 1, gloamhaven: 7, ossuary: 13, emberwaste: 20, frostveil: 27, aetherfall: 34 } as Record<string, number>,
-  diffLevel: [0, 6, 11, 16],
-  zoneLevel(mapId: string, diffIndex: number): number {
-    return Math.min(50, (PROG.mapLevel[mapId] ?? 1) + (PROG.diffLevel[diffIndex] ?? 0));
+  /** Monster level range of each map: the first wave starts at the low end, the last campaign wave reaches the top. */
+  mapRange: { blightwood: [1, 10], gloamhaven: [11, 20], ossuary: [21, 30], emberwaste: [31, 40], frostveil: [41, 50], aetherfall: [41, 50] } as Record<string, [number, number]>,
+  /** Monster level on a map at a wave (campaign has 30 waves; Endless keeps climbing to 50). */
+  mobLevel(mapId: string, wave: number): number {
+    const [lo, hi] = PROG.mapRange[mapId] ?? [1, 10];
+    const lv = lo + Math.floor(((Math.max(1, wave) - 1) / 29) * (hi - lo + 0.999));
+    return Math.min(50, Math.max(lo, lv));
   },
+  /** Hero level needed to wear each item tier: simple 1+, common 11+, epic 21+, legendary 31+, mythic 41+. */
+  tierLevel: [1, 11, 21, 31, 41],
   /**
    * Enemies scale with the gap between the zone and the hero: +6% hp / +4% damage per level the zone
    * is above the hero, down to −3%/level below (capped), so out-levelled maps are easy and over-reaching hurts.

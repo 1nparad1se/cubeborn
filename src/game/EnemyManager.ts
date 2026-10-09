@@ -67,8 +67,8 @@ export class EnemyManager {
     const curse = r.player.stats.curse;
     // zone level vs hero level replaces the old per-map tier and difficulty multipliers
     const zs = PROG.enemyScale(r.zoneLevel, r.player.level);
-    const hpMul = opts.noScale ? 1 : zs.hp * sc.hp * (1 + (curse - 1) * 0.5);
-    const dmgMul = opts.noScale ? 1 : zs.dmg * sc.damage;
+    const hpMul = opts.noScale ? 1 : zs.hp * r.diff.hp * sc.hp * (1 + (curse - 1) * 0.5);
+    const dmgMul = opts.noScale ? 1 : zs.dmg * r.diff.damage * sc.damage;
     void tier;
     e.maxHp = e.hp = Math.max(1, def.hp * hpMul * (opts.hpMul ?? 1) * r.debug.enemyHp);
     e.damage = def.damage * dmgMul * r.debug.enemyDmg;

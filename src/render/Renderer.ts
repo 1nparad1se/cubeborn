@@ -602,7 +602,7 @@ export class Renderer {
     else this.menuAngle += dt * 0.12;
     const cam = this.rig.camera;
     const portrait = this.h > this.w;
-    const dist = camp ? (portrait ? 14 : 10.5) : portrait ? 13 : 10;
+    const dist = camp ? (portrait ? 17 : 14) : portrait ? 13 : 10;
     this.menuShiftNow += (this.menuShift - this.menuShiftNow) * (1 - Math.exp(-6 * dt));
     // pan the camera sideways so the model sits right of centre, leaving room for panels
     const off = portrait ? 0 : this.menuShiftNow * dist * Math.tan((cam.fov * Math.PI) / 360) * cam.aspect * 0.58;
@@ -610,12 +610,27 @@ export class Renderer {
     const fz = -Math.cos(this.menuAngle);
     const ox = fz * off;
     const oz = -fx * off;
-    cam.position.set(c + Math.sin(this.menuAngle) * dist + ox, portrait ? 7.5 : camp ? 5 : 6, c + Math.cos(this.menuAngle) * dist + oz);
+    cam.position.set(c + Math.sin(this.menuAngle) * dist + ox, portrait ? 7.5 : camp ? 6.5 : 6, c + Math.cos(this.menuAngle) * dist + oz);
     cam.lookAt(c + ox, camp ? 0.9 : 1.4, c + oz - (camp ? 0.6 : 0));
+    // the campfire is its own little set: hide the map slice behind it
+    if (this.world) this.world.group.visible = !camp;
     if (camp) {
       camp.group.position.set(c, 0, c);
       camp.update(dt);
-      this.lights.request(c, 1.4, c, 0xff9a40, 2.6 * camp.flicker, 11, c, c);
+      this.lights.request(c, 1.6, c, 0xff9038, 2.4 * camp.flicker, 11, c, c);
+      // night mood at the campfire: cool blue ambient and moonlight, dark blue fog
+      // (setAtmosphere restores the map lighting when a run starts)
+      this.hemi.color.setHex(0x3a4c8a);
+      this.hemi.groundColor.setHex(0x141a30);
+      this.hemi.intensity = 0.9;
+      this.sun.color.setHex(0x7a90d0);
+      this.sun.intensity = 0.55;
+      if (this.scene.fog instanceof THREE.Fog) {
+        this.scene.fog.color.setHex(0x0c1430);
+        this.scene.fog.near = 12;
+        this.scene.fog.far = 34;
+      }
+      if (this.scene.background instanceof THREE.Color) this.scene.background.setHex(0x0c1430);
     }
     this.sun.position.set(c + 10, 25, c + 6);
     this.sun.target.position.set(c, 0, c);
@@ -637,7 +652,7 @@ export class Renderer {
       }
       this.showAnim.update(Math.min(dt, 0.05));
     }
-    this.lights.request(c + 1.5, 2.5, c + 1.5, 0xffc070, 1.2, 9, c, c);
+    if (!camp) this.lights.request(c + 1.5, 2.5, c + 1.5, 0xffc070, 1.2, 9, c, c);
   }
 
   private runFrame(dt: number) {

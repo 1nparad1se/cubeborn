@@ -1,5 +1,4 @@
 import { PROG } from '../config/progression';
-import { DIFFICULTIES } from '../data/difficulty';
 import type { CharSave } from '../meta/Characters';
 import { DayNight } from './DayNight';
 import type { DayPeriod } from '../config/dayNight';
@@ -112,8 +111,10 @@ export class Run {
   readonly weather = { darkness: 0, blizzard: 0, surge: 0, storm: 0 };
   readonly mode: RunMode;
   readonly waves: WaveDirector;
-  /** Level of this map on this difficulty (enemy strength, item level, experience). */
-  readonly zoneLevel: number;
+  /** Monster level right now: grows through the map's range with the waves (enemy strength, item level, experience). */
+  get zoneLevel(): number {
+    return PROG.mobLevel(this.map.id, this.waves?.wave?.n ?? 1);
+  }
   readonly features: MapFeatures;
   /** Multipliers for enemies spawned in the current wave. */
   waveScale: WaveScale;
@@ -157,7 +158,6 @@ export class Run {
     this.nav = new NavField(this.terrain);
     const c = Math.floor(o.map.size / 2) + 0.5;
     this.player = new Player(this, c, c);
-    this.zoneLevel = PROG.zoneLevel(o.map.id, Math.max(0, DIFFICULTIES.findIndex((d) => d.id === o.diff.id)));
     const ch = o.char ?? null;
     if (ch) {
       this.player.level = ch.level;

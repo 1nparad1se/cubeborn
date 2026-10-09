@@ -15,6 +15,7 @@ import { WAVE_TYPE_COLOR, WaveDirector } from '../game/Waves';
 import { BOSSES, RELICS, BOSS_BY_ID } from '../data/bosses';
 import { MAPS } from '../data/maps';
 import { MapPreview } from '../render/MapPreview';
+import { PROG } from '../config/progression';
 import { DIFFICULTIES } from '../data/difficulty';
 import { ACHIEVEMENTS, ACHIEVEMENT_CATEGORIES } from '../data/achievements';
 import type { AchievementCategory, AchievementDef } from '../data/types';
@@ -601,18 +602,32 @@ export class Menus {
         }
       };
       renderModes();
+      const [mlo, mhi] = PROG.mapRange[id] ?? [1, 10];
       put(
         detail,
-        h('div.detail-title', h('h3', L(m.name)), h('div.stars', '★'.repeat(m.difficultyStars) + '☆'.repeat(Math.max(0, 6 - m.difficultyStars)))),
-        h('p', L(m.desc)),
-        lore ? h('p.story', L(lore.story)) : null,
-        lore ? h('div.feature', h('b', '✦ ' + L(lore.feature.name)), h('span', L(lore.feature.desc))) : null,
-        lore ? h('div.kv', h('span', t('recommended')), h('span', L(lore.recommended))) : null,
+        h(
+          'div.map-head',
+          stage,
+          h(
+            'div.map-head-info',
+            h('div.detail-title', h('h3', L(m.name)), h('div.stars', '★'.repeat(m.difficultyStars) + '☆'.repeat(Math.max(0, 6 - m.difficultyStars)))),
+            h('div.map-mlvl', tr('Уровень монстров', 'Monster level') + ': ', h('b', `${mlo}–${mhi}`)),
+            h('p.map-desc', L(m.desc)),
+            lore ? h('div.feature', h('b', '✦ ' + L(lore.feature.name)), h('span', L(lore.feature.desc))) : null,
+          ),
+        ),
+      );
+      const facts = h(
+        'div.map-facts',
+        lore ? h('p.story', { title: L(lore.story) }, L(lore.story)) : null,
         h('div.kv', h('span', t('main_enemies')), h('span', mainEnemies.join(', '))),
         h('div.kv', h('span', t('boss_mid')), h('span', seenBoss(m.midBoss) ? L(BOSS_BY_ID[m.midBoss].name) : '???')),
         h('div.kv', h('span', t('boss_final')), h('span', seenBoss(m.boss) ? L(BOSS_BY_ID[m.boss].name) : '???')),
         h('div.kv', h('span', t('rewards')), h('span', [t('relics') + ': ' + relics.map((r) => (p.data.discovered.relics.includes(r!.id) ? L(r!.name) : '???')).join(', '), next ? t('opens_map', { name: L(next.name) }) : t('last_map')].join(' · '))),
         h('div.kv', h('span', t('best_clear')), h('span', p.data.mapClears[id] !== undefined ? L(DIFFICULTIES[p.data.mapClears[id]].name) : '—')),
+      );
+      const play = h(
+        'div.map-play',
         unlocked ? h('div', h('div.label', t('mode')), modes, modeInfo, h('div.label', t('difficulty')), diffs, diffInfo) : h('div.locked-note', '🔒 ' + t('map_unlock', { boss: prevBoss ? L(prevBoss.name) : '?' })),
         unlocked
           ? this.btn(t('btn_start'), () => {
@@ -622,6 +637,7 @@ export class Menus {
             }, '.primary.big')
           : null,
       );
+      detail.append(h('div.map-cols', facts, play));
     };
     for (const m of MAPS) {
       const unlocked = p.isMapUnlocked(m.id);
@@ -646,7 +662,7 @@ export class Menus {
       );
     }
     setTimeout(() => show(this.selMap));
-    return this.frame(h('div.split.map-split', list, h('div.map-right', stage, detail)));
+    return this.frame(h('div.split.map-split', list, h('div.map-right', detail)));
   }
 
   // ------------------------------------------------------------------ collection

@@ -267,7 +267,7 @@ export class Hud {
       const endless = wd.mode === 'endless';
       this.set('wave', w.n, () => {
         this.waveTitle.textContent = endless ? t('hud_wave_endless', { n: w.n }) : t('hud_wave', { n: w.n, total: CAMPAIGN_WAVES });
-        this.waveType.textContent = t('wave_' + w.type) + ' · ';
+        this.waveType.textContent = t('wave_' + w.type) + ' · ' + L({ ru: 'Ур. монстров', en: 'Monster lv' }) + ' ' + run.zoneLevel + ' · ';
         this.waveType.style.color = WAVE_TYPE_COLOR[w.type];
         this.wavePanel.style.setProperty('--wc', WAVE_TYPE_COLOR[w.type]);
         const pips = this.waveStrip.children;

@@ -66,10 +66,8 @@ export class Loot {
 
   /** Item level for drops right now. */
   get ilvl(): number {
-    // the zone's level, with a small chance of an item a level or two above it
-    const z = this.run.zoneLevel;
-    const r = Math.random();
-    return Math.max(1, Math.min(PROG.maxLevel, z + (r < 0.1 ? 2 : r < 0.3 ? 1 : 0)));
+    // items carry the level of the monsters that dropped them
+    return Math.max(1, Math.min(PROG.maxLevel, this.run.zoneLevel));
   }
 
   onKill(e: Enemy) {
