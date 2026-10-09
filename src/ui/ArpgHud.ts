@@ -204,6 +204,12 @@ export class ArpgHud {
       clear(s.icon);
       const m = slotMeta(a, s.i);
       if (m) s.icon.append(skillImg(m.icon, m.color, 'icon'));
+      // press-and-hold skills (hold channels and charge-ups) carry a hand badge
+      const def = a.skill(s.i);
+      const hold = !!def && (def.type === 'hold' || def.type === 'charge');
+      s.root.classList.toggle('hold', hold);
+      s.root.querySelector('.sk-hold')?.remove();
+      if (hold) s.root.append(h('div.sk-hold', { title: L({ ru: 'Зажмите клавишу', en: 'Hold the key' }) }, def!.type === 'charge' ? L({ ru: 'ЗАР', en: 'CHG' }) : L({ ru: 'ЗАЖ', en: 'HOLD' })));
     }
   }
 
@@ -450,7 +456,7 @@ export class ArpgHud {
       this.hName.textContent = name;
       this.hName.style.color = e.elite ? '#ffd23d' : '#f1f2f4';
     });
-    const lvl = Math.max(1, run.waves.wave.n + (e.elite ? 2 : 0));
+    const lvl = Math.max(1, run.zoneLevel + (e.elite ? 2 : 0) + (e.boss ? 3 : 0));
     const role = (e.elite ? t('role_elite') + ' · ' : '') + t('role_' + e.role);
     this.set('hvm', role + lvl, () => (this.hMeta.textContent = `${t('arpg_lv_short', { n: lvl })} · ${role}`));
     const k = Math.max(0, e.hp / e.maxHp);
@@ -500,6 +506,9 @@ export class ArpgHud {
     this.tipT = 0.25;
     const rows = slotDetails(run, i, this.binds);
     clear(this.tip);
+    const ty = run.action.skill(i)?.type;
+    if (ty === 'hold' || ty === 'charge')
+      rows.splice(1, 0, h('div.sk-hold-note', ty === 'hold' ? L({ ru: '⚠ Зажмите клавишу: умение действует, пока она нажата', en: '⚠ Hold the key: the skill lasts while it is held' }) : L({ ru: '⚠ Зажмите клавишу, чтобы зарядить; отпустите для удара', en: '⚠ Hold the key to charge; release to strike' })));
     this.tip.append(...rows);
     const r = this.slots[i].root.getBoundingClientRect();
     const host = this.root.getBoundingClientRect();

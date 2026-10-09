@@ -161,8 +161,9 @@ export class Overlay {
     }
 
     // off-screen chest / boss arrows
-    for (const k of run.pickups.list) if (k.active && k.kind === 'chest') this.arrow(camera, k.x, k.z, '#ffd23d');
-    for (const b of run.bosses) if (b.e.active && b.e.boss === b) this.arrow(camera, b.e.x, b.e.z, '#ff4a5a');
+    const pl = run.player;
+    for (const k of run.pickups.list) if (k.active && k.kind === 'chest' && !run.terrain.blocksWalker(Math.floor(k.x), Math.floor(k.z))) this.arrow(camera, k.x, k.z, '#ffd23d', pl.x, pl.z);
+    for (const b of run.bosses) if (b.e.active && b.e.boss === b) this.arrow(camera, b.e.x, b.e.z, '#ff4a5a', pl.x, pl.z);
 
     // damage numbers
     for (let i = this.nums.length - 1; i >= 0; i--) {
@@ -204,15 +205,29 @@ export class Overlay {
     return v.x > -40 && v.x < this.w + 40 && v.y > -40 && v.y < this.h + 40;
   }
 
-  private arrow(camera: THREE.Camera, x: number, z: number, color: string) {
+  private arrow(camera: THREE.Camera, x: number, z: number, color: string, px: number, pz: number) {
+    // a far target can sit behind the camera, where projection flips it to the wrong side of the screen:
+    // aim at a point a short way from the hero in the target's direction instead
+    const dx = x - px;
+    const dz = z - pz;
+    const d = Math.hypot(dx, dz);
+    const m = 28;
     v.set(x, 0.5, z).project(camera);
+    if (v.z < 1) {
+      const tx = (v.x * 0.5 + 0.5) * this.w;
+      const ty = (-v.y * 0.5 + 0.5) * this.h;
+      if (tx > m && tx < this.w - m && ty > m && ty < this.h - m) return;
+    }
+    const k = d > 6 ? 6 / d : 1;
+    v.set(px, 0.5, pz).project(camera);
+    const hx = (v.x * 0.5 + 0.5) * this.w;
+    const hy = (-v.y * 0.5 + 0.5) * this.h;
+    v.set(px + dx * k, 0.5, pz + dz * k).project(camera);
     const sx = (v.x * 0.5 + 0.5) * this.w;
     const sy = (-v.y * 0.5 + 0.5) * this.h;
-    const m = 28;
-    if (sx > m && sx < this.w - m && sy > m && sy < this.h - m) return;
     const cx = this.w / 2;
     const cy = this.h / 2;
-    const a = Math.atan2(sy - cy, sx - cx);
+    const a = Math.atan2(sy - hy, sx - hx);
     const t = Math.min(Math.abs((cx - m) / Math.cos(a) || 1e9), Math.abs((cy - m - 40) / Math.sin(a) || 1e9));
     const ax = cx + Math.cos(a) * t;
     const ay = cy + Math.sin(a) * t;

@@ -70,15 +70,23 @@ export class Combat {
     if (info.curse > 0) e.curseT = Math.max(e.curseT, info.curse * st.duration);
     if (info.weaken > 0) e.weakenT = Math.max(e.weakenT, info.weaken * st.duration);
     if (info.el) run.action.onHit(e, info, dmg, crit);
-    // counterattack: the hero's hits break a mob's wind-up (always for common mobs, 80% for elites, never bosses)
-    if (info.el && e.atkT > 0 && !e.boss && e.hp > 0 && Math.random() < (e.elite ? 0.8 : 1)) {
+    // counterattack: the hero's hits break a mob's wind-up and keep it from starting a new attack for a moment
+    // (always for common mobs, 80% for elites, never bosses)
+    if (info.el && !e.boss && e.hp > 0 && Math.random() < (e.elite ? 0.8 : 1)) {
+      const winding = e.atkT > 0 || (e.state === 1 && e.role === 'assassin');
       if (e.atkZone) e.atkZone.active = false;
       e.atkZone = null;
       e.atkT = 0;
-      e.atkCd = Math.max(e.atkCd, 0.9);
-      if (e.state === 1 && e.role === 'assassin') e.state = 0;
-      run.stats.interrupts++;
-      run.fx.text(e.x, e.z, run.tr('act_interrupt'), 0xffd060);
+      e.atkCd = Math.max(e.atkCd, 1.1);
+      e.touchCd = Math.max(e.touchCd, 0.8);
+      // an aimed shot is dropped too
+      e.atkX = e.atkZ = 0;
+      e.cd = Math.max(e.cd, 1.1);
+      if (e.role === 'assassin' && e.state !== 0) e.state = 0;
+      if (winding) {
+        run.stats.interrupts++;
+        run.fx.text(e.x, e.z, run.tr('act_interrupt'), 0xffd060);
+      }
     }
     if (info.stag > 0 || info.launch || info.root > 0 || info.mark > 0) this.actionEffects(e, info);
     if (crit) run.stats.crits++;

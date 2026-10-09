@@ -1683,3 +1683,12 @@
     zoom: 1.15;
   }
 }
+
+/* press-and-hold skills: a small amber "hold" badge in the top-left corner of the slot */
+.arpg-hud .sk.hold { box-shadow: inset 0 0 0 2px rgba(255, 196, 64, 0.55); }
+.arpg-hud .sk-hold {
+  position: absolute; left: 1px; top: 1px; z-index: 3; min-width: 15px; height: 13px; padding: 0 2px;
+  font: 700 9px/13px var(--font-ui); color: #2a1a04; background: #ffc440; border: 1px solid #5a3a08;
+  text-align: center; pointer-events: none; letter-spacing: -1px;
+}
+.sk-hold-note { color: #ffc440; font-size: 12px; margin: 2px 0 4px; }

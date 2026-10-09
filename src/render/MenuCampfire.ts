@@ -278,21 +278,22 @@ export class MenuCampfire {
 
   /** Target place of a character: the active one in front of the fire, the rest by the bench and behind the fire. */
   private spot(id: string, members: CampMember[] = this.seats, activeId = this.active): [number, number, number] {
-    if (id === activeId) return [1.5, 2.1, -0.35];
+    // everyone stands behind the fire facing the camera (faces visible), turned a little toward the flames
+    const face = (x: number) => Math.atan2(-x, 7) * 0.6;
+    if (id === activeId) return [1.35, -1.45, face(1.35)];
     const rest = members.filter((m) => m.id !== activeId);
     const i = rest.findIndex((m) => m.id === id);
     if (i < 3) {
-      // in front of the bench, facing the fire
-      const x = -1.2 - i * 1.15;
-      const z = -2.1 - i * 0.2;
-      return [x, z, Math.atan2(-x, -z) * 0.8];
+      // in front of the bench (left, behind the fire)
+      const x = -0.9 - i * 1.2;
+      const z = -2.05 - i * 0.15;
+      return [x, z, face(x)];
     }
+    // the rest on an arc further back on the right
     const j = i - 3;
-    const n = rest.length - 3;
-    const a = n <= 1 ? 0.3 : -0.9 + (1.8 * j) / (n - 1);
-    const x = Math.sin(a) * 2.9;
-    const z = -Math.cos(a) * 2.9;
-    return [x, z, Math.atan2(-x, -z) * 0.75];
+    const x = 1.2 + (j % 3) * 1.15;
+    const z = -2.7 - Math.floor(j / 3) * 1.0;
+    return [x, z, face(x)];
   }
 
   /** Character id under a screen point (NDC), or null. */
