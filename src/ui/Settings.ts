@@ -5,6 +5,7 @@ import { QUALITY_PRESETS, SKILL_BINDS, defaultKeybinds, type BindAction, type Qu
 import { confirmBox, type MenuApi } from './Menus';
 import { dev } from '../dev/DevMode';
 import './classSelect.css';
+import './mcd.css';
 
 const RESOLUTIONS: [number, number][] = [
   [1280, 720],

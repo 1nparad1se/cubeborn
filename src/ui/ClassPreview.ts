@@ -8,6 +8,7 @@ import { SLOT_KEYS } from '../game/action/types';
 import type { DmgType } from '../game/types';
 import { CharacterViewer, type PreviewStep } from '../render/CharacterViewer';
 import './classSelect.css';
+import './mcd.css';
 
 /** Inline bilingual string (Russian first). */
 export const tr = (ru: string, en: string): string => L({ ru, en });

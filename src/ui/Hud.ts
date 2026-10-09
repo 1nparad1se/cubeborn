@@ -1,3 +1,5 @@
+import './classSelect.css';
+import './mcd.css';
 import type { Run } from '../game/Run';
 import type { BossController } from '../game/bosses/Boss';
 import { CAMPAIGN_WAVES, MODIFIERS, WAVE_TYPE_COLOR, WaveDirector } from '../game/Waves';

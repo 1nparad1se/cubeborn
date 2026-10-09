@@ -1,13 +1,22 @@
 import * as THREE from 'three';
 
-/** Diagonal (isometric-style) follow camera with trauma-based screen shake. */
+/**
+ * Minecraft Dungeons style follow camera: fixed diagonal yaw, pitched ~52 degrees down from a
+ * fair distance with a narrow lens, so the hero is small and cliff faces read. Trauma-based shake.
+ */
 export class CameraRig {
   readonly camera: THREE.PerspectiveCamera;
   private trauma = 0;
   private tx = 0;
   private tz = 0;
-  height = 20;
-  back = 13.5;
+  /** Downward pitch of the view (radians from horizontal). */
+  readonly pitch = (52 * Math.PI) / 180;
+  /** Camera distance to the target at zoom 1. */
+  readonly baseDist = 34;
+  /** Vertical field of view on wide screens (narrow lens for the near-orthographic MCD look). */
+  readonly baseFov = 30;
+  height = 34 * Math.sin((52 * Math.PI) / 180);
+  back = 34 * Math.cos((52 * Math.PI) / 180);
   /** Rotation of the view around the vertical axis: 45° gives the diagonal dungeon-crawler look. */
   readonly yaw = Math.PI / 4;
   /** Horizontal unit vector from the target toward the camera. */
@@ -24,14 +33,15 @@ export class CameraRig {
   private hit = new THREE.Vector3();
 
   constructor(aspect: number) {
-    this.camera = new THREE.PerspectiveCamera(36, aspect, 0.5, 200);
+    this.camera = new THREE.PerspectiveCamera(this.baseFov, aspect, 1, 240);
   }
 
   resize(w: number, h: number) {
     const aspect = w / h;
     this.camera.aspect = aspect;
     // keep at least ~20 world units visible horizontally on narrow screens
-    this.camera.fov = aspect < 1 ? 58 : aspect < 1.4 ? 44 : 36;
+    const f = this.baseFov;
+    this.camera.fov = aspect < 1 ? f * 1.55 : aspect < 1.4 ? f * 1.2 : f;
     this.camera.updateProjectionMatrix();
   }
 

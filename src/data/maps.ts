@@ -41,8 +41,8 @@ export const MAPS: MapDef[] = [
     palette: {
       sky: 0x9ec4b4, fog: 0x8fb39a, fogNear: 26, fogFar: 58, ambient: 0xd6ecff, ambientIntensity: 0.55,
       sun: 0xfff1d6, sunIntensity: 1.2, hemiGround: 0x5a6a34,
-      tiles: { grass: [0x5f9440, 0x669a44, 0x598c3c], grass2: [0x6ea24a, 0x76a850], dirt: [0x9a7048, 0x926a44], path: [0xa88456, 0x9e7c50], bog: [0x6a4a8a, 0x7a4f9a], water: [0x3a86c8, 0x3f8ed0] },
-      blocks: { trunk: [0x6e4c2c, 0x7a5532], leaves: [0x3f8a30, 0x4a9a36, 0x37802c, 0x7a4a9a], stone: [0x8e949c, 0x80868e], mushroom: [0xd04a3a, 0xf0e8d8], plank: [0xa87c4a, 0x9a7044] },
+      tiles: { grass: [0x65a040, 0x6ba544, 0x609a3d], grass2: [0x74ad4a, 0x7bb250], dirt: [0x8e6a46, 0x866442], path: [0xa08458, 0x987c52], bog: [0x6a4a8a, 0x7a4f9a], water: [0x3a86c8, 0x3f8ed0] },
+      blocks: { trunk: [0x6a4a2c, 0x76522f], leaves: [0x4f8a34, 0x5a9a3a, 0x467e2e, 0xc8862a], stone: [0x8e949c, 0x80868e], mushroom: [0xd04a3a, 0xf0e8d8], plank: [0xa87c4a, 0x9a7044], soil: [0x7c5a3e], cliff: [0x84868c] },
     },
     segments: pacing([
       { t: 0, pool: [['rot_zombie', 6], ['sporeling', 4]] },
@@ -111,7 +111,7 @@ export const MAPS: MapDef[] = [
       sky: 0x4a2414, fog: 0x5a2c18, fogNear: 22, fogFar: 50, ambient: 0xffc8a8, ambientIntensity: 0.85,
       sun: 0xffc896, sunIntensity: 1.25, hemiGround: 0x4a2214,
       tiles: { ash: [0x9a7666, 0x926e5e, 0xa27e6e], basalt: [0x7e7276, 0x867a7e], scorch: [0xb4643c, 0xaa5e38], lava: [0xff5a0a, 0xff7a1a], sulfur: [0xb8a83a, 0xa8983a] },
-      blocks: { obsidian: [0x2e2836, 0x383042, 0x322a3a], basalt: [0x524a4e, 0x5a5256], magma: [0xff6a1a], bone: [0xd8c8a8], crystal: [0xff8a3a] },
+      blocks: { obsidian: [0x2e2836, 0x383042, 0x322a3a], basalt: [0x524a4e, 0x5a5256], magma: [0xff6a1a], bone: [0xd8c8a8], crystal: [0xff8a3a], soil: [0x6a3c34], cliff: [0x3a3038] },
     },
     segments: pacing([
       { t: 0, pool: [['magma_slime', 4], ['magma_slimelet', 4]] },
@@ -134,7 +134,7 @@ export const MAPS: MapDef[] = [
       sky: 0xb4d0e4, fog: 0xc4dcee, fogNear: 22, fogFar: 52, ambient: 0xd4e8ff, ambientIntensity: 0.42,
       sun: 0xfff6ea, sunIntensity: 0.9, hemiGround: 0x7a8aa8,
       tiles: { snow: [0xe8f0f8, 0xdde8f2, 0xf2f6fa], snow2: [0xd0dce8, 0xc8d6e4], ice: [0x9fd4f0, 0xa8dcf4], rock: [0x7a828c, 0x727a84], water: [0x2a6a9a, 0x2f74a8], trail: [0x9aa8b8, 0x929fb0] },
-      blocks: { ice: [0x9fe0ff, 0xb0e8ff, 0x8ad4f8], snow: [0xf2f6fa, 0xe6eef6], pine: [0x2a4a3a, 0x30523f], trunk: [0x4a3424, 0x553b29], rock: [0x6a727c, 0x7a828c] },
+      blocks: { ice: [0x9fe0ff, 0xb0e8ff, 0x8ad4f8], snow: [0xf2f6fa, 0xe6eef6], pine: [0x2a4a3a, 0x30523f], trunk: [0x4a3424, 0x553b29], rock: [0x6a727c, 0x7a828c], soil: [0x5e6670], cliff: [0x747c88] },
     },
     segments: pacing([
       { t: 0, pool: [['frost_walker', 6], ['snow_slimelet', 3]] },
@@ -157,7 +157,7 @@ export const MAPS: MapDef[] = [
       sky: 0x6a5a9a, fog: 0x7a6aa0, fogNear: 24, fogFar: 56, ambient: 0xd8c8ff, ambientIntensity: 0.46,
       sun: 0xffe2b8, sunIntensity: 1.0, hemiGround: 0x5a4a6a,
       tiles: { sand: [0xd8b47a, 0xceaa72, 0xe0bc84], marble: [0xd8d4cc, 0xccc8c0], moss: [0x5a7a4a, 0x52724a], rune: [0x6a4aff, 0x7a5aff], void: [0x1a0a3a, 0x220e48] },
-      blocks: { marble: [0xe0dcd4, 0xd4d0c8, 0xccc6bc], sandstone: [0xb89a6a, 0xae9060], gold: [0xe8c050], vine: [0x4a7a3a], crystal: [0x9a7aff] },
+      blocks: { marble: [0xe0dcd4, 0xd4d0c8, 0xccc6bc], sandstone: [0xb89a6a, 0xae9060], gold: [0xe8c050], vine: [0x4a7a3a], crystal: [0x9a7aff], soil: [0xc0a070], cliff: [0xa08458] },
     },
     segments: pacing([
       { t: 0, pool: [['ruin_guard', 6], ['gear_spider', 2]] },

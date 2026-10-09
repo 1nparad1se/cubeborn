@@ -2,9 +2,12 @@ import type { MapDef } from '../data/types';
 import type { RoofInst, TreeInst } from '../game/Terrain';
 import { hash2 } from '../core/Rng';
 
-/** Atlas tiles of the Minecraft-style block texture (see makeBlockAtlas). */
-export const TILE = { smooth: 0, leaves: 1, bark: 2, planks: 3, cobble: 4, brick: 5, shingle: 6, logTop: 7, birch: 8 } as const;
-export const TILE_COUNT = 9;
+/** Atlas tiles of the 16px block texture (see makeBlockAtlas). */
+export const TILE = {
+  smooth: 0, leaves: 1, bark: 2, planks: 3, cobble: 4, brick: 5, shingle: 6, logTop: 7, birch: 8,
+  sandstone: 9, stoneBricks: 10, ice: 11, obsidian: 12, snow: 13, pillar: 14, basalt: 15,
+} as const;
+export const TILE_COUNT = 16;
 
 /** Which pixel texture a terrain material uses. */
 export function tileOf(mat: string): number {
@@ -13,7 +16,14 @@ export function tileOf(mat: string): number {
   if (/plank|coffin/.test(mat)) return TILE.planks;
   if (/brick/.test(mat)) return TILE.brick;
   if (/roof/.test(mat)) return TILE.shingle;
-  if (/stone|rock|basalt|^wall|pillar|obsidian|cobble/.test(mat)) return TILE.cobble;
+  if (/^wall/.test(mat)) return TILE.stoneBricks;
+  if (/pillar|marble|bone/.test(mat)) return TILE.pillar;
+  if (/sandstone/.test(mat)) return TILE.sandstone;
+  if (/obsidian/.test(mat)) return TILE.obsidian;
+  if (/basalt/.test(mat)) return TILE.basalt;
+  if (/^ice/.test(mat)) return TILE.ice;
+  if (/^snow/.test(mat)) return TILE.snow;
+  if (/stone|rock|cobble/.test(mat)) return TILE.cobble;
   return TILE.smooth;
 }
 
@@ -36,8 +46,32 @@ function shade(c: number, k: number): number {
   return (r << 16) | (g << 8) | b;
 }
 
-/** Big, hand-built-looking Minecraft trees made of unit blocks. */
+/** Blocky trees; leaf blocks buried inside the canopy on all six sides are dropped. */
 export function treeVoxels(tr: TreeInst, map: MapDef, out: Vox[]) {
+  const list: Vox[] = [];
+  treeVoxelsRaw(tr, map, list);
+  const cx = tr.x + 0.5;
+  const cz = tr.z + 0.5;
+  const key = (x: number, y: number, z: number) => ((y + 64) * 512 + (x + 256)) * 512 + (z + 256);
+  const grid = (v: Vox) => [Math.round((v.x - cx) / v.sx), Math.round(v.y / v.sy), Math.round((v.z - cz) / v.sz)];
+  const filled = new Set<number>();
+  for (const v of list) if (v.sx === 0.5) filled.add(key(...(grid(v) as [number, number, number])));
+  const snowy = tr.kind === 'pine' && !!map.palette.blocks.snow;
+  for (const v of list) {
+    if (v.sx === 0.5) {
+      const [x, y, z] = grid(v);
+      if (filled.has(key(x + 1, y, z)) && filled.has(key(x - 1, y, z)) && filled.has(key(x, y + 1, z)) && filled.has(key(x, y - 1, z)) && filled.has(key(x, y, z + 1)) && filled.has(key(x, y, z - 1))) continue;
+      // snow settles on the exposed tops of spruce needles
+      if (snowy && v.tile === TILE.leaves && !filled.has(key(x, y + 1, z)) && hash2(tr.x * 13 + x, tr.z * 7 + z, y) < 0.75) {
+        out.push({ ...v, color: 0xeef3f8, tile: TILE.snow });
+        continue;
+      }
+    }
+    out.push(v);
+  }
+}
+
+function treeVoxelsRaw(tr: TreeInst, map: MapDef, out: Vox[]) {
   const pal = map.palette.blocks;
   const r = (a: number) => hash2(tr.x, tr.z, a);
   const cx = tr.x + 0.5;
@@ -67,128 +101,87 @@ export function treeVoxels(tr: TreeInst, map: MapDef, out: Vox[]) {
         }
     return;
   }
-  // Trees from the owner's reference sheet, built from half-size blocks so they read as
-  // detailed Minecraft builds while staying small on screen.
-  const V = 0.36;
+  // Blocky trees built from half-unit blocks (the ground block size): leaf-block canopies
+  // over one-block trunks, kept moderate in size.
+  const V = 0.5;
   const used = new Set<number>();
   const tv = (x: number, y: number, z: number, color: number, tile: number) => {
     const k = ((y + 64) * 256 + (x + 128)) * 256 + (z + 128);
     if (used.has(k)) return;
     used.add(k);
-    out.push({ x: cx + (x - 0.5) * V, y: y * V, z: cz + (z - 0.5) * V, sx: V, sy: V, sz: V, color, tile });
+    out.push({ x: cx + x * V, y: y * V, z: cz + z * V, sx: V, sy: V, sz: V, color, tile });
   };
   const h3 = (x: number, y: number, z: number, a: number) => hash2(tr.x * 31 + x * 7 + z, tr.z * 17 + y * 13 + z * 3, a);
-  const leaf = (x: number, y: number, z: number, base: number) => tv(x, y, z, shade(base, 0.86 + h3(x, y, z, 1) * 0.2), TILE.leaves);
-  const wood = (x: number, y: number, z: number, base: number) => tv(x, y, z, shade(base, 0.9 + h3(x, y, z, 2) * 0.14), TILE.bark);
-  /** A flat, ragged leaf pad: the signature canopy shape of the reference trees. */
-  const pad = (px: number, py: number, pz: number, rad: number, thick: number, base: number, sparse = 0) => {
-    for (let l = 0; l < thick; l++) {
-      const rr = rad - l * 1.2;
-      const n = Math.ceil(rr);
-      for (let dx = -n; dx <= n; dx++)
-        for (let dz = -n; dz <= n; dz++) {
-          const d = Math.hypot(dx, dz) / Math.max(0.5, rr);
-          if (d > 1.05 - h3(px + dx, py + l, pz + dz, 3) * 0.3) continue;
-          if (sparse && h3(px + dx, py + l, pz + dz, 4) < sparse) continue;
-          leaf(px + dx, py + l, pz + dz, base);
-          // leaves hanging off the rim
-          if (l === 0 && d > 0.6) {
-            if (h3(px + dx, py, pz + dz, 5) < 0.28) leaf(px + dx, py - 1, pz + dz, base);
-            if (h3(px + dx, py, pz + dz, 6) < 0.08) leaf(px + dx, py - 2, pz + dz, base);
-          }
+  const leaf = (x: number, y: number, z: number, base: number) => tv(x, y, z, shade(base, 0.9 + h3(x, y, z, 1) * 0.16), TILE.leaves);
+  const wood = (x: number, y: number, z: number, base: number, tile: number = TILE.bark) => tv(x, y, z, shade(base, 0.92 + h3(x, y, z, 2) * 0.1), tile);
+  /** One square leaf layer of radius r; corners are randomly trimmed. */
+  const layer = (y: number, r: number, base: number, ox = 0, oz = 0, trim = 0.5) => {
+    for (let dx = -r; dx <= r; dx++)
+      for (let dz = -r; dz <= r; dz++) {
+        const corner = Math.abs(dx) === r && Math.abs(dz) === r;
+        if (corner && (r === 1 || h3(dx + ox, y, dz + oz, 3) < trim)) continue;
+        leaf(ox + dx, y, oz + dz, base);
+      }
+  };
+  /** Rounded leaf blob (ellipsoid with a ragged rim). */
+  const blob = (ox: number, oy: number, oz: number, rx: number, ry: number, base: number) => {
+    const R = Math.ceil(rx);
+    const RY = Math.ceil(ry);
+    for (let dy = -RY; dy <= RY; dy++)
+      for (let dx = -R; dx <= R; dx++)
+        for (let dz = -R; dz <= R; dz++) {
+          const d = (dx * dx + dz * dz) / (rx * rx) + (dy * dy) / (ry * ry);
+          if (d > 1 + (h3(dx + ox, dy + oy, dz + oz, 4) - 0.5) * 0.45) continue;
+          leaf(ox + dx, oy + dy, oz + dz, base);
         }
-    }
-  };
-  const trunk2 = (x: number, y: number, z: number, base: number, w = 2) => {
-    for (let i = 0; i < w; i++) for (let j = 0; j < w; j++) wood(x + i - (w > 2 ? 1 : 0), y, z + j - (w > 2 ? 1 : 0), base);
-  };
-  const roots = (base: number, w: number) => {
-    for (const [dx, dz] of [[-1, 0], [w, 0], [0, -1], [0, w], [w, 1], [-1, 1]]) if (h3(dx, 0, dz, 7) < 0.6) wood(dx, 0, dz, base);
   };
   if (tr.kind === 'pine') {
-    // spruce: straight trunk, square-ish pads shrinking to a spike
-    const T = 6 + tr.h;
-    for (let y = 0; y < T; y++) trunk2(0, y, 0, trunkC);
-    const tiers = 5;
-    for (let i = 0; i < tiers; i++) {
-      const y = 3 + Math.round((i * (T - 3)) / tiers);
-      pad(0, y, 0, 4.6 - i * 0.8, 2, leafC);
+    // spruce: straight trunk with alternating wide and narrow needle layers up to a point
+    const T = 7 + tr.h;
+    for (let y = 0; y < T; y++) wood(0, y, 0, trunkC);
+    for (let y = T; y >= 2; y--) {
+      const k = T - y;
+      // narrow, wide, narrow, wider... like a spruce silhouette
+      const rad = k === 0 ? 0 : k % 2 === 1 ? Math.min(3, 1 + (k >> 2)) : Math.max(1, Math.min(3, (k >> 2)));
+      if (rad === 0) leaf(0, y, 0, leafC);
+      else layer(y, rad, leafC, 0, 0, 0.7);
     }
-    for (let y = T; y < T + 3; y++) leaf(0, y, 0, leafC);
-    if (pal.snow) for (let i = 0; i < 14; i++) tv(Math.round((r(30 + i) - 0.5) * 6), 4 + Math.round(r(50 + i) * (T - 3)), Math.round((r(70 + i) - 0.5) * 6), 0xeef3f8, TILE.leaves);
+    leaf(0, T + 1, 0, leafC);
     return;
   }
-  const variant = Math.floor(r(11) * 6);
-  if (variant === 0) {
-    // twisted oak: a trunk that zig-zags up into one wide flat crown
+  const variant = r(11);
+  if (variant < 0.42) {
+    // classic oak: 5x5 double layer, 3x3 cap and a plus-shaped top
+    const T = 4 + (tr.h >> 1) + Math.floor(r(12) * 2);
+    for (let y = 0; y < T; y++) wood(0, y, 0, trunkC);
+    layer(T - 2, 2, leafC);
+    layer(T - 1, 2, leafC);
+    layer(T, 1, leafC);
+    layer(T + 1, 1, leafC, 0, 0, 1);
+  } else if (variant < 0.66) {
+    // birch: white trunk, a slimmer and lighter canopy
+    const birchLeaf = shade(leafC, 1.12);
+    const T = 5 + Math.floor(r(13) * 3);
+    for (let y = 0; y < T; y++) wood(0, y, 0, 0xf2efe6, TILE.birch);
+    layer(T - 2, 2, birchLeaf, 0, 0, 0.75);
+    layer(T - 1, 2, birchLeaf, 0, 0, 0.75);
+    layer(T, 1, birchLeaf);
+    layer(T + 1, 1, birchLeaf, 0, 0, 1);
+  } else if (variant < 0.9) {
+    // round oak: taller trunk with a side branch and a rounded leaf blob
     const T = 5 + (tr.h >> 1);
-    let x = 0;
-    roots(trunkC, 2);
-    for (let y = 0; y < T; y++) {
-      if (y > 2 && y % 3 === 0) x += y % 6 === 0 ? -1 : 1;
-      trunk2(x, y, 0, trunkC);
-    }
-    pad(x, T, 0, 5.5, 2, leafC);
-    pad(x - 3, T + 1, 2, 2.6, 2, leafC);
-    pad(x + 3, T + 1, -2, 2.6, 2, leafC);
-  } else if (variant === 1) {
-    // birch: white spotted trunk forking into a Y with airy clumps
-    const bark = (x: number, y: number, z: number) => tv(x, y, z, shade(0xf2efe6, 0.96 + h3(x, y, z, 9) * 0.06), TILE.birch);
-    const birchLeaf = 0x86b25a;
-    const T = 3 + (tr.h >> 1);
-    for (let y = 0; y < T; y++) for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) bark(i, y, j);
-    const tips: [number, number][] = [[-3, 0], [3, 1], [0, -3]];
-    for (const [ex, ez] of tips) {
-      for (let k = 1; k <= 3; k++) bark(Math.round((ex * k) / 3), T + k, Math.round((ez * k) / 3));
-      pad(ex, T + 4, ez, 2.8, 2, birchLeaf, 0.15);
-    }
-    pad(0, T + 6, 0, 3.4, 2, birchLeaf, 0.15);
-  } else if (variant === 2) {
-    // tiered: a tall trunk with leaf pads stacked on short side branches
-    const T = 9 + (tr.h >> 1);
-    for (let y = 0; y < T; y++) trunk2(0, y, 0, trunkC);
-    roots(trunkC, 2);
-    const tiers: [number, number, number][] = [[3, -3, 0], [6, 3, 1]];
-    for (const [y, bx, bz] of tiers) {
-      for (let k = 1; k <= Math.abs(bx); k++) wood(Math.sign(bx) * k + (bx > 0 ? 1 : 0), y, bz, trunkC);
-      pad(bx + (bx > 0 ? 1 : 0), y + 1, bz, 3.4, 2, leafC);
-    }
-    pad(0, T, 0, 4.6, 2, leafC);
-  } else if (variant === 3) {
-    // gnarled dark oak: thick grey trunk splitting into crooked limbs
-    const dark = 0x4c4c56;
-    const T = 4 + (tr.h >> 1);
-    roots(dark, 2);
-    for (let y = 0; y < T; y++) trunk2(0, y, 0, dark, y < 3 ? 3 : 2);
-    const limbs: [number, number][] = [[-5, 1], [5, -1], [1, 4]];
-    for (const [ex, ez] of limbs) {
-      let y = T - 2;
-      for (let k = 1; k <= 5; k++) {
-        const x = Math.round((ex * k) / 5);
-        const z = Math.round((ez * k) / 5);
-        wood(x, y, z, dark);
-        wood(x, y + 1, z, dark);
-        if (k % 2 === 0) y++;
-      }
-      pad(ex, y + 2, ez, 3.2, 2, leafC);
-    }
-    pad(0, T + 2, 0, 4.4, 2, leafC);
+    for (let y = 0; y < T; y++) wood(0, y, 0, trunkC);
+    const bx = r(14) < 0.5 ? -1 : 1;
+    wood(bx, T - 2, 0, trunkC);
+    blob(0, T + 1, 0, 3.2, 2.3, leafC);
+    blob(bx * 2, T, r(15) < 0.5 ? 1 : -1, 1.8, 1.4, leafC);
   } else {
-    // round oak: thick trunk with roots, a dome crown and a red shelf mushroom
-    const T = 3 + (tr.h >> 1);
-    roots(trunkC, 3);
-    for (let y = 0; y < T; y++) trunk2(0, y, 0, trunkC, 3);
-    if (variant === 5) tv(2, 3, 0, 0xc8322c, TILE.smooth);
-    const R = 5.4;
-    const Ry = 3.6;
-    const cy = T + 2;
-    for (let dy = -4; dy <= 4; dy++)
-      for (let dx = -6; dx <= 6; dx++)
-        for (let dz = -6; dz <= 6; dz++) {
-          const d = (dx * dx + dz * dz) / (R * R) + (dy * dy) / (Ry * Ry);
-          if (d > 1 - (h3(dx, dy, dz, 10) - 0.4) * 0.3 || d < 0.45) continue;
-          leaf(dx, cy + dy, dz, leafC);
-        }
+    // old oak: 2x2 trunk with roots and a wide, flat crown
+    const T = 6 + (tr.h >> 1);
+    for (let y = 0; y < T; y++) for (const [i, j] of [[0, 0], [1, 0], [0, 1], [1, 1]]) wood(i, y, j, trunkC);
+    for (const [dx, dz] of [[-1, 0], [2, 1], [0, 2], [1, -1]]) if (h3(dx, 0, dz, 7) < 0.6) wood(dx, 0, dz, trunkC);
+    blob(0, T, 0, 4.2, 1.6, leafC);
+    blob(1, T + 2, 1, 2.6, 1.2, leafC);
   }
 }
 

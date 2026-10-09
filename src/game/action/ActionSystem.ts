@@ -1077,7 +1077,7 @@ export class ActionSystem {
     if (ev.shake) run.fx.shake(ev.shake);
     if (ev.sfx && k === 0) run.fx.sound(SFX_ALIAS[ev.sfx] ?? ev.sfx, 0.55);
     else if (k === 0 && hits > 0) run.fx.sound(EL_SFX[this.elOf(cur, ev.el)], 0.3);
-    if (ev.fx === 'smash' || ev.fx === 'shock' || ev.fx === 'holy' || ev.fx === 'fire') run.fx.light(ox, oz, f.color, 2.2, 5, 0.25);
+    if (ev.fx === 'smash' || ev.fx === 'shock' || ev.fx === 'holy' || ev.fx === 'fire') run.fx.light(ox, oz, f.color, 1.5, 5, 0.25);
   }
 
   private colorOf(cur: Playing, el?: DmgType): number {
@@ -1580,7 +1580,7 @@ export class ActionSystem {
         if (ev.sound) run.fx.sound(ev.sound, 0.6);
         break;
       case 'light':
-        run.fx.light(p.x, p.z, color, 4, (ev.r ?? 6) * 2, 0.8);
+        run.fx.light(p.x, p.z, color, 2, (ev.r ?? 6) * 2, 0.8);
         {
           const f = this.fx.add('flash', p.x, p.z, 0.7, color);
           f.r = ev.r ?? 6;

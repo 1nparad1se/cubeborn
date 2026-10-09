@@ -1,176 +1,210 @@
-import { DEFAULT_PROPS, type HeroRigDef } from '../../render/rig/HeroRig';
-import type { RigPart, V3 } from '../../render/rig/shapes';
-import { arms, head, legs, P, ring, sym, torso } from '../heroRigs/kit';
-import { curve, leaf, motes, seg, softFace, symX } from './kitRanged';
+import type { HeroRigDef } from '../../render/rig/HeroRig';
+import type { RigPart } from '../../render/rig/shapes';
+import { shade, type FaceId, type Pix } from '../../render/rig/skins';
+import { backCols, cube, GRIP, humanoid, isSide, MC_POS_SCALE, MC_SCALE, mcProps, outer, paintFace, pixelItem, tex, type Side } from './mcKit';
 
 /**
- * Summoner: a nature-spirit caller in layered white and teal robes trimmed with gold. Antler
- * crown with leaves and glowing tips, long chestnut hair on a spring, a floor-length skirt with
- * flowing front/back panels, sash ribbons, and a living-wood staff whose forked head cradles a
- * spirit crystal. Spirit wisps orbit her on the accB spin bone.
+ * Summoner, Minecraft Dungeons style: a druid who calls nature spirits. Long chestnut hair under
+ * an antler crown with leaves and glowing tips, a white robe with teal panels and gold trim, a
+ * leaf sash, a long split skirt over soft boots, and a living-wood staff whose forked head
+ * cradles a glowing spirit crystal. Spirit wisps orbit her on the accB spin bone.
  */
 export function summonerRig(): HeroRigDef {
-  const pr = { ...DEFAULT_PROPS, thigh: 3.4, shin: 3.3, foot: 1.2, hipX: 1.25, spine: 1.6, shoulderX: 3.15, shoulderY: 3.4, upperArm: 2.8, foreArm: 2.6, neck: 4.0, depth: 3.0 };
-  const white = 0xeef0e6;
-  const cream = 0xd6d8c4;
-  const teal = 0x23847c;
-  const tealD = 0x165a56;
-  const tealL = 0x4cb4a4;
-  const gold = 0xe2b452;
-  const goldD = 0xa87c30;
-  const skin = 0xf0caa6;
-  const hair = 0x7a3c24;
-  const hairL = 0x9c5232;
-  const antler = 0xe6d8b8;
-  const wood = 0x6a4a2c;
-  const woodL = 0x8c6a40;
-  const leafG = 0x5cba62;
-  const leafD = 0x3a8a48;
-  const spirit = 0x8affe0;
-  const spirit2 = 0xc8fff0;
+  const pr = mcProps(true);
+  const skin = 0xeec2a0;
+  const hair = 0x8a4a26;
+  const hairD = 0x6a3418;
+  const robe = 0xf0ece0;
+  const robeD = 0xcfc8b6;
+  const teal = 0x2a9a8a;
+  const tealD = 0x1c6e64;
+  const tealL = 0x5ad0b8;
+  const gold = 0xe8bc4a;
+  const leaf = 0x5aa83a;
+  const leafD = 0x3a7a2a;
+  const wood = 0x7a5030;
+  const woodL = 0xa0703e;
+  const woodD = 0x4e321c;
+  const spirit = 0x7affd8;
+  const antler = 0xd8c8a4;
 
-  // antler: main beam and tines on the left (mirrored)
-  const beam: V3[] = [[1.9, 5.5, 0.1], [2.75, 6.9, -0.25], [3.2, 8.4, -0.55], [3.05, 9.8, -0.6], [2.6, 10.9, -0.4]];
-  const staffHead = 10.6;
+  const head = (f: FaceId, g: Pix) => {
+    g.fill(skin, 0.03);
+    if (f === 'T') {
+      g.fill(hair, 0.1);
+      return;
+    }
+    if (f === 'D') return;
+    if (f === 'F') {
+      paintFace(g, { skin, eye: 0x2a9a6a, white: 0xf6f4ee, brow: hairD, nose: false, mouth: 0xc06a62 });
+      // centre-parted hair framing the face, green leaf paint on the cheeks
+      g.nrect(0, 0, 8, 2, hair, 0.1).set(3, 1, skin).set(4, 1, skin);
+      g.nrect(0, 2, 1, 6, hair, 0.1).nrect(7, 2, 1, 6, hair, 0.1).set(1, 2, hair).set(6, 2, hair);
+      g.set(1, 5, leaf).set(6, 5, leaf);
+    } else if (f === 'B') g.fill(hair, 0.1);
+    else {
+      g.fill(hair, 0.1);
+      const [a] = backCols(f, 8, 8);
+      g.nrect(f === 'L' ? 1 : 3, 3, 4, 3, skin, 0.03);
+      void a;
+    }
+  };
+
+  const body = (f: FaceId, g: Pix) => {
+    g.fill(robe, 0.05);
+    if (!isSide(f)) return;
+    if (f === 'F') {
+      // teal panel with gold trim, a leaf brooch, and long hair falling on the shoulders
+      g.nrect(2, 2, 4, 10, teal, 0.08).vline(2, gold, 2, 12).vline(5, gold, 2, 12);
+      g.rect(3, 0, 2, 2, skin).set(3, 1, shade(skin, 0.9));
+      g.rect(3, 3, 2, 2, leaf).set(4, 3, leafD);
+      g.nrect(0, 0, 1, 4, hair, 0.1).nrect(7, 0, 1, 4, hair, 0.1);
+    } else if (f === 'B') {
+      g.nrect(1, 0, 6, 5, hair, 0.1).set(1, 5, hair).set(3, 5, hairD).set(5, 5, hair);
+    }
+    // leaf sash
+    g.nrect(0, 7, g.w, 1, leafD, 0.08);
+    for (let x = 0; x < g.w; x += 2) g.set(x, 7, leaf);
+    if (f === 'F') g.set(3, 7, gold).set(4, 7, gold);
+  };
+
+  const arm = (side: Side) => (f: FaceId, g: Pix) => {
+    g.fill(robe, 0.05);
+    if (f === 'T') return;
+    if (f === 'D') {
+      g.fill(skin);
+      return;
+    }
+    // wide sleeve with a teal and gold cuff, bare hands
+    g.hline(5, robeD);
+    g.nrect(0, 7, g.w, 2, teal, 0.08).hline(9, gold);
+    g.nrect(0, 10, g.w, 2, skin, 0.03);
+    if (f === outer(side)) g.set(1, 3, tealL);
+  };
+
+  const leg = (side: Side) => (f: FaceId, g: Pix) => {
+    g.fill(robeD, 0.06);
+    if (f === 'D') {
+      g.fill(woodD);
+      return;
+    }
+    if (f === 'T') return;
+    g.nrect(0, 8, 4, 4, 0x8a6a46, 0.08).hline(8, leafD);
+    void side;
+  };
+
+  // ---------------------------------------------------------------- skirt panels, crown, hair
+  const skirt = (n: string, front: boolean) =>
+    tex(n, [9, 9, 1], (f, g) => {
+      g.fill(robe, 0.05);
+      if (!isSide(f)) return;
+      if (front && f === 'F') {
+        g.nrect(2, 0, 5, 9, teal, 0.08).vline(2, gold).vline(6, gold);
+        g.set(4, 3, leaf).set(4, 6, leaf).set(3, 5, leafD).set(5, 2, leafD);
+      }
+      g.hline(8, gold).hline(7, tealD);
+    });
+  const skirtSide = tex('sm.skirtSide', [1, 8, 5], (f, g) => {
+    g.fill(robe, 0.05);
+    if (isSide(f)) g.hline(7, gold).hline(6, tealD);
+  });
+  const hairBack = tex('sm.hair', [8, 9, 1], (f, g) => {
+    g.fill(hair, 0.12);
+    for (let x = 1; x < 8; x += 2) g.set(x, 2 + (x % 3), hairD);
+    g.set(0, 8, -1).set(3, 8, -1).set(7, 8, -1).set(7, 7, -1);
+  });
+  const ant = (n: string, s: [number, number, number]) => tex(n, s, (f, g) => g.fill(antler, 0.08).hline(g.h - 1, shade(antler, 0.82)));
+  const antA = ant('sm.antA', [1, 3, 1]);
+  const antB = ant('sm.antB', [1, 1, 3]);
+  const leafBox = tex('sm.leaf', [2, 1, 2], (f, g) => g.fill(leaf, 0.12));
+  const tipGlow = tex('sm.tip', [1, 1, 1], (f, g) => g.fill(spirit, 0));
+  const wisp = tex('sm.wisp', [2, 2, 2], (f, g) => g.fill(spirit, 0.06).set(0, 0, 0xe8fff8));
+  const wisp2 = tex('sm.wisp2', [1, 1, 1], (f, g) => g.fill(tealL, 0));
 
   const parts: RigPart[] = [
-    // ---- legs (mostly under the skirt): pale leggings and soft gold-laced slippers
-    ...legs(pr, { pants: cream, boots: tealD, thighW: 1.9, shinW: 1.7, cuff: 0.9, cuffColor: gold, sole: 0x2a3a34 }),
-
-    // ---- torso: white blouse, teal corset with gold lacing, gem brooch
-    ...torso(pr, { shirt: white, pants: teal, belt: gold, chestW: 4.5, flare: 1.15, chestD: 3.0, chestH: 3.8, waistW: 3.7 }),
-    P('spine', [0, 0.65, 0], [3.95, 1.9, 2.95], teal, { s: 'rbox', t: [1.06, 1.05], bv: [0.6, 0] }),
-    P('chest', [0, 0.9, 0], [4.4, 1.9, 3.1], teal, { s: 'rbox', t: [1.08, 1.04], bv: [0.7, 0.2] }),
-    P('chest', [0, 1.75, 1.45], [2.4, 0.25, 0.3], gold, { flat: true }),
-    ...[0.3, 0.9, 1.5].map((y) => P('chest', [0, y - 0.6, 1.6], [0.9, 0.16, 0.14], gold, { flat: true })),
-    P('spine', [0, 0.5, 1.55], [0.2, 1.6, 0.12], gold, { flat: true }),
-    P('chest', [0, 2.7, 1.6], [1.0, 1.25, 0.4], spirit, { s: 'gem', g: true }),
-    ...sym([seg('chest', [0.45, 3.5, 1.62], [0.7, 2.1, 1.62], [0.3, 0.14], gold, { flat: true })]),
-    ...sym([seg('chest', [0.7, 2.1, 1.62], [1.4, 1.85, 1.62], [0.3, 0.14], gold, { flat: true })]),
-    // layered shawl over the shoulders: teal mantle, gold edge, leaf pauldrons
-    P('chest', [0, 3.5, -0.15], [6.3, 1.25, 3.7], teal, { s: 'rbox', t: [0.74, 0.86], bv: [1.0, 0.45] }),
-    P('chest', [0, 2.9, -0.15], [6.35, 0.22, 3.75], gold, { flat: true }),
-    P('chest', [0, 4.05, -0.45], [3.6, 1.3, 2.9], white, { s: 'rbox', t: [0.95, 0.95], bv: [0.6, 0.3] }),
-    P('chest', [0, 4.75, -1.15], [3.6, 1.4, 0.4], white, { t: [1.2, 1], sh: [0, -0.3] }),
-    P('chest', [0, 5.42, -1.33], [4.3, 0.18, 0.45], gold, { flat: true }),
-    ...sym([
-      P('armL', [0.45, 0.25, 0], [2.0, 0.55, 2.6], leafG, { s: 'gem', r: [0, 0, -28] }),
-      P('armL', [0.75, -0.25, 0.1], [1.8, 0.5, 2.2], leafD, { s: 'gem', r: [0, 0, -40] }),
-      P('armL', [0.2, 0.55, 0], [1.2, 0.5, 1.6], gold, { s: 'gem', r: [0, 0, -20] }),
-    ]),
-
-    // ---- long robe: bell skirt with layered hem, front and back panels that follow the legs
-    P('hips', [0, -2.25, 0], [5.4, 6.2, 4.3], white, { s: 'rbox', t: [0.68, 0.68], bv: [1.3, 0] }),
-    P('hips', [0, -5.2, 0], [5.5, 0.32, 4.4], gold, { flat: true }),
-    P('hips', [0, -1.0, 0], [4.9, 3.5, 3.9], teal, { s: 'rbox', t: [0.78, 0.78], bv: [1.1, 0] }),
-    P('hips', [0, -2.72, 0], [4.95, 0.22, 3.95], gold, { flat: true }),
-    ...ring('hips', [0, -3.0, 0], 2.25, 8, [1.0, 0.7, 0.3], teal, { s: 'gem', flat: true }),
-    P('hips', [0, 1.05, 1.62], [1.2, 1.0, 0.3], gold, { s: 'rbox', bv: [0.3, 0.2] }),
-    P('hips', [0, 1.05, 1.82], [0.55, 0.65, 0.2], spirit, { s: 'gem', g: true }),
-    P('skirtF', [0, -3.75, 0.22], [2.6, 7.3, 0.36], white, { t: [0.75, 1] }),
-    P('skirtF', [0, -3.75, 0.44], [0.9, 7.1, 0.1], teal, { flat: true, t: [0.7, 1] }),
-    ...[-1.6, -3.6, -5.6].flatMap((y) => leaf('skirtF', [0, y, 0.52], 0.95, [0, 0, 0], gold)),
-    P('skirtF', [0, -7.35, 0.22], [2.7, 0.3, 0.42], gold, { flat: true }),
-    P('skirtB', [0, -3.9, -0.25], [3.9, 7.6, 0.4], teal, { t: [0.72, 1] }),
-    P('skirtB', [0, -7.6, -0.25], [4.0, 0.3, 0.46], gold, { flat: true }),
-    ...sym([P('skirtB', [1.1, -7.95, -0.25], [1.2, 0.6, 0.38], teal, { t: [1, 1] })]),
-    // sash ribbons at the back (cape springs)
-    P('hips', [0, 1.1, -1.75], [1.6, 0.9, 0.6], gold, { s: 'gem', r: [0, 0, 90] }),
-    ...sym([P('hips', [0.85, 1.1, -1.7], [1.1, 0.8, 0.4], tealL, { s: 'gem', r: [0, 0, 90] })]),
-    seg('capeA', [0.3, 0, 0], [0.9, -4.4, 0], [0.75, 0.16], tealL, { flat: true }),
-    seg('capeA', [-0.3, 0, 0], [-0.8, -3.9, 0], [0.75, 0.16], gold, { flat: true }),
-    P('capeB', [0.15, -1.2, 0], [0.7, 2.4, 0.16], tealL, { flat: true }),
-
-    // ---- arms: white sleeves, wide teal-lined bell cuffs, gold armlets and bracelets
-    ...arms(pr, { sleeve: white, skin, fore: white, upperW: 1.5, foreW: 1.45, shoulderSize: 2.0 }),
-    ...sym([
-      P('armL', [0, -1.7, 0], [1.68, 0.3, 1.7], gold, { flat: true }),
-      P('foreL', [0, -1.9, 0.05], [2.55, 2.0, 2.55], white, { s: 'rbox', t: [0.6, 0.6], bv: [0.5, 0] }),
-      P('foreL', [0, -2.95, 0.05], [2.6, 0.24, 2.6], gold, { flat: true }),
-      P('foreL', [0, -2.9, 0.05], [2.2, 0.2, 2.2], tealD, { flat: true }),
-      P('handL', [0, -0.15, 0.05], [1.5, 0.28, 1.65], gold, { flat: true }),
-    ]),
-
-    // ---- head: soft face, glowing spirit mark, long chestnut hair
-    ...head({ skin, eyes: 0x1f8a70, brows: hair, size: [5.4, 5.2, 5.1], mouth: 0xc06a62, noEars: true }),
-    ...softFace(skin, 0x3a1c14, 0xc8665e, 5.1),
-    P('head', [0, 4.15, 2.6], [0.5, 0.75, 0.12], spirit, { s: 'gem', g: true }),
-    ...sym([P('head', [2.25, 2.6, 2.58], [0.32, 0.32, 0.1], tealL, { flat: true })]),
-    P('head', [0.6, 5.3, 2.3], [4.4, 1.15, 0.85], hair, { s: 'rbox', bv: [0.35, 0.4, 0.3], r: [0, 0, -8] }),
-    P('head', [-1.7, 4.8, 2.4], [1.4, 1.3, 0.7], hairL, { r: [0, 0, 20] }),
-    ...sym([
-      P('head', [2.65, 3.4, 0.6], [0.75, 4.6, 3.6], hair, { s: 'rbox', bv: [0.3, 0.2, 0.3] }),
-      P('head', [2.45, 0.1, 1.55], [0.85, 4.2, 1.0], hair, { s: 'rbox', t: [0.8, 1], bv: [0.3, 0.2, 0.3] }),
-      P('head', [2.45, -1.95, 1.6], [0.6, 0.8, 0.8], gold, { s: 'cyl', n: 6 }),
-      P('head', [2.45, -2.75, 1.6], [0.55, 1.0, 0.8], hair, { t: [0.4, 0.6] }),
-    ]),
-    P('head', [0, 3.6, -2.25], [5.6, 5.2, 1.3], hair, { s: 'rbox', bv: [0.5, 0.8, 0.4] }),
-    P('head', [0, 5.95, -0.3], [5.5, 0.9, 5.0], hair, { s: 'rbox', bv: [1.2, 0.4] }),
-    P('accC', [0, -2.6, -0.2], [4.6, 5.6, 1.25], hair, { s: 'rbox', t: [1.2, 1], bv: [0.5, 0.3, 0.4] }),
-    P('accC', [0, -5.8, -0.25], [3.6, 1.6, 1.1], hair, { s: 'rbox', t: [1.3, 1], bv: [0.4, 0.2, 0.5] }),
-    P('accC', [0, -7.0, -0.25], [2.0, 1.2, 0.9], hairL, { t: [1.8, 1.2] }),
-    P('accC', [0, -4.7, -0.25], [2.4, 0.4, 1.4], gold, { flat: true }),
-    ...[-1.2, 0, 1.2].map((x) => P('accC', [x, -3.0, -0.92], [0.18, 4.2, 0.1], hairL, { flat: true })),
-    // antler crown: gold circlet, forehead gem, living antlers with leaves and spirit tips
-    P('head', [0, 5.25, -0.15], [5.7, 0.5, 5.4], gold, { s: 'cyl', n: 10 }),
-    P('head', [0, 5.55, 2.6], [0.9, 1.1, 0.4], spirit, { s: 'gem', g: true }),
-    P('head', [0, 5.55, 2.5], [1.5, 1.4, 0.3], goldD, { s: 'gem' }),
-    ...sym([
-      ...curve('head', beam, [0.75, 0.75], antler, { taper: 0.55 }),
-      ...curve('head', [beam[1], [3.9, 7.7, 0.4], [4.5, 8.6, 0.9]], [0.5, 0.5], antler, { taper: 0.7 }),
-      ...curve('head', [beam[2], [4.3, 9.4, -1.2], [4.7, 10.3, -1.5]], [0.45, 0.45], antler, { taper: 0.7 }),
-      ...curve('head', [beam[3], [2.0, 10.5, -1.4], [1.55, 11.0, -2.0]], [0.4, 0.4], antler, { taper: 0.7 }),
-      P('head', [4.55, 8.7, 0.95], [0.45, 0.7, 0.45], spirit, { s: 'gem', g: true }),
-      P('head', [4.75, 10.4, -1.55], [0.45, 0.7, 0.45], spirit, { s: 'gem', g: true }),
-      P('head', [2.55, 11.05, -0.4], [0.55, 0.85, 0.55], spirit, { s: 'gem', g: true }),
-      ...leaf('head', [2.4, 6.6, 0.7], 1.4, [20, 0, -50], leafG),
-      ...leaf('head', [2.9, 6.3, -0.9], 1.2, [-20, 0, -70], leafD),
-      ...leaf('head', [3.6, 7.6, -0.3], 1.0, [0, 30, -20], leafG),
-    ]),
-
-    // ---- living-wood staff (gripR): twisted shaft, gold bands, forked head cradling a spirit crystal
-    ...curve('gripR', [[0, -9.1, 0.35], [0.1, -5.5, 0.4], [-0.1, -2.0, 0.3], [0.05, 1.5, 0.4], [-0.05, 5.0, 0.32], [0, 8.2, 0.35]], [0.62, 0.62], wood, { s: 'cyl', n: 6 }),
-    P('gripR', [0, -9.2, 0.35], [0.75, 0.6, 0.75], goldD, { s: 'cyl', n: 6, t: [0.5, 0.5], r: [180, 0, 0] }),
-    ...curve('gripR', [[0.3, -4.0, 0.35], [-0.3, -2.4, 0.6], [0.3, -0.8, 0.1], [-0.3, 0.8, 0.6], [0.3, 2.4, 0.1]], [0.18, 0.18], woodL, { flat: true }),
-    ...[-6.5, 3.0, 7.6].map((y) => P('gripR', [0, y, 0.35], [0.9, 0.35, 0.9], gold, { s: 'cyl', n: 6 })),
-    ...symX([
-      ...curve('gripR', [[0.2, 8.0, 0.35], [1.3, 9.0, 0.35], [1.55, 10.6, 0.35], [1.0, 12.0, 0.35], [0.2, 12.5, 0.35]], [0.5, 0.5], wood, { taper: 0.6 }),
-      ...curve('gripR', [[1.3, 9.0, 0.35], [2.2, 9.9, 0.35], [2.5, 11.0, 0.35]], [0.32, 0.32], antler, { taper: 0.7 }),
-      P('gripR', [2.5, 11.2, 0.35], [0.35, 0.55, 0.35], spirit, { s: 'gem', g: true }),
-      ...leaf('gripR', [0.95, 8.3, 0.85], 1.3, [20, 0, -60], leafG),
-      ...leaf('gripR', [0.8, 8.1, -0.2], 1.1, [-20, 0, -80], leafD),
-    ]),
-    P('gripR', [0, staffHead, 0.35], [1.7, 2.6, 1.7], spirit, { s: 'gem', g: true }),
-    P('gripR', [0, staffHead, 0.35], [0.9, 1.5, 0.9], 0xffffff, { s: 'gem', g: true }),
-    ...ring('gripR', [0, staffHead, 0.35], 1.25, 4, [0.3, 0.3, 0.3], spirit2, { s: 'gem', g: true }),
-    seg('gripR', [-0.6, 7.8, 0.35], [-0.9, 5.9, 0.6], [0.12, 0.12], gold, { flat: true }),
-    P('gripR', [-0.9, 5.6, 0.6], [0.5, 0.75, 0.5], tealL, { s: 'gem', g: true }),
-    P('gripR', [-0.9, 5.0, 0.6], [0.35, 0.6, 0.2], gold, { flat: true }),
-
-    // ---- spirit wisps and motes orbiting her (spin bone)
-    P('accB', [5.4, 1.2, 0.8], [1.1, 1.6, 1.1], spirit, { s: 'gem', g: true }),
-    P('accB', [-4.6, -1.2, -3.0], [0.9, 1.3, 0.9], spirit2, { s: 'gem', g: true }),
-    P('accB', [-1.4, 3.6, 5.0], [0.8, 1.2, 0.8], tealL, { s: 'gem', g: true }),
-    ...motes('accB', 5.8, 7, -0.5, 0.42, [spirit, spirit2, 0xb8ffb0, leafG]),
+    ...humanoid({ name: 'sm', head, body, arm, leg, slim: true }),
+    cube('skirtF', [0, -4.5, 0], skirt('sm.skirtF', true)),
+    cube('skirtB', [0, -4.5, 0], skirt('sm.skirtB', false)),
+    cube('hips', [4.6, -2, 0], skirtSide),
+    cube('hips', [-4.6, -2, 0], skirtSide),
+    cube('accC', [0, -4.5, 0], hairBack),
+    // antler crown: a leafy band with branching tines and glowing tips
+    ...(['L', 'R'] as Side[]).flatMap((s) => {
+      const k = s === 'L' ? 1 : -1;
+      return [
+        cube('head', [k * 3, 9.5, 0], antA, { r: [0, 0, -k * 18] }),
+        cube('head', [k * 3.6, 10.6, -1.5], antB, { r: [30, 0, -k * 18] }),
+        cube('head', [k * 4.1, 11.4, 0.4], antA, { r: [0, 0, -k * 40] }),
+        cube('head', [k * 5.2, 12.6, 0.4], tipGlow, { g: true }),
+        cube('head', [k * 3.6, 11.2, -2.9], tipGlow, { g: true }),
+        cube('head', [k * 2.2, 8.4, 2.6], leafBox, { r: [0, k * 30, 0] }),
+      ];
+    }),
+    cube('head', [0, 8.4, 3.4], leafBox),
+    // spirit wisps on the spin bone
+    cube('accB', [7.5, 2, 1], wisp, { g: true }),
+    cube('accB', [-6, -1, -4], wisp, { g: true }),
+    cube('accB', [-2, 5, 7], wisp2, { g: true }),
+    cube('accB', [3, -3, -7], wisp2, { g: true }),
+    ...staff(),
   ];
+
+  // ---------------------------------------------------------------- living-wood staff along the hand's y axis
+  function staff(): RigPart[] {
+    const rows = [
+      '.l.....',
+      'lw..s..',
+      '.w.sCs.',
+      '.ww.s.w',
+      '..w.s.w',
+      '..wwwww',
+      '...ww..',
+      '...wL..',
+      '...ww..',
+      '...Gw..',
+      '...wG..',
+      '...ww..',
+      '...ww..',
+      '...wL..',
+      '...ww..',
+      '...ww..',
+      '...bb..',
+      '...bb..',
+      '...bb..',
+      '...ww..',
+      '...ww..',
+      '...wL..',
+      '...ww..',
+      '...ww..',
+      '...ww..',
+      '...ww..',
+      '...wL..',
+      '...ww..',
+      '...ww..',
+      '...GG..',
+      '....G..',
+    ];
+    return pixelItem(rows, { w: wood, L: woodL, b: woodD, G: gold, l: leaf, s: spirit, C: 0xffffff }, { b: 'gripR', at: GRIP, pivot: [3.5, 17], px: 0.95, th: 0.95, u: '+z', v: '+y', glow: 'sC', thick: { s: 1.6, C: 2 } });
+  }
 
   return {
     id: 'summoner',
-    scale: 0.085,
+    scale: MC_SCALE,
+    posScale: MC_POS_SCALE,
     props: pr,
     parts,
     springs: {
-      accB: { parent: 'chest', at: [0, 0.8, 0], kind: 'spin', axis: 'y', speed: 1.1 },
-      accC: { parent: 'head', at: [0, 2.6, -2.75], kind: 'bob', k: 0.8 },
-      capeA: { parent: 'hips', at: [0, 1.0, -2.0], kind: 'cape', k: 1.2, rest: 4 },
-      capeB: { parent: 'capeA', at: [0.85, -4.2, 0], kind: 'cape', k: 1.0 },
+      accB: { parent: 'chest', at: [0, 1, 0], kind: 'spin', axis: 'y', speed: 1.1 },
+      accC: { parent: 'head', at: [0, 3.5, -4.6], kind: 'bob', k: 0.8 },
+      skirtF: { parent: 'hips', at: [0, 1.6, 1.6], kind: 'flap' },
+      skirtB: { parent: 'hips', at: [0, 1.6, -1.6], kind: 'flap' },
     },
-    tip: { bone: 'gripR', p: [0, staffHead, 0.35] },
-    grip: { R: { rot: [8, 0, 18] } },
+    tip: { bone: 'gripR', p: [GRIP[0], GRIP[1] + 15 * 0.95, GRIP[2] + 0.5 * 0.95] },
+    grip: { R: { at: GRIP, rot: [8, 0, 18] }, L: { at: GRIP } },
     anim: {
       weapon: 'summon',
-      gait: { cadence: 0.48, stride: 20, knee: 28, armSwing: 6, elbow: 10, bounce: 0.08, lean: 5, sway: 3, twist: 4, heavy: 0, headBob: 0.3, armOut: 8, idle: 1.0 },
-      stance: { chest: [-2, 0, 0], head: [2, 0, -3], armR: [-8, 0, -14], foreR: [-30, 0, 0], handR: [38, 0, 0], armL: [-16, 0, 14], foreL: [-42, 0, 0], handL: [-6, -20, -14] },
+      gait: { cadence: 0.48, stride: 24, knee: 28, armSwing: 6, elbow: 10, bounce: 0.2, lean: 5, sway: 3, twist: 4, heavy: 0, headBob: 0.3, armOut: 8, idle: 1.0 },
+      stance: { chest: [-2, 0, 0], head: [2, 0, 0], armR: [-8, 0, -14], foreR: [-30, 0, 0], handR: [38, 0, 0], armL: [-16, 0, 14], foreL: [-42, 0, 0], handL: [-6, -20, -14] },
       stanceRun: 0.85,
       victory: 'raise',
     },

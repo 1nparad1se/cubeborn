@@ -38,7 +38,12 @@ export function enemyEffects(e: Enemy): { key: string; color: string; t: number 
 }
 
 const cdText = (cd: number) => (cd > 0 ? (cd < 1 ? cd.toFixed(1) : String(Math.ceil(cd))) : '');
-const sweep = (k: number, c = 'rgba(8,10,14,0.78)') => (k > 0 ? `conic-gradient(${c} ${(k * 360).toFixed(1)}deg, transparent 0)` : 'none');
+/** Cooldown overlay: a dark curtain over the top `k` of the slot with a bright recharge edge (MCD-style). */
+const sweep = (k: number, c = 'rgba(8,10,14,0.78)') => {
+  if (k <= 0) return 'none';
+  const p = (k * 100).toFixed(1);
+  return `linear-gradient(to bottom, ${c} 0 ${p}%, rgba(236,240,244,0.55) ${p}% calc(${p}% + 2px), transparent 0)`;
+};
 
 /**
  * Action-combat HUD (Lost-Ark-like): health with shield, the class resource / Identity gauge (Z), eight
@@ -51,7 +56,10 @@ export class ArpgHud {
   readonly hoverBox: HTMLElement;
   private hpFill = h('div.ah-fill');
   private hpShield = h('div.ah-shield');
-  private hpText = h('div.ah-text');
+  private hpText = h('div.ah-heart-num');
+  private shText = h('div.ah-heart-sh');
+  private heart: HTMLElement;
+  private xpLv = h('div.ah-xp-lv');
   private resBar: HTMLElement;
   private resFill = h('div.ah-fill');
   private resText = h('div.ah-text');
@@ -124,7 +132,8 @@ export class ArpgHud {
     const grid = h('div.ah-grid');
     for (let i = 0; i < 8; i++) grid.append(mk(i).root);
     const ult = mk(SLOT_ULT, '.ult');
-    ult.root.prepend(h('div.sk-gauge'));
+    // hexagonal soul-gauge: dark hex with a fill that rises with the Awakening charge
+    ult.root.prepend(h('div.sk-gauge', h('i')));
     const special = mk(SLOT_SPECIAL, '.small');
     const dodge = mk(SLOT_DODGE, '.dodge.small');
     const ident = mk(SLOT_IDENTITY, '.ident');
@@ -132,7 +141,15 @@ export class ArpgHud {
     basic.key.classList.add('mouse');
     this.specialWrap = special.root;
     this.resBar = h('div.ah-bar.res', this.resName, h('div.ah-track', this.resFill, this.orbs), this.resText);
-    const bars = h('div.ah-bars', h('div.ah-bar.hp', h('div.ah-label', t('hud_hp')), h('div.ah-track', this.hpFill, this.hpShield), this.hpText), this.resBar);
+    // faceted pixel heart: grey bevelled rim, red fill draining from the top, silver shield layer above it
+    this.heart = h(
+      'div.ah-heart',
+      { title: t('hud_hp') },
+      h('div.ah-heart-rim'),
+      h('div.ah-heart-in', this.hpShield, this.hpFill, h('div.ah-heart-gloss')),
+      this.shText,
+      this.hpText,
+    );
     this.castBox.append(this.castName, h('div.ah-cast-track', this.castFill));
     this.pointsBox.addEventListener('mousedown', (e) => {
       e.stopPropagation();
@@ -144,22 +161,22 @@ export class ArpgHud {
       h('div.ah-toprow', this.buffRow, this.pointsBox),
       this.tip,
       h(
-        'div.ah-main',
-        h('div.ah-left', bars, ident.root),
-        grid,
-        h('div.ah-extra', basic.root, dodge.root, special.root),
-        ult.root,
+        'div.ah-plate',
         h(
-          'div.ah-side',
-          h('div.ah-gold', h('i.ic-coin'), this.gold),
+          'div.ah-main',
+          h('div.ah-left', ident.root, h('div.ah-gold', h('i.ic-coin'), this.gold)),
+          this.heart,
+          h('div.ah-center', grid, this.resBar),
+          h('div.ah-extra', basic.root, dodge.root, special.root),
+          ult.root,
           h(
-            'div.ah-btns',
+            'div.ah-side',
             h('button.ah-bag', { title: t('inv_title'), onclick: () => this.onInventory() }, iconImg('chest', 0xffc060, 'icon'), this.bagKey),
             h('button.ah-bag.ah-skb', { title: t('ak_skills_btn'), onclick: () => this.onSkills() }, iconImg('rune', 0x9ad0ff, 'icon'), this.skKey),
           ),
         ),
+        h('div.ah-xp', this.xpLv, h('div.ah-xp-track', this.xpFill, h('div.ah-xp-seg')), this.xpText),
       ),
-      h('div.ah-xp', h('div.ah-xp-track', this.xpFill), this.xpText),
     );
     this.hStagBox = h('div.hv-stag', this.hStag);
     this.hoverBox = h('div.hover-info.hidden', this.hName, this.hMeta, h('div.hv-track', this.hFill, this.hHp), this.hStagBox, this.hFx);
@@ -231,11 +248,20 @@ export class ArpgHud {
     // health + shield
     const maxHp = Math.max(1, p.stats.maxHp);
     const hpk = Math.max(0, p.hp / maxHp);
-    this.set('hp', Math.round(hpk * 400), () => (this.hpFill.style.transform = `scaleX(${hpk})`));
+    this.set('hp', Math.round(hpk * 400), () => {
+      this.hpFill.style.transform = `scaleY(${Math.min(1, hpk)})`;
+      this.heart.classList.toggle('low', hpk < 0.3);
+    });
     const shk = Math.min(1, a.shield / maxHp);
-    this.set('sh', Math.round(shk * 400), () => (this.hpShield.style.transform = `scaleX(${shk})`));
-    const hpTxt = `${Math.ceil(Math.max(0, p.hp))} / ${Math.round(maxHp)}` + (a.shield > 0 ? ` (+${Math.ceil(a.shield)})` : '');
+    const shTop = Math.min(1, hpk + shk);
+    this.set('sh', Math.round(shTop * 400) + (shk > 0 ? 1000 : 0), () => {
+      this.hpShield.style.transform = `scaleY(${shTop})`;
+      this.heart.classList.toggle('shielded', shk > 0);
+    });
+    const hpTxt = `${Math.ceil(Math.max(0, p.hp))}/${Math.round(maxHp)}`;
     this.set('hpt', hpTxt, () => (this.hpText.textContent = hpTxt));
+    const shTxt = a.shield > 0 ? `+${Math.ceil(a.shield)}` : '';
+    this.set('sht', shTxt, () => (this.shText.textContent = shTxt));
     // class resource / identity gauge
     const resMax = Math.max(1, a.resMax);
     const rk = Math.min(1, a.res / resMax);
@@ -265,6 +291,7 @@ export class ArpgHud {
     const xpk = p.xpNext > 0 ? Math.min(1, p.xp / p.xpNext) : 0;
     this.set('xp', Math.round(xpk * 500), () => (this.xpFill.style.transform = `scaleX(${xpk})`));
     this.set('xpt', `${p.level}|${capped}|${Math.floor(p.xp)}`, () => {
+      this.xpLv.textContent = String(p.level);
       this.xpText.textContent = capped ? t('arpg_lv_max', { n: p.level }) : t('arpg_lv', { n: p.level, max: a.maxLevel }) + ` · ${Math.floor(p.xp)} / ${p.xpNext}`;
     });
     const ik = this.binds?.inventory?.[0] ?? '';
@@ -306,7 +333,10 @@ export class ArpgHud {
       const s = this.slots[SLOT_ULT];
       const locked = p.level < c.ult.unlock;
       const g = Math.max(0, Math.min(100, a.ult));
-      this.set('ultg', Math.floor(g), () => s.root.style.setProperty('--g', `${(g * 3.6).toFixed(1)}deg`));
+      this.set('ultg', Math.floor(g), () => {
+        s.root.style.setProperty('--g', `${(g * 3.6).toFixed(1)}deg`);
+        s.root.style.setProperty('--gk', (g / 100).toFixed(3));
+      });
       const cd = a.cds[SLOT_ULT];
       this.cool(s, cd, a.cdMax[SLOT_ULT] || 1);
       this.state(s, locked ? 'locked' : a.ready(SLOT_ULT) ? 'ready' : 'cd');

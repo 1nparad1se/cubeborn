@@ -1,5 +1,5 @@
 import type { Clip } from '../clips';
-import { crouch, ev, k, lunge, lungeR, makeClip, mix, plus, restPose, tremble, tuck, type KeyIn, type Pose } from './heavyKit';
+import { crouch, ev, forwardRoll, k, lunge, lungeR, makeClip, mix, plus, restPose, tremble, tuck, type KeyIn, type Pose } from './heavyKit';
 
 /**
  * Templar action clips: controlled, precise halberd work — long two-handed thrusts, wide
@@ -39,7 +39,7 @@ export const TEMPLAR_CLIPS: Record<string, Clip> = {
   tp_basic1: thrust('tp_basic1', 0.42, 0.18),
   tp_basic2: thrust('tp_basic2', 0.42, 0.18, lungeR(0.6, 0.9)),
   tp_basic3: clip('tp_basic3', 0.6, [k(0, R), k(0.14, P.sweepWind, 'io'), k(0.28, mix(P.sweepMid, lunge(0.5)), 'out'), k(0.38, mix(P.sweepL, lunge(0.5))), k(0.6, R)], { events: [ev(0.28)] }),
-  tp_dodge: clip('tp_dodge', 0.45, [k(0, R), k(0.05, mix(P.thrustBack, lunge(1, 1.0), { chest: [24, -20, 0], spine: [10, -6, 0] }), 'out'), k(0.26, mix(P.thrustBack, lunge(0.9, 0.9), { chest: [20, -20, 0], spine: [8, -6, 0] })), k(0.45, R)], { full: true }),
+  tp_dodge: clip('tp_dodge', 0.45, forwardRoll(R, 0.45, { start: 0.04, spin: 0.27 }), { full: true }),
   tp_q1: thrust('tp_q1', 0.42, 0.18, lunge(0.8, 1.1)),
   tp_q2: clip('tp_q2', 0.55, [k(0, R), k(0.1, mix(P.thrust, crouch(0.2))), k(0.24, mix(P.buttStrike, lungeR(0.6, -0.8)), 'out'), k(0.36, mix(P.buttStrike, lungeR(0.5, -0.6))), k(0.55, R)], { events: [ev(0.24)] }),
   tp_w: clip('tp_w', 0.45, [k(0, R), k(0.1, plus(P.aim, { armL: [30, 0, 0], chest: [-4, -10, 0] }, R), 'io'), k(0.2, P.aim, 'out'), k(0.32, P.aim), k(0.45, R)], { events: [ev(0.2)] }),

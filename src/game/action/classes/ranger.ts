@@ -2,7 +2,7 @@ import { buff, fx, L, move, proj, skill, step, summon, zone } from '../dsl';
 import type { ClassDef } from '../types';
 
 const C = 0x6ac85a;
-const ARROW = 0xe8d8b0;
+const ARROW = 0x9ae8ff;
 
 /** Ranger — longbow, traps, arrow rain and shooting while backing away. */
 export const RANGER: ClassDef = {

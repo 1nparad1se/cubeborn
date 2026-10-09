@@ -86,3 +86,26 @@ export function tremble(base: Pose, amp: number, phase: number, rest: Pose = {})
 }
 
 export const ev = (t: number, e = 'impulse') => ({ t, ev: e });
+
+/**
+ * Minecraft Dungeons forward roll: a quick tuck, one somersault around the tucked body's centre
+ * (root turns a full circle in 45° steps while `rootPos` keeps the pivot `c` voxels above the
+ * ground), then a pop back up into the rest pose. `arms` keeps the weapon tucked in.
+ */
+export function forwardRoll(rest: Pose, dur: number, o: { c?: number; drop?: number; start?: number; spin?: number; arms?: Pose } = {}): KeyIn[] {
+  const c = o.c ?? 6.2;
+  const drop = o.drop ?? 1.0;
+  const start = o.start ?? 0.05;
+  const spin = o.spin ?? dur * 0.58;
+  const tuckPose = mix(crouch(1.15, 0), { chest: [58, 0, 0], spine: [26, 0, 0], head: [34, 0, 0], legL: [-70, 0, 6], legR: [-62, 0, -6], shinL: [100, 0, 0], shinR: [96, 0, 0] }, o.arms ?? {});
+  const keys: KeyIn[] = [k(0, rest), k(start, mix(tuckPose, { root: [0, 0, 0], rootPos: [0, -drop, 0.4] }), 'in')];
+  const n = 8;
+  for (let i = 1; i <= n; i++) {
+    const a = ((i * 360) / n) * (Math.PI / 180);
+    keys.push(k(start + (i * spin) / n, mix(tuckPose, { root: [(i * 360) / n, 0, 0], rootPos: [0, c - c * Math.cos(a) - drop, -c * Math.sin(a)] }), 'lin'));
+  }
+  keys.push(k(start + spin + 0.0005, mix(tuckPose, { root: [0, 0, 0], rootPos: [0, -drop, 0] }), 'lin'));
+  keys.push(k(start + spin + (dur - start - spin) * 0.45, mix(crouch(0.45), { chest: [14, 0, 0], head: [-6, 0, 0], root: [0, 0, 0] }), 'out'));
+  keys.push(k(dur, rest, 'io'));
+  return keys;
+}

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { addPart, GeoSink, type RigPart, type V3 } from './shapes';
 import { makeVoxelMaterial } from '../Materials';
 import type { AnimStyle } from './animTypes';
+import { buildSkinAtlas, type SkinAtlas, type SkinBox } from './skins';
 
 /**
  * Skeleton shared by every hero. Limbs have three segments (upper/lower/hand or foot),
@@ -85,6 +86,11 @@ export interface HeroRigDef {
   id: string;
   /** World units per voxel. */
   scale: number;
+  /**
+   * World units per voxel for animated translations (rootPos / hipsPos in clips and gaits).
+   * Lets a rig change its voxel resolution without retuning every clip. Default: `scale`.
+   */
+  posScale?: number;
   props: Proportions;
   parts: RigPart[];
   springs?: Partial<Record<BoneId, SpringDef>>;
@@ -144,6 +150,21 @@ function toGripSpace(def: HeroRigDef, part: RigPart): RigPart {
   return { ...part, p: [part.p[0] - g[0], part.p[1] - g[1], part.p[2] - g[2]] };
 }
 
+/** Skin atlases are built once per rig definition and shared by every instance. */
+const ATLASES = new WeakMap<HeroRigDef, SkinAtlas | null>();
+
+/** The pixel-skin atlas of a rig (null when the rig has no skinned parts). */
+export function rigAtlas(def: HeroRigDef): SkinAtlas | null {
+  let a = ATLASES.get(def);
+  if (a === undefined) {
+    const boxes: SkinBox[] = [];
+    for (const p of def.parts) if (p.sk) boxes.push(p.sk.box);
+    a = boxes.length && typeof document !== 'undefined' ? buildSkinAtlas(boxes) : null;
+    ATLASES.set(def, a);
+  }
+  return a;
+}
+
 /**
  * A hero model built from a rig definition: one THREE.Group per bone, one merged mesh
  * per bone (plus one per visibility group), a shared material with hit flash and rim light.
@@ -162,9 +183,12 @@ export class HeroRig {
   private meshes: THREE.Mesh[] = [];
 
   constructor(readonly def: HeroRigDef, texture: THREE.Texture | null, opts: { shadows?: boolean; rim?: number; silhouette?: boolean } = {}) {
+    const atlas = rigAtlas(def);
     this.material = opts.silhouette
       ? (new THREE.MeshBasicMaterial({ color: 0x14121c }) as unknown as THREE.MeshLambertMaterial)
-      : makeVoxelMaterial({ map: texture ?? undefined, flashUniform: this.flash, rim: opts.rim ?? 0.35 });
+      : makeVoxelMaterial({ map: (atlas ? atlas.texture : texture) ?? undefined, flashUniform: this.flash, rim: opts.rim ?? 0.35 });
+    // pixel skins cut out their transparent texels (ragged hems, hood edges, fur)
+    if (atlas && !opts.silhouette) this.material.alphaTest = 0.5;
     const layout = restLayout(def);
     const s = def.scale;
     for (const id of BONES) {
@@ -192,7 +216,7 @@ export class HeroRig {
       const key = part.b + '|' + (part.grp ?? '');
       let sink = sinks.get(key);
       if (!sink) sinks.set(key, (sink = new GeoSink()));
-      addPart(sink, part, s);
+      addPart(sink, part, s, atlas);
     }
     for (const [key, sink] of sinks) {
       if (sink.empty) continue;

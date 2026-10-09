@@ -57,11 +57,13 @@ export const DAY_NIGHT = {
   ] as [DayPeriod, number][],
 
   light: {
-    dawn: { sun: 0.85, sunColor: 0xffc9a0, ambient: 0.9, ambientColor: 0xffd8c8, tint: 0.45, fog: 0.92, fogColor: 0xe8b8a8, fogTint: 0.3, warm: 0.07, sat: 1.02 },
-    day: { sun: 1, sunColor: 0xffffff, ambient: 1, ambientColor: 0xffffff, tint: 0, fog: 1, fogColor: 0xffffff, fogTint: 0, warm: 0.04, sat: 1.06 },
-    dusk: { sun: 0.7, sunColor: 0xff9a5a, ambient: 0.78, ambientColor: 0xd8a0c0, tint: 0.55, fog: 0.88, fogColor: 0x8a5a7a, fogTint: 0.35, warm: 0.09, sat: 1.05 },
-    // moonlight: a cold, dim key light, thicker blue fog and a desaturated palette
-    night: { sun: 0.38, sunColor: 0x8aa8ff, ambient: 0.42, ambientColor: 0x7088d0, tint: 0.75, fog: 0.72, fogColor: 0x141a38, fogTint: 0.6, warm: -0.07, sat: 0.82 },
+    // Minecraft Dungeons palette: peachy dawn, warm saturated day, magenta-orange dusk and a
+    // deep, rich blue night lit by torches (not a grey, desaturated one)
+    dawn: { sun: 0.85, sunColor: 0xffc49a, ambient: 0.9, ambientColor: 0xc8c8f0, tint: 0.45, fog: 0.92, fogColor: 0xe8b4a8, fogTint: 0.3, warm: 0.06, sat: 1.04 },
+    day: { sun: 1, sunColor: 0xfff0d8, ambient: 1, ambientColor: 0xffffff, tint: 0, fog: 1, fogColor: 0xffffff, fogTint: 0, warm: 0.035, sat: 1.08 },
+    dusk: { sun: 0.72, sunColor: 0xff9050, ambient: 0.75, ambientColor: 0xb090d0, tint: 0.55, fog: 0.88, fogColor: 0x7a4a78, fogTint: 0.38, warm: 0.08, sat: 1.08 },
+    // moonlight: a cold blue key light, deep blue ambient and fog, colour kept rich
+    night: { sun: 0.58, sunColor: 0x5a7cff, ambient: 0.7, ambientColor: 0x3a58d8, tint: 0.9, fog: 0.74, fogColor: 0x0a1640, fogTint: 0.72, warm: -0.06, sat: 1.0 },
   } as Record<DayPeriod, PhaseLight>,
   /** Maps whose palette is already dark get a softer night (their own lighting carries the mood). */
   darkMapNightStrength: 0.55,

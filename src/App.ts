@@ -28,7 +28,7 @@ import { generateTerrain } from './game/mapgen/generators';
 import type { BossController } from './game/bosses/Boss';
 import { WAVE_TYPE_COLOR, MODIFIERS, type RunMode, type Wave } from './game/Waves';
 
-export const VERSION = 'v3.0.0';
+export const VERSION = 'v3.1.0';
 
 /** Discrete camera zoom steps for the mouse wheel (camera distance multipliers). */
 const ZOOM_STEPS = [0.75, 0.88, 1, 1.15, 1.35];

@@ -75,6 +75,11 @@ export class Terrain {
   readonly tile: Uint8Array;
   /** Column height used for block culling and visuals. */
   readonly height: Uint8Array;
+  /**
+   * Ground elevation in world units (0 = the walkable floor). Raised cells are grass-topped
+   * plateaus and cliffs: they are never walkable (solid or wall), so gameplay stays on y=0.
+   */
+  readonly elev: Uint8Array;
   readonly blocks: Block[] = [];
   readonly decor: Decor[] = [];
   readonly trees: TreeInst[] = [];
@@ -90,6 +95,14 @@ export class Terrain {
     this.cell = new Uint8Array(size * size);
     this.tile = new Uint8Array(size * size);
     this.height = new Uint8Array(size * size);
+    this.elev = new Uint8Array(size * size);
+  }
+
+  /** Ground elevation of the cell under (x, z), 0 outside the map. */
+  elevAt(x: number, z: number): number {
+    const cx = Math.floor(x);
+    const cz = Math.floor(z);
+    return this.inBounds(cx, cz) ? this.elev[cz * this.size + cx] : 0;
   }
 
   idx(cx: number, cz: number): number {

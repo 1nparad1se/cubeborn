@@ -1,9 +1,8 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { MapDef } from '../data/types';
 import { CELL, type Block, type Terrain } from '../game/Terrain';
 import { hash2 } from '../core/Rng';
-import { ATLAS_VARIANTS, makeBlockAtlas, makeGroundAtlas } from './Textures';
+import { ATLAS_VARIANTS, GROUND_ROWS, ROW_RIM, ROW_SOIL, ROW_STONE, SPRITE, SPRITE_COLORED, SPRITE_COUNT, makeBlockAtlas, makeFoliageAtlas, makeGroundAtlas } from './Textures';
 import { TILE_COUNT, roofVoxels, tileOf, treeVoxels, type Vox } from './VoxelFlora';
 import { unitCube } from './VoxelGeometry';
 
@@ -29,6 +28,62 @@ function liquidLevel(name: string): number {
   if (/void/.test(name)) return -6;
   if (/lava/.test(name)) return -0.5;
   return -0.62;
+}
+
+type SpriteW = [number, number][];
+interface FoliageRule {
+  density: number;
+  sprites: SpriteW;
+  /** Fixed tint for grey sprites (null: the tile colour). */
+  tint?: number;
+}
+
+const FLOWERS: SpriteW = [[SPRITE.poppy, 3], [SPRITE.dandelion, 3], [SPRITE.cornflower, 2], [SPRITE.bluet, 3], [SPRITE.tulip, 1.5], [SPRITE.daisy, 2.5], [SPRITE.allium, 1]];
+const MEADOW: SpriteW = [[SPRITE.grass, 52], [SPRITE.tallGrass, 20], [SPRITE.fern, 7], ...FLOWERS];
+const TUFTS: SpriteW = [[SPRITE.grass, 70], [SPRITE.tallGrass, 20], [SPRITE.fern, 10]];
+
+/** Which foliage grows on a tile, per map generator. */
+function foliageRule(gen: string, tile: string): FoliageRule | null {
+  const grassy = /grass|moss/.test(tile);
+  switch (gen) {
+    case 'forest':
+      if (grassy) return { density: 1.7, sprites: MEADOW };
+      if (/dirt/.test(tile)) return { density: 0.3, sprites: TUFTS };
+      if (/path/.test(tile)) return { density: 0.06, sprites: TUFTS };
+      if (/bog/.test(tile)) return { density: 0.25, sprites: [[SPRITE.tallGrass, 1]], tint: 0x6a7a3a };
+      return null;
+    case 'city':
+      if (grassy) return { density: 1.1, sprites: [[SPRITE.grass, 60], [SPRITE.tallGrass, 20], [SPRITE.poppy, 2], [SPRITE.daisy, 2], [SPRITE.bluet, 2]] };
+      if (/cobble|dirt/.test(tile)) return { density: 0.05, sprites: TUFTS };
+      return null;
+    case 'catacombs':
+      if (grassy) return { density: 0.7, sprites: [[SPRITE.grass, 6], [SPRITE.fern, 2], [SPRITE.mushroom, 1]] };
+      return null;
+    case 'volcano':
+      if (/ash|scorch/.test(tile)) return { density: 0.05, sprites: [[SPRITE.deadBush, 1]] };
+      return null;
+    case 'tundra':
+      if (/rock/.test(tile)) return { density: 0.3, sprites: [[SPRITE.dryGrass, 3], [SPRITE.fern, 1]], tint: 0x8a9a74 };
+      if (/snow2/.test(tile)) return { density: 0.14, sprites: [[SPRITE.dryGrass, 3], [SPRITE.deadBush, 1]], tint: 0x9aa480 };
+      if (/snow/.test(tile)) return { density: 0.03, sprites: [[SPRITE.deadBush, 1]] };
+      return null;
+    case 'ruins':
+      if (grassy) return { density: 1.2, sprites: [[SPRITE.grass, 50], [SPRITE.tallGrass, 20], [SPRITE.fern, 6], [SPRITE.allium, 2], [SPRITE.bluet, 2], [SPRITE.daisy, 2]] };
+      if (/sand/.test(tile)) return { density: 0.08, sprites: [[SPRITE.deadBush, 2], [SPRITE.dryGrass, 1]], tint: 0xb0a060 };
+      return null;
+  }
+  return grassy ? { density: 1, sprites: TUFTS } : null;
+}
+
+function pickSprite(list: SpriteW, r: number): number {
+  let total = 0;
+  for (const [, w] of list) total += w;
+  let x = r * total;
+  for (const [s, w] of list) {
+    x -= w;
+    if (x <= 0) return s;
+  }
+  return list[list.length - 1][0];
 }
 
 const GLSL_NOISE = `
@@ -71,20 +126,24 @@ export class WorldRenderer {
 
   constructor(terrain: Terrain, map: MapDef, _blockTex: THREE.Texture, quality: string) {
     this.level = this.computeLevels(terrain);
-    this.buildGround(terrain, map);
+    this.buildGround(terrain, map, quality);
     this.buildBlocks(terrain, map, quality);
     this.buildDecor(terrain, quality);
-    this.buildGrass(terrain, map, quality);
+    this.buildFoliage(terrain, map, quality);
   }
 
+  /** Surface height per cell: raised plateaus, the y=0 floor, sunken liquids. */
   private computeLevels(t: Terrain): Float32Array {
     const n = t.size;
     const level = new Float32Array(n * n);
-    for (let i = 0; i < n * n; i++) if (t.cell[i] === CELL.liquid) level[i] = liquidLevel(t.tileNames[t.tile[i]] ?? '');
+    for (let i = 0; i < n * n; i++) {
+      if (t.cell[i] === CELL.liquid) level[i] = liquidLevel(t.tileNames[t.tile[i]] ?? '');
+      else level[i] = t.elev[i];
+    }
     return level;
   }
 
-  private buildGround(t: Terrain, map: MapDef) {
+  private buildGround(t: Terrain, map: MapDef, quality: string) {
     const n = t.size;
     const level = this.level;
     // distance from each liquid cell to the nearest bank (for depth tint)
@@ -119,6 +178,7 @@ export class WorldRenderer {
         }
       }
     }
+    // cell data: tile, variant, liquid shore depth, elevation (for same-level tile blending)
     const data = new Uint8Array(n * n * 4);
     for (let i = 0; i < n * n; i++) {
       const x = i % n;
@@ -126,50 +186,45 @@ export class WorldRenderer {
       data[i * 4] = t.tile[i];
       data[i * 4 + 1] = Math.floor(hash2(x, z, 5) * ATLAS_VARIANTS);
       data[i * 4 + 2] = level[i] < 0 ? 40 * Math.max(1, shore[i] || 5) : 0;
-      // a few flat paving stones set into the grass (alpha 254 marks a slab cell)
-      const tn = t.tileNames[t.tile[i]] ?? '';
-      const slab = false && /grass/.test(tn);
-      data[i * 4 + 3] = slab ? 254 : 255;
+      data[i * 4 + 3] = Math.min(255, t.elev[i] * 32);
     }
     const cells = new THREE.DataTexture(data, n, n, THREE.RGBAFormat);
     cells.magFilter = cells.minFilter = THREE.NearestFilter;
     cells.needsUpdate = true;
 
-    // soft contact shadows around walls, rocks and tree trunks
-    const occ = new Float32Array(n * n);
-    for (let i = 0; i < n * n; i++) occ[i] = t.cell[i] === CELL.solid || t.cell[i] === CELL.wall ? 1 : 0;
-    const blur = (src: Float32Array) => {
-      const out = new Float32Array(n * n);
-      for (let z = 0; z < n; z++)
-        for (let x = 0; x < n; x++) {
-          let s = 0;
-          for (let dz = -1; dz <= 1; dz++)
-            for (let dx = -1; dx <= 1; dx++) {
-              const cx = Math.min(n - 1, Math.max(0, x + dx));
-              const cz = Math.min(n - 1, Math.max(0, z + dz));
-              s += src[cz * n + cx];
-            }
-          out[z * n + x] = s / 9;
-        }
-      return out;
-    };
-    const soft = blur(blur(occ));
-    const aoData = new Uint8Array(n * n * 4);
+    // ambient occlusion on the ground from taller neighbours: cliff feet, walls, tree trunks
+    const top = new Float32Array(n * n);
     for (let i = 0; i < n * n; i++) {
-      const v = Math.round(255 * (1 - Math.min(0.5, soft[i] * 0.75)));
-      aoData[i * 4] = aoData[i * 4 + 1] = aoData[i * 4 + 2] = v;
-      aoData[i * 4 + 3] = 255;
+      const c = t.cell[i];
+      top[i] = Math.max(0, level[i]);
+      if ((c === CELL.solid || c === CELL.wall) && !t.elev[i]) top[i] = t.height[i] ? Math.min(2, t.height[i]) : 0;
     }
+    const aoData = new Uint8Array(n * n * 4);
+    for (let z = 0; z < n; z++)
+      for (let x = 0; x < n; x++) {
+        const i = z * n + x;
+        const me = top[i];
+        let occ = 0;
+        for (let dz = -2; dz <= 2; dz++)
+          for (let dx = -2; dx <= 2; dx++) {
+            if (!dx && !dz) continue;
+            const cx = Math.min(n - 1, Math.max(0, x + dx));
+            const cz = Math.min(n - 1, Math.max(0, z + dz));
+            const w = Math.abs(dx) <= 1 && Math.abs(dz) <= 1 ? 1 : 0.45;
+            occ += Math.min(2.2, Math.max(0, top[cz * n + cx] - me)) * w;
+          }
+        const v = Math.round(255 * (1 - Math.min(0.5, (occ / 15.2) * 0.75)));
+        aoData[i * 4] = aoData[i * 4 + 1] = aoData[i * 4 + 2] = v;
+        aoData[i * 4 + 3] = 255;
+      }
     const ao = new THREE.DataTexture(aoData, n, n, THREE.RGBAFormat);
     ao.magFilter = ao.minFilter = THREE.LinearFilter;
     ao.needsUpdate = true;
 
-    const atlas = makeGroundAtlas(t.tileNames, map.palette.tiles);
+    const atlas = makeGroundAtlas(t.tileNames, map.palette.tiles, map.palette.blocks);
     const anims = new Float32Array(32);
     t.tileNames.forEach((nm, i) => (anims[i] = tileAnim(nm)));
     const tileCount = Math.max(1, t.tileNames.length);
-    const soilHex = map.palette.tiles.dirt?.[0] ?? map.palette.tiles.ash?.[0] ?? map.palette.tiles.rock?.[0] ?? map.palette.tiles.sand?.[0] ?? 0x6a5a4a;
-    const soil = new THREE.Color(soilHex).multiplyScalar(0.8);
 
     const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
     const u = this.uniforms;
@@ -179,10 +234,11 @@ export class WorldRenderer {
       sh.uniforms.uAO = { value: ao };
       sh.uniforms.uTime = u.uTime;
       sh.uniforms.uSurge = u.uSurge;
+      sh.uniforms.uFocus = u.uFocus;
+      sh.uniforms.uCamDir = u.uCamDir;
       sh.uniforms.uAnim = { value: anims };
       sh.uniforms.uSize = { value: n };
       sh.uniforms.uTiles = { value: tileCount };
-      sh.uniforms.uSoil = { value: soil };
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', '#include <common>\nattribute float aTop;\nvarying vec3 vWPos;\nvarying vec3 vN;\nvarying float vTop;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWPos = (modelMatrix * vec4(position, 1.0)).xyz;\nvN = normal;\nvTop = aTop;');
@@ -198,20 +254,23 @@ uniform sampler2D uAtlas;
 uniform sampler2D uAO;
 uniform float uTime;
 uniform float uSurge;
+uniform vec3 uFocus;
+uniform vec2 uCamDir;
 uniform float uAnim[32];
 uniform float uSize;
 uniform float uTiles;
-uniform vec3 uSoil;
 vec3 gEmit = vec3(0.0);
 ${GLSL_NOISE}
 vec4 cellAt(vec2 c) { return texture2D(uCells, (c + 0.5) / uSize); }
-vec3 atlasAt(float tile, float variant, vec2 l) {
+vec3 atlasAt(float tile, float row, vec2 l) {
   l = clamp(l, 0.001, 0.999);
-  return texture2D(uAtlas, vec2((tile + l.x) / uTiles, 1.0 - (variant + l.y) / ${ATLAS_VARIANTS.toFixed(1)})).rgb;
+  return texture2D(uAtlas, vec2((tile + l.x) / uTiles, 1.0 - (row + l.y) / ${GROUND_ROWS.toFixed(1)})).rgb;
 }
 float animOf(float tile) { float a = 0.0; for (int i = 0; i < 32; i++) { if (float(i) == tile) a = uAnim[i]; } return a; }
+float tileOf(vec4 c) { return floor(c.r * 255.0 + 0.5); }
 bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
         )
+        .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n' + DITHER)
         .replace(
           '#include <map_fragment>',
           `{
@@ -220,38 +279,29 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
   vec2 cell = floor(xz);
   vec4 cd = cellAt(cell);
   bool liquid = cd.b > 0.05;
-  vec2 pxc = (floor(xz * 16.0) + 0.5) / 16.0;
-  float tile = floor(cd.r * 255.0 + 0.5);
+  vec2 pxc = (floor(xz * 32.0) + 0.5) / 32.0;
+  float tile = tileOf(cd);
   float variant = floor(cd.g * 255.0 + 0.5);
   float anim = animOf(tile);
   vec2 local = fract(xz);
   vec3 col;
   if (side) {
+    // cliff face: block-aligned rim (top layer hanging over), soil, then stone deeper down
     float along = dot(vWPos.xz, vec2(-vN.z, vN.x));
-    float d = vTop - vWPos.y;
-    vec2 sp = floor(vec2(along, d) * 16.0);
-    vec3 topc = atlasAt(tile, variant, vec2(fract(along), 0.4));
-    float band = (2.0 + floor(h21(vec2(sp.x, cell.x * 3.0 + cell.y)) * 3.0)) / 16.0;
-    float nz = h21(sp + cell * 7.0);
-    vec3 soilc = uSoil * (0.8 + nz * 0.25);
-    // rounded stones packed in the earth, like the reference cliff
-    vec2 sg = vec2(along, d) * 2.2;
-    vec2 si = floor(sg);
-    vec2 sf = fract(sg);
-    float best = 9.0;
-    vec2 bid = si;
-    for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
-      vec2 o = vec2(float(i), float(j));
-      vec2 pt = o + vec2(h21(si + o), h21(si + o + 9.1)) * 0.8 + 0.1;
-      float dd = length((sf - pt) * vec2(1.0, 1.3));
-      if (dd < best) { best = dd; bid = si + o; }
-    }
-    if (best < 0.36 && d > 0.25) {
-      float sv = 0.62 + h21(bid) * 0.22;
-      soilc = mix(vec3(sv * 1.02, sv * 0.96, sv * 0.88), uSoil * 1.3, 0.25) * (best > 0.3 ? 0.75 : 1.0);
-    }
-    col = d < band && d >= 0.0 ? topc * 0.95 : soilc;
-    col *= mix(1.0, 0.35, clamp(d / 6.0, 0.0, 1.0));
+    float d = max(0.0, vTop - vWPos.y);
+    vec2 sb = vec2(along, d) * 2.0;
+    vec2 bk = floor(sb);
+    vec2 sl = fract(sb);
+    float hb = h21(bk + cell * 3.7);
+    if (hb > 0.5) sl.x = 1.0 - sl.x;
+    float row;
+    if (bk.y < 0.5) row = ${ROW_RIM.toFixed(1)};
+    else row = h21(bk * 1.31 + cell) < smoothstep(1.0, 3.5, d) ? ${ROW_STONE.toFixed(1)} : ${ROW_SOIL.toFixed(1)} + step(0.5, hb);
+    col = atlasAt(tile, row, sl);
+    col *= 0.94 + h21(bk + 17.0) * 0.08;
+    col *= mix(1.0, 0.72, clamp(d / 6.0, 0.0, 1.0));
+    col *= 0.8 + 0.2 * smoothstep(-0.2, 0.9, vWPos.y);
+    gEmit = col * 0.22;
     if (anim == 4.0) col = mix(col, vec3(0.12, 0.06, 0.25), clamp(d / 4.0, 0.0, 1.0));
   } else if (liquid) {
     float shore = cd.b * 255.0 / 40.0;
@@ -262,23 +312,23 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
     if (isLand(cell + vec2(0.0, -1.0))) ed = min(ed, lp.y);
     if (isLand(cell + vec2(0.0, 1.0))) ed = min(ed, 1.0 - lp.y);
     float depth = clamp((shore - 1.0 + ed) / 2.5, 0.0, 1.0);
-    vec2 flow = local;
-    if (anim == 1.0 || anim == 2.0) flow = fract(local + vec2(floor(uTime * (anim == 2.0 ? 0.6 : 1.2)) / 16.0, 0.0));
-    vec3 base = atlasAt(tile, variant, flow);
+    vec2 bp = xz * 2.0;
+    vec2 flow = fract(bp);
+    if (anim == 1.0 || anim == 2.0) flow = fract(bp + vec2(floor(uTime * (anim == 2.0 ? 5.0 : 9.0)) / 16.0, 0.0));
+    vec3 base = atlasAt(tile, mod(variant + floor(h21(floor(bp)) * 2.0), 4.0), flow);
     if (anim == 1.0) {
-      col = mix(base * 1.2, base * 0.6, depth);
-      col = mix(col, vec3(dot(col, vec3(0.3, 0.55, 0.15))), 0.18);
+      col = mix(base * 1.15, base * 0.62, depth);
       float rip = sin((pxc.x + pxc.y) * 5.0 + uTime * 1.4 + vnoise(pxc * 1.7) * 6.0);
       if (rip > 0.975) col += vec3(0.09, 0.11, 0.13);
-      float foamW = 0.07 + 0.045 * (0.5 + 0.5 * sin(uTime * 2.2 + (pxc.x - pxc.y) * 4.0));
-      if (ed < foamW) col = mix(col, vec3(0.93, 0.97, 1.0), 0.85);
-      else if (ed < foamW + 0.07 && h21(floor(pxc * 16.0) + floor(uTime * 3.0)) > 0.6) col = mix(col, vec3(0.85, 0.92, 1.0), 0.45);
-      gEmit = col * 0.18;
+      float foamW = 0.06 + 0.04 * (0.5 + 0.5 * sin(uTime * 2.2 + (pxc.x - pxc.y) * 4.0));
+      if (ed < foamW) col = mix(col, vec3(0.9, 0.96, 1.0), 0.75);
+      else if (ed < foamW + 0.07 && h21(floor(pxc * 16.0) + floor(uTime * 3.0)) > 0.6) col = mix(col, vec3(0.85, 0.92, 1.0), 0.4);
+      gEmit = col * 0.16;
     } else if (anim == 2.0) {
       col = base * (1.0 - depth * 0.15);
-      if (ed < 0.12) col = vec3(0.25, 0.08, 0.04);
+      if (ed < 0.1) col = vec3(0.25, 0.08, 0.04);
       float glow = 0.8 + 0.2 * sin(uTime * 2.0 + cell.x * 0.7 + cell.y * 0.4);
-      gEmit = col * glow * (ed < 0.12 ? 0.2 : 1.0);
+      gEmit = col * glow * (ed < 0.1 ? 0.2 : 1.0);
     } else if (anim == 4.0) {
       col = base * 0.6;
       float star = step(0.985, h21(floor(pxc * 16.0) + floor(uTime * 2.0)));
@@ -288,44 +338,45 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
       gEmit = col * 0.1;
     }
   } else {
-    // every ground cell reads as 3x3 small blocks, matching the tree blocks
-    vec2 sub = floor(xz * 3.0);
-    vec2 l = fract(xz * 3.0);
-    variant = mod(variant + floor(h21(sub * 1.7) * 4.0), ${ATLAS_VARIANTS.toFixed(1)});
-    if (anim > 0.5 && anim < 4.5) {
-      float sp = anim == 2.0 ? 0.08 : 0.18;
-      l = fract(local + vec2(floor(uTime * sp * 16.0) / 16.0, floor(uTime * sp * 8.0) / 16.0));
+    // ground top: one 16px texture per half-unit block, ragged pixel borders between tiles
+    vec2 bp = xz * 2.0;
+    vec2 blk = floor(bp);
+    vec2 l = fract(bp);
+    float ut = tile;
+    vec2 clump = floor(xz * 16.0);
+    float W = 0.22;
+    float ex = min(local.x, 1.0 - local.x);
+    float ez = min(local.y, 1.0 - local.y);
+    vec4 nx = cellAt(cell + vec2(local.x < 0.5 ? -1.0 : 1.0, 0.0));
+    vec4 nz = cellAt(cell + vec2(0.0, local.y < 0.5 ? -1.0 : 1.0));
+    float tx = tileOf(nx);
+    float tz = tileOf(nz);
+    if (tx != tile && nx.b < 0.05 && abs(nx.a - cd.a) < 0.01 && ex < W && h21(clump + 3.1) < 0.55 * (1.0 - ex / W)) ut = tx;
+    else if (tz != tile && nz.b < 0.05 && abs(nz.a - cd.a) < 0.01 && ez < W && h21(clump + 7.3) < 0.55 * (1.0 - ez / W)) ut = tz;
+    float bh = h21(blk * 1.37 + ut);
+    float v = floor(bh * ${ATLAS_VARIANTS.toFixed(1)});
+    if (h21(blk + 5.0) > 0.5) l.x = 1.0 - l.x;
+    float ua = animOf(ut);
+    if (ua > 0.5 && ua < 4.5) {
+      float sp = ua == 2.0 ? 2.0 : 3.0;
+      l = fract(l + vec2(floor(uTime * sp) / 16.0, floor(uTime * sp * 0.5) / 16.0));
     }
-    col = atlasAt(tile, variant, l);
-    col *= 0.93 + h21(sub + 11.0) * 0.12;
-    float se = min(min(l.x, l.y), min(1.0 - l.x, 1.0 - l.y));
-    col *= se < 0.06 ? 0.9 : 1.0;
-    // large painted patches of lighter and darker ground
-    float m = vnoise(xz * 0.08) * 0.6 + vnoise(xz * 0.27) * 0.4;
-    col *= 0.86 + m * 0.26;
-    if (cd.a < 0.997) {
-      // flat stone slab, slightly smaller than the cell and nudged off-grid
-      vec2 lc = fract(xz) - 0.5 - (vec2(h21(cell + 3.1), h21(cell + 7.7)) - 0.5) * 0.12;
-      vec2 hs = vec2(0.36 + h21(cell) * 0.08, 0.34 + h21(cell + 1.3) * 0.08);
-      vec2 q = abs(lc) - hs + 0.06;
-      float sd = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - 0.06;
-      if (sd < 0.0) {
-        float g = 0.4 + vnoise(xz * 9.0) * 0.07 + h21(floor(xz * 16.0)) * 0.03;
-        col = vec3(g * 0.98, g, g * 1.03);
-        if (sd > -0.04) col *= 1.1;
-      } else if (sd < 0.03) col *= 0.7;
-    }
-    col *= texture2D(uAO, xz / uSize).r;
+    col = atlasAt(ut, v, l);
+    col *= 0.97 + h21(blk + 11.0) * 0.05;
+    // broad painted patches of lighter and darker ground
+    float m = vnoise(xz * 0.07) * 0.6 + vnoise(xz * 0.23) * 0.4;
+    col *= 0.9 + m * 0.2;
+    vec2 aoUv = vWPos.y > 0.1 ? (cell + 0.5) / uSize : xz / uSize;
+    col *= texture2D(uAO, aoUv).r;
     float spark = step(0.985, h21(floor(pxc * 16.0) + cell * 17.0 + floor(uTime * 2.0)));
-    if (anim == 2.0) gEmit = col * (0.85 + 0.15 * sin(uTime * 2.0 + cell.x * 0.7)) + vec3(1.0, 0.8, 0.3) * spark * 0.6;
-    if (anim == 3.0) {
-      // toxic bog: slow 2x2 bubbles instead of star-like sparkles
+    if (ua == 2.0) gEmit = col * (0.85 + 0.15 * sin(uTime * 2.0 + cell.x * 0.7)) + vec3(1.0, 0.8, 0.3) * spark * 0.6;
+    if (ua == 3.0) {
       float bub = step(0.965, h21(floor(pxc * 8.0) + cell * 5.0 + floor(uTime * 0.8 + h21(cell) * 4.0)));
       col = mix(col, col * 1.35 + vec3(0.05, 0.12, 0.0), bub);
       gEmit = col * 0.22 + vec3(0.3, 0.55, 0.15) * bub * 0.15;
     }
-    if (anim == 5.0) gEmit = col * (0.5 + 0.5 * sin(uTime * 3.0)) * (0.6 + uSurge * 1.5);
-    if (anim == 6.0) gEmit = vec3(0.8, 0.95, 1.0) * spark * 0.3;
+    if (ua == 5.0) gEmit = col * (0.5 + 0.5 * sin(uTime * 3.0)) * (0.6 + uSurge * 1.5);
+    if (ua == 6.0) gEmit = vec3(0.8, 0.95, 1.0) * spark * 0.3;
   }
   diffuseColor.rgb *= col;
 }`,
@@ -334,28 +385,28 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
     };
     this.disposables.push(mat, cells, atlas, ao);
 
-    // merged quads per chunk: tops (row runs of equal height) and vertical banks
+    // merged quads per chunk: tops (row runs of equal height) and vertical banks and cliffs;
+    // raised geometry goes into its own mesh so it can cast shadows
     const per = Math.ceil(n / GCHUNK);
     const lv = (x: number, z: number) => (x < 0 || z < 0 || x >= n || z >= n ? SKIRT : level[z * n + x]);
+    const castShadows = quality !== 'low';
     for (let cz = 0; cz < per; cz++)
       for (let cx = 0; cx < per; cx++) {
-        const pos: number[] = [];
-        const nor: number[] = [];
-        const top: number[] = [];
-        const idx: number[] = [];
+        const parts = [0, 1].map(() => ({ pos: [] as number[], nor: [] as number[], top: [] as number[], idx: [] as number[] }));
         const quad = (p: number[], nx: number, ny: number, nz: number, h: number) => {
-          const b = pos.length / 3;
-          pos.push(...p);
+          const part = parts[h > 0.01 ? 1 : 0];
+          const b = part.pos.length / 3;
+          part.pos.push(...p);
           for (let k = 0; k < 4; k++) {
-            nor.push(nx, ny, nz);
-            top.push(h);
+            part.nor.push(nx, ny, nz);
+            part.top.push(h);
           }
           // pick the winding whose face normal matches the requested one
           const ax = p[3] - p[0], ay = p[4] - p[1], az = p[5] - p[2];
           const bx = p[6] - p[0], by = p[7] - p[1], bz = p[8] - p[2];
           const fx = ay * bz - az * by, fy = az * bx - ax * bz, fz = ax * by - ay * bx;
-          if (fx * nx + fy * ny + fz * nz >= 0) idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
-          else idx.push(b, b + 2, b + 1, b, b + 3, b + 2);
+          if (fx * nx + fy * ny + fz * nz >= 0) part.idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
+          else part.idx.push(b, b + 2, b + 1, b, b + 3, b + 2);
         };
         const x0 = cx * GCHUNK;
         const z0 = cz * GCHUNK;
@@ -384,18 +435,21 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
             }
           }
         }
-        if (!idx.length) continue;
-        const geo = new THREE.BufferGeometry();
-        geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-        geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
-        geo.setAttribute('aTop', new THREE.Float32BufferAttribute(top, 1));
-        geo.setIndex(idx);
-        geo.computeBoundingSphere();
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.receiveShadow = true;
-        this.group.add(mesh);
-        this.disposables.push(geo);
-        this.chunks.push({ mesh, x: x0 + GCHUNK / 2, z: z0 + GCHUNK / 2 });
+        parts.forEach((part, k) => {
+          if (!part.idx.length) return;
+          const geo = new THREE.BufferGeometry();
+          geo.setAttribute('position', new THREE.Float32BufferAttribute(part.pos, 3));
+          geo.setAttribute('normal', new THREE.Float32BufferAttribute(part.nor, 3));
+          geo.setAttribute('aTop', new THREE.Float32BufferAttribute(part.top, 1));
+          geo.setIndex(part.idx);
+          geo.computeBoundingSphere();
+          const mesh = new THREE.Mesh(geo, mat);
+          mesh.receiveShadow = true;
+          mesh.castShadow = k === 1 && castShadows;
+          this.group.add(mesh);
+          this.disposables.push(geo);
+          this.chunks.push({ mesh, x: x0 + GCHUNK / 2, z: z0 + GCHUNK / 2 });
+        });
       }
   }
 
@@ -414,25 +468,28 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
       sh.uniforms.uCamDir = u.uCamDir;
       sh.uniforms.uTime = u.uTime;
       sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nattribute float aTile;\nuniform float uTime;\nvarying vec2 vSub;\nvarying float vTl;')
+        .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nattribute float aTile;\nuniform float uTime;\nvarying vec2 vSub;\nvarying float vTl;\nvarying float vNy;')
         .replace('#include <uv_vertex>', `#include <uv_vertex>
 float tl = aTile;
 if (tl == 2.0 && abs(normal.y) > 0.5) tl = 7.0;
-float rep = max(1.0, floor(max(length(instanceMatrix[0].xyz), length(instanceMatrix[1].xyz)) * 3.0 + 0.5));
+if (tl == 9.0 && normal.y > 0.5) tl = 0.0;
+float rep = max(1.0, floor(max(length(instanceMatrix[0].xyz), length(instanceMatrix[1].xyz)) * 2.0 + 0.5));
 vSub = vMapUv * rep;
-vTl = tl;`)
+vTl = tl;
+vNy = normal.y;`)
         .replace('#include <begin_vertex>', `#include <begin_vertex>
 vWPos = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
-if (aTile == 1.0) { float ph = vWPos.x * 0.35 + vWPos.z * 0.27; transformed.x += sin(uTime * 1.3 + ph) * 0.04; transformed.z += cos(uTime * 1.1 + ph) * 0.03; }`);
+if (aTile == 1.0) { float ph = vWPos.x * 0.35 + vWPos.z * 0.27; transformed.x += sin(uTime * 1.3 + ph) * 0.03; transformed.z += cos(uTime * 1.1 + ph) * 0.02; }`);
       sh.fragmentShader = sh.fragmentShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nuniform vec3 uFocus;\nuniform vec2 uCamDir;\nvarying vec2 vSub;\nvarying float vTl;')
+        .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nuniform vec3 uFocus;\nuniform vec2 uCamDir;\nvarying vec2 vSub;\nvarying float vTl;\nvarying float vNy;')
         .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n' + DITHER)
         .replace('#include <map_fragment>', `vec2 fs = fract(vSub);
 vec4 sampledDiffuseColor = texture2D(map, vec2((fs.x * 0.998 + 0.001 + vTl) / ${TILE_COUNT}.0, fs.y));
 diffuseColor *= sampledDiffuseColor;
 vec2 cellId = floor(vSub);
-if (vTl == 1.0 || vTl == 2.0 || vTl == 8.0) diffuseColor.rgb *= 0.95 + fract(sin(dot(cellId, vec2(12.9898, 78.233)) + vTl) * 43758.5453) * 0.08;
-diffuseColor.rgb *= mix(0.62, 1.0, smoothstep(0.0, 1.3, vWPos.y));`);
+if (vTl == 1.0 && vNy < -0.5) diffuseColor.rgb *= 0.62;
+if (vTl == 1.0 && vNy > -0.5 && vNy < 0.5) diffuseColor.rgb *= 0.86;
+diffuseColor.rgb *= mix(0.72, 1.0, smoothstep(0.0, 1.0, vWPos.y));`);
     };
     const glowMat = new THREE.MeshBasicMaterial({ map: tex });
     glowMat.onBeforeCompile = (sh) => {
@@ -441,17 +498,7 @@ diffuseColor.rgb *= mix(0.62, 1.0, smoothstep(0.0, 1.3, vWPos.y));`);
     this.disposables.push(cube, mat, glowMat, tex);
     const buckets: (typeof t.blocks)[] = Array.from({ length: chunks * chunks }, () => []);
     const glowBlocks: typeof t.blocks = [];
-    // natural rock piles: one lumpy, tilted boulder per column instead of stacked cubes
-    const rockCols = new Map<number, { x: number; z: number; h: number; b: Block }>();
     for (const b of t.blocks) {
-      if (!b.rock) continue;
-      const k = b.z * n + b.x;
-      const c = rockCols.get(k);
-      if (c) c.h = Math.max(c.h, b.y + 1);
-      else rockCols.set(k, { x: b.x, z: b.z, h: b.y + 1, b });
-    }
-    for (const b of t.blocks) {
-      if (b.rock) continue;
       if (b.glow) {
         glowBlocks.push(b);
         continue;
@@ -474,6 +521,9 @@ diffuseColor.rgb *= mix(0.62, 1.0, smoothstep(0.0, 1.3, vWPos.y));`);
     for (const tr of t.trees) {
       const list: Vox[] = [];
       treeVoxels(tr, map, list);
+      // trees on plateaus stand on the raised ground
+      const lift = t.elev[tr.z * n + tr.x];
+      if (lift) for (const v of list) v.y += lift;
       vox[bucketOf(tr.x, tr.z)].push(...list);
     }
     for (const rf of t.roofs) {
@@ -507,57 +557,13 @@ diffuseColor.rgb *= mix(0.62, 1.0, smoothstep(0.0, 1.3, vWPos.y));`);
       this.disposables.push(mesh, geo);
       if (cx >= 0) this.chunks.push({ mesh, x: (cx + 0.5) * CHUNK, z: (cz + 0.5) * CHUNK });
     };
-    if (rockCols.size) {
-      // Minecraft-style rock piles: crisp stone blocks of mixed shapes (tall, long, low)
-      const rg = cube.clone();
-      // each rock cell holds a small pile of 1/3-size stones of mixed shapes
-      type Piece = { x: number; z: number; sx: number; sy: number; sz: number; color: number };
-      const pieces: Piece[] = [];
-      for (const c of rockCols.values()) {
-        const colors = pal[c.b.mat] ?? [0x888888];
-        const base = colors[c.b.v % colors.length];
-        const count = 3 + Math.floor(hash2(c.x, c.z, 30) * 4);
-        const used = new Set<number>();
-        for (let k = 0; k < count; k++) {
-          const r = (a: number) => hash2(c.x * 7 + k, c.z * 5 + k * 3, a);
-          const cell = Math.floor(r(1) * 9);
-          if (used.has(cell)) continue;
-          used.add(cell);
-          const gx = (cell % 3) / 3 + 1 / 6;
-          const gz = Math.floor(cell / 3) / 3 + 1 / 6;
-          const kind = r(2);
-          let sx = 0.3, sy = 0.3, sz = 0.3;
-          if (kind < 0.35) sy = (c.h + 0.5 + r(5) * 0.5) / 3;
-          else if (kind < 0.7) {
-            const len = 0.55 + r(6) * 0.12;
-            sy = 0.27 + r(5) * 0.08;
-            if (r(3) < 0.5) sx = len;
-            else sz = len;
-          } else sy = 0.25 + r(5) * 0.1;
-          pieces.push({ x: c.x + gx + (r(7) - 0.5) * 0.06, z: c.z + gz + (r(8) - 0.5) * 0.06, sx, sy, sz, color: base });
-        }
-      }
-      const tiles = new Float32Array(pieces.length).fill(4);
-      rg.setAttribute('aTile', new THREE.InstancedBufferAttribute(tiles, 1));
-      const mesh = new THREE.InstancedMesh(rg, mat, pieces.length);
-      pieces.forEach((p, i) => {
-        m4.compose(v3.set(p.x, 0, p.z), q.identity(), sc.set(p.sx, p.sy, p.sz));
-        mesh.setMatrixAt(i, m4);
-        mesh.setColorAt(i, col.setHex(p.color).multiplyScalar(0.95 + hash2(i, 3, 9) * 0.2));
-      });
-      mesh.castShadow = quality !== 'low';
-      mesh.receiveShadow = true;
-      mesh.computeBoundingSphere();
-      this.group.add(mesh);
-      this.disposables.push(mesh, rg);
-    }
     const shadows = quality !== 'low';
     buckets.forEach((list, i) => fill(list, vox[i], mat, shadows, i % chunks, Math.floor(i / chunks)));
     fill(glowBlocks, [], glowMat, false);
   }
 
   private buildDecor(t: Terrain, quality: string) {
-    let list = t.decor;
+    let list = t.decor.filter((d) => !d.sway || d.glow);
     if (quality === 'low') list = list.filter((_, i) => i % 3 === 0);
     // lily pads on calm water
     const n = t.size;
@@ -627,101 +633,145 @@ transformed.z += cos(uTime * 1.7 + ph) * 0.08 * position.y * aSway;`,
     bucket(glow).forEach((arr, i) => build(arr, glowMat, i % per, Math.floor(i / per), DC));
   }
 
-  /** Dense swaying grass tufts and small flowers on grassy ground. */
-  private buildGrass(t: Terrain, map: MapDef, quality: string) {
-    const density = quality === 'low' ? 0 : quality === 'medium' ? 0.35 : 0.6;
-    if (!density) return;
+  /**
+   * Ground foliage: crossed pixel-art sprites (grass tufts, ferns, small flowers, dead bushes)
+   * on suitable tiles, plus the generator's swaying decor drawn as flower sprites.
+   */
+  private buildFoliage(t: Terrain, map: MapDef, quality: string) {
+    const q = quality === 'low' ? 0.3 : quality === 'medium' ? 0.6 : 1;
     const n = t.size;
-    const grassy = t.tileNames.map((nm) => /grass|moss/.test(nm));
-    if (!grassy.some(Boolean)) return;
-    const blade = (x: number, z: number, h: number, w: number) => {
-      const b = new THREE.BoxGeometry(w, h, w);
-      b.translate(x, h / 2, z);
-      b.deleteAttribute('uv');
-      const c = new Float32Array(b.attributes.position.count * 3);
-      for (let i = 0; i < b.attributes.position.count; i++) {
-        const k = 0.55 + (b.attributes.position.getY(i) / h) * 0.6;
-        c[i * 3] = c[i * 3 + 1] = c[i * 3 + 2] = k;
-      }
-      b.setAttribute('color', new THREE.BufferAttribute(c, 3));
-      return b;
+    const rules = t.tileNames.map((nm) => foliageRule(map.generator, nm));
+    const tiles = map.palette.tiles;
+    // quad 1x1 with its base at y=0; two crossed planes
+    const plane = (rot: number) => {
+      const g = new THREE.PlaneGeometry(1, 1);
+      g.translate(0, 0.5, 0);
+      g.rotateY(rot);
+      const nor = g.attributes.normal as THREE.BufferAttribute;
+      for (let i = 0; i < nor.count; i++) nor.setXYZ(i, 0, 1, 0);
+      return g;
     };
-    const tuft = mergeGeometries([blade(-0.1, 0.04, 0.36, 0.07), blade(0.09, -0.07, 0.28, 0.07), blade(0.02, 0.11, 0.44, 0.07), blade(-0.02, -0.12, 0.22, 0.06)])!;
-    const stem = blade(0, 0, 0.3, 0.04);
-    const head = new THREE.BoxGeometry(0.14, 0.1, 0.14);
-    head.translate(0, 0.33, 0);
-    head.deleteAttribute('uv');
-    head.setAttribute('color', new THREE.BufferAttribute(new Float32Array(head.attributes.position.count * 3).fill(1.6), 3));
-    const flower = mergeGeometries([stem, head])!;
+    const p1 = plane(Math.PI / 4);
+    const p2 = plane(-Math.PI / 4);
+    const cross = new THREE.BufferGeometry();
+    cross.setAttribute('position', new THREE.Float32BufferAttribute([...p1.attributes.position.array, ...p2.attributes.position.array], 3));
+    cross.setAttribute('normal', new THREE.Float32BufferAttribute([...p1.attributes.normal.array, ...p2.attributes.normal.array], 3));
+    cross.setAttribute('uv', new THREE.Float32BufferAttribute([...p1.attributes.uv.array, ...p2.attributes.uv.array], 2));
+    const i1 = Array.from(p1.index!.array);
+    cross.setIndex([...i1, ...i1.map((i) => i + 4)]);
+    p1.dispose();
+    p2.dispose();
+    const tex = makeFoliageAtlas();
     const u = this.uniforms;
-    const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+    const mat = new THREE.MeshLambertMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide });
     mat.onBeforeCompile = (sh) => {
       sh.uniforms.uTime = u.uTime;
       sh.uniforms.uFocus = u.uFocus;
-      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform vec3 uFocus;').replace(
-        '#include <begin_vertex>',
-        `#include <begin_vertex>
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform vec3 uFocus;\nattribute float aSprite;\nvarying float vSpr;\nvarying float vH;')
+        .replace(
+          '#include <begin_vertex>',
+          `#include <begin_vertex>
+vSpr = aSprite;
+vH = uv.y;
 vec3 ip = instanceMatrix[3].xyz;
 float ph = ip.x * 0.9 + ip.z * 0.6;
-float bend = position.y * 2.2;
-transformed.x += sin(uTime * 2.0 + ph) * 0.06 * bend;
-transformed.z += cos(uTime * 1.6 + ph) * 0.04 * bend;
+float bend = uv.y;
+transformed.x += sin(uTime * 2.0 + ph) * 0.07 * bend;
+transformed.z += cos(uTime * 1.6 + ph) * 0.05 * bend;
 vec2 away = ip.xz - uFocus.xz;
 float near = 1.0 - smoothstep(0.3, 1.1, length(away));
-transformed.xz += normalize(away + 0.0001) * near * 0.25 * bend;`,
-      );
+transformed.xz += normalize(away + 0.0001) * near * 0.3 * bend;`,
+        );
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying float vSpr;\nvarying float vH;')
+        // lit like the ground below, from either side of the crossed planes
+        .replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\nnormal = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);')
+        .replace(
+          '#include <map_fragment>',
+          `vec4 sampledDiffuseColor = texture2D(map, vec2((clamp(vMapUv.x, 0.001, 0.999) + vSpr) / ${SPRITE_COUNT}.0, vMapUv.y));
+diffuseColor *= sampledDiffuseColor;
+diffuseColor.rgb *= 0.78 + 0.22 * vH;`,
+        );
     };
-    this.disposables.push(tuft, flower, mat, stem, head);
-    const palette = map.palette.tiles;
-    const flowerColors = [0xffffff, 0xd8b8ff, 0xffb84a, 0xff8ab8, 0xfff07a];
-    const m4 = new THREE.Matrix4();
-    const rot = new THREE.Matrix4();
-    const col = new THREE.Color();
+    this.disposables.push(cross, tex, mat);
+    type F = { x: number; y: number; z: number; s: number; sp: number; c: number; a: number };
     const DC = 32;
     const per = Math.ceil(n / DC);
-    for (let cz = 0; cz < per; cz++)
-      for (let cx = 0; cx < per; cx++) {
-        const tufts: [number, number, number, number, number][] = [];
-        const flowers: [number, number, number, number][] = [];
-        for (let z = cz * DC; z < Math.min(n, (cz + 1) * DC); z++)
-          for (let x = cx * DC; x < Math.min(n, (cx + 1) * DC); x++) {
-            const i = z * n + x;
-            if (t.cell[i] !== CELL.floor || !grassy[t.tile[i]]) continue;
-            const r = hash2(x, z, 91);
-            if (r > density) continue;
-            const ox = hash2(x, z, 92);
-            const oz = hash2(x, z, 93);
-            const base = palette[t.tileNames[t.tile[i]]]?.[0] ?? 0x4a8a3a;
-            if (hash2(x, z, 94) > 0.9) flowers.push([x + ox, z + oz, flowerColors[Math.floor(hash2(x, z, 95) * flowerColors.length)], hash2(x, z, 96)]);
-            else tufts.push([x + ox, z + oz, base, hash2(x, z, 97), 0.8 + hash2(x, z, 98) * 0.6]);
+    const buckets: F[][] = Array.from({ length: per * per }, () => []);
+    const put = (f: F) => buckets[Math.min(per - 1, Math.max(0, Math.floor(f.z / DC))) * per + Math.min(per - 1, Math.max(0, Math.floor(f.x / DC)))].push(f);
+    const col = new THREE.Color();
+    for (let z = 0; z < n; z++)
+      for (let x = 0; x < n; x++) {
+        const i = z * n + x;
+        const rule = rules[t.tile[i]];
+        if (!rule) continue;
+        const c = t.cell[i];
+        const e = t.elev[i];
+        if (!e && c !== CELL.floor && c !== CELL.hazard && c !== CELL.ice) continue;
+        if (e && c === CELL.wall && Math.min(x, z, n - 1 - x, n - 1 - z) < 3) continue;
+        const dens = rule.density * q;
+        let count = Math.floor(dens);
+        if (hash2(x, z, 91) < dens - count) count++;
+        const base = tiles[t.tileNames[t.tile[i]]]?.[0] ?? 0x5f9440;
+        for (let k = 0; k < count; k++) {
+          const r = (a: number) => hash2(x * 3 + k, z * 5 + k * 7, a);
+          const sp = pickSprite(rule.sprites, r(1));
+          const tint = SPRITE_COLORED.has(sp) ? 0xffffff : rule.tint ?? col.setHex(base).multiplyScalar(1.12 + r(2) * 0.22).getHex();
+          put({ x: x + 0.12 + r(3) * 0.76, y: e, z: z + 0.12 + r(4) * 0.76, s: 0.6 * (0.8 + r(5) * 0.5), sp, c: tint, a: r(6) });
+        }
+        // a fringe of tall grass along cliff rims, hanging over the edge
+        if (e && rule.sprites.some(([sp]) => sp === SPRITE.grass) && q > 0.5) {
+          const lvl = this.level;
+          for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+            const nx = x + dx;
+            const nz = z + dz;
+            if (nx < 0 || nz < 0 || nx >= n || nz >= n || lvl[nz * n + nx] >= e) continue;
+            for (let k = 0; k < 2; k++) {
+              const r = (a: number) => hash2(x * 7 + k + dx * 3, z * 11 + k + dz * 5, a);
+              const along = 0.15 + (k + r(1)) * 0.35;
+              const px = dx ? x + (dx > 0 ? 0.92 : 0.08) : x + along;
+              const pz = dz ? z + (dz > 0 ? 0.92 : 0.08) : z + along;
+              put({ x: px, y: e - 0.04, z: pz, s: 0.62 * (0.85 + r(2) * 0.4), sp: r(3) < 0.6 ? SPRITE.tallGrass : SPRITE.grass, c: col.setHex(base).multiplyScalar(1.1 + r(4) * 0.2).getHex(), a: r(5) });
+            }
           }
-        const addInst = (geo: THREE.BufferGeometry, count: number, setter: (mesh: THREE.InstancedMesh, i: number) => void) => {
-          if (!count) return;
-          const mesh = new THREE.InstancedMesh(geo, mat, count);
-          for (let i = 0; i < count; i++) setter(mesh, i);
-          mesh.receiveShadow = true;
-          mesh.computeBoundingSphere();
-          this.group.add(mesh);
-          this.disposables.push(mesh);
-          this.chunks.push({ mesh, x: (cx + 0.5) * DC, z: (cz + 0.5) * DC });
-        };
-        addInst(tuft, tufts.length, (mesh, i) => {
-          const [x, z, c, a, s] = tufts[i];
-          rot.makeRotationY(a * Math.PI * 2);
-          m4.makeScale(s, s, s).premultiply(rot);
-          m4.setPosition(x, 0, z);
-          mesh.setMatrixAt(i, m4);
-          mesh.setColorAt(i, col.setHex(c).multiplyScalar(1.05 + a * 0.25));
-        });
-        addInst(flower, flowers.length, (mesh, i) => {
-          const [x, z, c, a] = flowers[i];
-          rot.makeRotationY(a * Math.PI * 2);
-          m4.copy(rot);
-          m4.setPosition(x, 0, z);
-          mesh.setMatrixAt(i, m4);
-          mesh.setColorAt(i, col.setHex(c));
-        });
+        }
       }
+    // swaying decor from the generator (flower rings around camps and clearings)
+    for (const d of t.decor) {
+      if (!d.sway || d.glow) continue;
+      col.setHex(d.color);
+      const hsl = { h: 0, s: 0, l: 0 };
+      col.getHSL(hsl);
+      let sp: number = SPRITE.grass;
+      if (hsl.s > 0.25 && hsl.l > 0.3) {
+        const h = hsl.h * 360;
+        sp = h < 20 || h > 330 ? (hsl.l > 0.6 ? SPRITE.tulip : SPRITE.poppy) : h < 70 ? SPRITE.dandelion : h < 170 ? SPRITE.grass : h < 250 ? SPRITE.cornflower : SPRITE.allium;
+      } else if (hsl.l > 0.8) sp = SPRITE.daisy;
+      put({ x: d.x, y: d.y, z: d.z, s: 0.5, sp, c: SPRITE_COLORED.has(sp) ? 0xffffff : d.color, a: hash2(Math.floor(d.x * 7), Math.floor(d.z * 7), 3) });
+    }
+    const m4 = new THREE.Matrix4();
+    const rot = new THREE.Matrix4();
+    buckets.forEach((list, bi) => {
+      if (!list.length) return;
+      const geo = cross.clone();
+      const mesh = new THREE.InstancedMesh(geo, mat, list.length);
+      const spr = new Float32Array(list.length);
+      list.forEach((f, i) => {
+        rot.makeRotationY(f.a * Math.PI);
+        m4.makeScale(f.s, f.s, f.s).premultiply(rot);
+        m4.setPosition(f.x, f.y, f.z);
+        mesh.setMatrixAt(i, m4);
+        mesh.setColorAt(i, col.setHex(f.c));
+        spr[i] = f.sp;
+      });
+      geo.setAttribute('aSprite', new THREE.InstancedBufferAttribute(spr, 1));
+      mesh.receiveShadow = true;
+      mesh.computeBoundingSphere();
+      this.group.add(mesh);
+      this.disposables.push(geo, mesh);
+      this.chunks.push({ mesh, x: ((bi % per) + 0.5) * DC, z: (Math.floor(bi / per) + 0.5) * DC });
+    });
   }
 
   /** Hides block/decor chunks farther than radius from the camera target. */

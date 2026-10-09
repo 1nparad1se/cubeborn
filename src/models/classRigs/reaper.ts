@@ -1,8 +1,8 @@
-import { DEFAULT_PROPS, type HeroRigDef, type Proportions } from '../../render/rig/HeroRig';
+import type { HeroRigDef } from '../../render/rig/HeroRig';
 import type { RigPart } from '../../render/rig/shapes';
 import type { PoseMap } from '../../render/rig/animTypes';
-import { arms, head, legs, P, sym, torso } from '../heroRigs/kit';
-import { bands, bladeTip, curvedBlade, tatters, type BladeOpts } from './kitAgile';
+import { shade, type FaceId, type Pix } from '../../render/rig/skins';
+import { cube, GRIP, humanoid, isSide, MC_POS_SCALE, MC_SCALE, mcProps, outer, pixelItem, tex, type Side } from './mcKit';
 
 /** Idle stance (also the base the reaper action clips are authored against). */
 export const REAPER_STANCE: PoseMap = {
@@ -15,139 +15,159 @@ export const REAPER_STANCE: PoseMap = {
 };
 
 /**
- * Reaper (Жнец): a shadow assassin wrapped in dark cloth under a deep hood, a white porcelain
- * mask with glowing violet eye slits, a long tattered cloak with violet runes and a small
- * curved dagger in each hand, held in a reverse grip.
+ * Reaper, Minecraft Dungeons style: a hooded harvester of souls. A deep charcoal hood over a
+ * shadowed face with a white bone mask and glowing violet eye slits, dark wrapped cloth with
+ * violet runes, a long tattered cloak, and a small soul-scythe in each hand, held reversed.
  */
 export function reaperRig(): HeroRigDef {
-  const pr: Proportions = { ...DEFAULT_PROPS, thigh: 3.5, shin: 3.4, foot: 1.2, hipX: 1.35, spine: 1.6, shoulderX: 3.5, shoulderY: 3.6, upperArm: 3.0, foreArm: 2.8, neck: 4.1, depth: 3.2 };
-  const cloak = 0x2a2634;
-  const cloakD = 0x1a1722;
-  const cloakL = 0x3a3448;
-  const wrap = 0x3c3848;
-  const wrapD = 0x2a2634;
-  const wrapL = 0x55506a;
+  const pr = mcProps();
+  const cloak = 0x3a2f52;
+  const cloakL = 0x55467a;
+  const cloakD = 0x221a32;
+  const wrap = 0x4a4560;
+  const wrapL = 0x6e6888;
+  const shadow = 0x0c0a12;
+  const mask = 0xeee8de;
+  const maskD = 0xbfb6aa;
+  const violet = 0xb86aff;
+  const violetD = 0x6a32a8;
+  const steel = 0xb8b4cc;
+  const steelD = 0x6e6a84;
   const leather = 0x2e2626;
-  const mask = 0xf0ebe2;
-  const maskD = 0xc4bcb6;
-  const violet = 0xb866ff;
-  const violetD = 0x5a2c8c;
-  const shadow = 0x0b0910;
-  const steel = 0xb4b0c8;
 
-  // ---------------------------------------------------------------- reverse-grip daggers (left authored, mirrored)
-  const blade: BladeOpts = { b: 'gripL', at: [0, -0.8, -0.95], dir: -1, len: 3.7, curve: 40, w: 0.9, th: 0.22, seg: 4, steel, edge: violet, spine: 0x4a4660 };
-  const dagger: RigPart[] = [
-    P('gripL', [0, -0.8, 0.25], [0.5, 2.0, 0.5], leather, { s: 'cyl', n: 6, r: [90, 0, 0] }),
-    P('gripL', [0, -0.8, 1.35], [0.62, 0.62, 0.62], wrapL, { s: 'gem' }),
-    P('gripL', [0, -0.8, 1.55], [0.38, 0.38, 0.38], violet, { s: 'gem', g: true }),
-    P('gripL', [0, -0.8, -0.8], [0.5, 1.5, 0.35], wrapL, { s: 'rbox', bv: [0.12, 0.12] }),
-    P('gripL', [0, -1.6, -0.62], [0.36, 0.65, 0.28], wrapL, { r: [40, 0, 0], t: [0.5, 0.6] }),
-    ...curvedBlade(blade),
-  ];
-  const tipL = bladeTip(blade);
+  const head = (f: FaceId, g: Pix) => {
+    g.fill(shadow, 0.05);
+    if (f !== 'F') return;
+    // bone mask with eye slits and a cracked cheek
+    g.nrect(1, 2, 6, 5, mask, 0.04).rect(2, 6, 4, 1, maskD).set(1, 6, shadow).set(6, 6, shadow);
+    g.rect(1, 4, 2, 1, violetD).rect(5, 4, 2, 1, violetD);
+    g.set(3, 5, maskD).set(4, 5, maskD).set(5, 3, maskD).set(6, 2, maskD);
+    g.rect(2, 7, 4, 1, shadow);
+  };
+
+  /** Deep hood: covers the head, a narrow face opening in shadow. */
+  const hood = (f: FaceId, g: Pix) => {
+    g.fill(cloak, 0.07);
+    if (f === 'D') {
+      g.rect(0, 0, 8, 8, -1);
+      return;
+    }
+    if (f === 'T') {
+      g.vline(3, cloakD).vline(4, cloakL);
+      return;
+    }
+    if (f === 'F') {
+      g.rect(1, 2, 6, 6, -1);
+      g.hline(1, cloakL, 1, 7).vline(0, cloakD, 2, 8).vline(7, cloakD, 2, 8);
+    } else {
+      g.hline(0, cloakL);
+      for (let y = 2; y < 8; y += 3) g.set(f === 'B' ? 3 : 2, y, cloakD);
+    }
+  };
+
+  const body = (f: FaceId, g: Pix) => {
+    g.fill(wrap, 0.08);
+    if (!isSide(f)) return;
+    // wrapped bands, a crossing harness and a violet rune clasp
+    for (let y = 1; y < 8; y += 3) g.hline(y, shade(wrap, 0.82));
+    if (f === 'F') {
+      for (let i = 0; i < 8; i++) g.set(i, i, leather);
+      g.rect(3, 3, 2, 2, violetD).set(3, 3, violet);
+    }
+    g.nrect(0, 8, g.w, 1, leather, 0.05);
+    if (f === 'F') g.rect(3, 8, 2, 1, violet);
+    g.nrect(0, 9, g.w, 3, cloakD, 0.08);
+  };
+
+  const arm = (side: Side) => (f: FaceId, g: Pix) => {
+    g.fill(wrap, 0.08);
+    if (f === 'T') {
+      g.fill(cloak, 0.07);
+      return;
+    }
+    if (f === 'D') {
+      g.fill(cloakD);
+      return;
+    }
+    // cloak sleeve to the elbow, criss-cross wraps, dark gloves
+    g.nrect(0, 0, g.w, 5, cloak, 0.07).hline(4, cloakD);
+    for (let y = 6; y < 10; y++) g.set((y + (side === 'L' ? 0 : 2)) % g.w, y, wrapL);
+    g.nrect(0, 10, g.w, 2, shadow, 0.05);
+    if (f === outer(side)) g.set(1, 2, violetD);
+  };
+
+  const leg = (side: Side) => (f: FaceId, g: Pix) => {
+    g.fill(cloakD, 0.08);
+    if (f === 'D') {
+      g.fill(shadow);
+      return;
+    }
+    if (f === 'T') return;
+    for (let y = 6; y < 10; y += 2) g.hline(y, wrap);
+    g.set(side === 'L' ? 1 : 2, 7, wrapL);
+    g.nrect(0, 10, 4, 2, leather, 0.06);
+  };
+
+  const cape = tex('rp.cloak', [10, 15, 1], (f, g) => {
+    g.fill(cloak, 0.08);
+    if (!isSide(f)) return;
+    for (let y = 2; y < 15; y += 4) g.set((y * 3) % 10, y, cloakD);
+    if (f === 'B') {
+      // violet runes
+      g.rect(4, 5, 2, 1, violetD).set(4, 6, violetD).set(5, 7, violetD);
+      g.rect(2, 9, 1, 2, violetD).set(7, 10, violetD).set(7, 11, violetD).set(6, 11, violetD);
+    }
+    // tattered hem
+    const cut = [3, 1, 4, 2, 0, 3, 1, 4, 2, 2];
+    for (let x = 0; x < 10; x++) for (let k = 0; k < cut[x]; k++) g.set(x, 14 - k, -1);
+  });
+  const hoodTip = tex('rp.hoodTip', [5, 4, 3], (f, g) => g.fill(cloak, 0.07).hline(g.h - 1, cloakD));
+  const eyes = tex('rp.eyes', [2, 1, 1], (f, g) => g.fill(0xe6c4ff, 0.02));
 
   const parts: RigPart[] = [
-    // ---------------------------------------------------------- legs: wrapped trousers, soft boots
-    ...legs(pr, { pants: wrapD, boots: leather, sole: 0x120e10, thighW: 2.05, shinW: 1.75, cuff: 2.6, cuffColor: wrap }),
-    ...sym([
-      ...[-0.85, -1.4, -1.95].map((y, i) => P('shinL', [0, y, 0.05], [2.25, 0.2, 2.3], wrapL, { r: [0, 0, i % 2 ? 10 : -10], flat: true })),
-      ...[-1.0, -2.0].map((y) => P('legL', [0, y, 0], [2.25, 0.2, 2.2], wrap, { r: [0, 0, -8], flat: true })),
-      P('footL', [0, -0.6, 2.2], [1.2, 0.5, 0.8], leather, { t: [0.4, 0.6] }),
-    ]),
-
-    // ---------------------------------------------------------- torso: wrapped tunic, harness, violet clasp
-    ...torso(pr, { shirt: wrap, pants: wrapD, belt: leather, chestW: 4.8, flare: 1.2, chestD: 3.1, chestH: 3.9, waistW: 3.9 }),
-    ...[0.6, 1.5, 2.4].map((y, i) => P('chest', [0, y, 0], [5.4 - i * 0.1, 0.35, 3.35], wrapL, { r: [0, 0, 14], flat: true })),
-    ...sym([P('chest', [0.9, 2.3, 1.62], [0.45, 4.6, 0.3], leather, { r: [0, 0, -24] })]),
-    P('chest', [0, 2.15, 1.82], [1.1, 1.1, 0.4], wrapL, { s: 'rbox', bv: [0.3, 0.15], r: [0, 0, 45] }),
-    P('chest', [0, 2.15, 2.0], [0.65, 0.65, 0.4], violet, { s: 'gem', g: true }),
-    // belt with a violet rune buckle and a hanging front sash
-    P('hips', [0, 1.05, 1.62], [1.0, 0.9, 0.3], wrapL, { s: 'rbox', bv: [0.2, 0.1] }),
-    P('hips', [0, 1.05, 1.8], [0.5, 0.5, 0.2], violet, { s: 'gem', g: true }),
-    P('hips', [-1.6, 0.6, 1.0], [0.9, 1.0, 0.8], leather, { s: 'rbox', bv: [0.25, 0.2] }),
-    P('skirtF', [0, -1.55, 0.45], [2.3, 3.1, 0.25], cloakD, { t: [1.2, 1] }),
-    ...tatters('skirtF', -3.05, 0.45, 2.3, 3, 1.0, 0.24, cloakD),
-    P('skirtF', [0, -2.0, 0.6], [0.3, 1.4, 0.1], violetD, { flat: true }),
-    P('skirtB', [0, -1.4, -0.4], [3.4, 2.8, 0.25], cloakD, { t: [1.15, 1] }),
-    ...tatters('skirtB', -2.75, -0.4, 3.4, 4, 1.0, 0.24, cloakD),
-
-    // ---------------------------------------------------------- mantle and long tattered cloak
-    P('chest', [0, 3.85, -0.35], [6.3, 1.5, 4.0], cloak, { s: 'rbox', t: [0.78, 0.86], bv: [1.0, 0.55] }),
-    ...sym([
-      P('chest', [2.75, 3.3, -0.2], [1.8, 1.6, 3.6], cloak, { s: 'rbox', t: [0.7, 0.9], bv: [0.5, 0.4], r: [0, 0, -18] }),
-      ...[-0.75, 0, 0.75].map((z, i) => P('armL', [1.12, -1.0 - (i === 1 ? 0.35 : 0), z], [0.28, 1.6 + (i === 1 ? 0.6 : 0), 0.8], cloakD, { t: [1, 0.5], r: [180, 0, 6] })),
-    ]),
-    P('chest', [0, 3.35, 1.62], [2.4, 0.35, 0.3], violetD, { flat: true }),
-    P('capeA', [0, -2.1, -0.1], [5.6, 4.6, 0.42], cloak, { t: [0.8, 1] }),
-    P('capeA', [0, -0.25, 0.05], [4.6, 0.6, 0.6], cloakL, { s: 'rbox', bv: [0.2, 0.2] }),
-    P('capeB', [0, -1.75, 0], [6.6, 3.6, 0.4], cloakD, { t: [0.86, 1] }),
-    ...tatters('capeB', -3.5, 0, 6.6, 7, 3.4, 0.38, cloakD),
-    // violet runes stitched into the cloak
-    P('capeB', [0, -1.6, -0.24], [0.9, 0.9, 0.12], violet, { g: true, r: [0, 0, 45] }),
-    P('capeB', [0, -1.6, -0.26], [0.4, 0.4, 0.12], cloakD, { flat: true, r: [0, 0, 45] }),
-    ...sym([
-      P('capeB', [1.5, -1.6, -0.24], [0.16, 1.0, 0.12], violet, { g: true }),
-      P('capeB', [2.3, -2.05, -0.24], [0.16, 0.8, 0.12], violet, { g: true, r: [0, 0, 30] }),
-      P('capeA', [1.9, -3.3, -0.36], [0.16, 0.9, 0.12], violetD, { flat: true, r: [0, 0, -20] }),
-    ]),
-    P('capeB', [0, -3.2, -0.24], [5.4, 0.16, 0.12], violetD, { flat: true }),
-    // smoke curling off the hem
-    ...[[-2.35, -6.3, 0.6], [0.0, -6.6, 0.6], [2.35, -6.0, 0.55]].map(([x, y, l]) => P('capeB', [x, y, -0.05], [0.7, l, 0.42], violetD, { flat: true })),
-
-    // ---------------------------------------------------------- arms: wrapped sleeves, bracers with runes, gloves
-    ...arms(pr, { sleeve: wrap, skin: wrapD, fore: wrapD, glove: leather, upperW: 1.6, foreW: 1.65, shoulder: cloak, shoulderSize: 2.1 }),
-    ...sym([
-      ...bands('armL', [-1.2, -1.8, -2.4], [1.85, 0.18, 1.85], wrapL),
-      P('foreL', [0, -1.55, 0], [2.0, 1.9, 2.0], leather, { s: 'rbox', t: [0.86, 0.86], bv: [0.45, 0.2] }),
-      P('foreL', [1.0, -1.55, 0], [0.12, 1.1, 0.3], violet, { g: true }),
-      P('foreL', [0, -0.45, 0], [1.85, 0.2, 1.85], wrapL, { flat: true, r: [0, 0, 10] }),
-    ]),
-
-    // ---------------------------------------------------------- head: porcelain mask in a deep hood
-    ...head({ skin: shadow, noFace: true, noEars: true, size: [5.0, 5.1, 4.2] }),
-    P('head', [0, 3.35, 2.1], [4.1, 3.6, 0.8], mask, { s: 'rbox', t: [0.92, 1], bv: [1.0, 0.8, 0.2] }),
-    P('head', [0, 1.25, 2.05], [3.5, 1.4, 0.7], mask, { s: 'rbox', r: [0, 0, 180], t: [0.5, 0.8], bv: [0.4, 0.1] }),
-    ...sym([P('head', [1.4, 2.25, 2.4], [1.1, 0.7, 0.3], maskD, { s: 'rbox', bv: [0.25, 0.15], r: [0, 0, 18] })]),
-    P('head', [0, 3.0, 2.55], [0.6, 1.5, 0.3], maskD, { t: [0.4, 1] }),
-    P('head', [0, 4.75, 2.5], [3.2, 0.4, 0.2], maskD, { flat: true }),
-    ...sym([
-      P('head', [1.05, 3.55, 2.5], [1.65, 0.75, 0.12], shadow, { r: [0, 0, -14], flat: true }),
-      P('head', [1.05, 3.55, 2.55], [1.3, 0.3, 0.12], violet, { r: [0, 0, -14], g: true }),
-      P('head', [1.0, 2.6, 2.5], [0.14, 1.0, 0.1], violetD, { flat: true, r: [0, 0, 6] }),
-    ]),
-    ...[-0.5, 0, 0.5].map((x) => P('head', [x, 1.3, 2.42], [0.12, 0.6, 0.1], 0x5a5060, { flat: true })),
-    P('head', [0, 4.3, 2.52], [0.45, 0.45, 0.14], violet, { g: true, s: 'gem' }),
-    // deep hood: shell, brim casting a shadow, side flaps, inner darkness
-    P('head', [0, 3.6, -0.6], [6.7, 6.4, 5.8], cloak, { s: 'rbox', t: [0.62, 0.72], bv: [2.0, 2.4] }),
-    P('head', [0, 6.9, 1.2], [2.8, 1.5, 3.0], cloak, { t: [0.12, 0.25], sh: [0, 1.1] }),
-    P('head', [0, 6.05, 2.3], [4.2, 1.3, 1.9], cloak, { s: 'rbox', t: [0.6, 1], bv: [0.45, 0.45], r: [12, 0, 0] }),
-    P('head', [0, 5.55, 3.2], [3.9, 0.22, 0.25], violetD, { flat: true, r: [12, 0, 0] }),
-    ...sym([P('head', [2.7, 3.0, 2.0], [0.8, 4.6, 1.9], cloak, { t: [0.7, 0.8], r: [0, -8, -9] })]),
-    P('head', [0, 5.35, 2.3], [4.7, 0.6, 0.3], shadow, { flat: true }),
-    ...sym([P('head', [2.35, 3.4, 2.3], [0.55, 4.6, 0.3], shadow, { flat: true })]),
-    P('head', [0, 0.35, 1.0], [5.6, 1.2, 3.6], cloak, { s: 'rbox', bv: [0.9, 0.3] }),
-    P('head', [0, 3.2, -3.55], [3.4, 3.4, 1.4], cloak, { s: 'rbox', t: [0.5, 0.6], sh: [0, 0.4], bv: [0.5, 0.4] }),
-
-    // ---------------------------------------------------------- the daggers
-    ...sym(dagger),
+    ...humanoid({ name: 'rp', head, hat: hood, body, arm, leg }),
+    cube('head', [0, 6.2, -4.6], hoodTip, { r: [-12, 0, 0] }),
+    cube('head', [-2, 3.5, 4.05], eyes, { g: true }),
+    cube('head', [2, 3.5, 4.05], eyes, { g: true }),
+    cube('capeA', [0, -3.5, 0], cape, { y0: 0, y1: 7 }),
+    cube('capeB', [0, -4, 0], cape, { y0: 7, y1: 15 }),
+    ...scythe('gripL'),
+    ...scythe('gripR'),
   ];
+
+  // ---------------------------------------------------------------- soul scythe, reverse grip: shaft toward -z, blade hooks toward +y
+  function scythe(b: 'gripL' | 'gripR'): RigPart[] {
+    const rows = [
+      '..ssss....',
+      '.Wmmmmsss.',
+      '.W...eemms',
+      '.W.....ems',
+      '.w......es',
+      '.w.......e',
+      '.w........',
+      '.b........',
+      '.b........',
+      'PPP.......',
+    ];
+    return pixelItem(rows, { s: steel, m: steelD, e: violet, W: steelD, w: 0x4a3a30, b: leather, P: violet }, { b, at: GRIP, pivot: [1, 7.5], px: 0.95, th: 0.45, u: '+y', v: '-z', glow: 'eP', thick: { W: 1.6, w: 1.6, b: 1.6, P: 1.8 } });
+  }
 
   return {
     id: 'reaper',
-    scale: 0.085,
+    scale: MC_SCALE,
+    posScale: MC_POS_SCALE,
     props: pr,
     parts,
     springs: {
       // 'bob' keeps the long cloak trailing low instead of flying flat at a run
-      capeA: { parent: 'chest', at: [0, pr.shoulderY + 0.3, -pr.depth / 2 - 0.45], kind: 'bob', k: 0.8, rest: -16 },
-      capeB: { parent: 'capeA', at: [0, -4.3, 0], kind: 'bob', k: 0.6, rest: 8 },
+      capeA: { parent: 'chest', at: [0, 7.8, -2.6], kind: 'bob', k: 0.8, rest: -6 },
+      capeB: { parent: 'capeA', at: [0, -7, 0], kind: 'bob', k: 0.6, rest: 8 },
     },
-    tip: { bone: 'gripR', p: [-tipL[0], tipL[1], tipL[2]] },
-    grip: { L: { rot: [-30, 0, 0] }, R: { rot: [-30, 0, 0] } },
+    tip: { bone: 'gripR', p: [GRIP[0], GRIP[1] + 8 * 0.95, GRIP[2] - 2.5 * 0.95] },
+    grip: { L: { at: GRIP, rot: [-30, 0, 0] }, R: { at: GRIP, rot: [-30, 0, 0] } },
     anim: {
       weapon: 'sword',
-      gait: { cadence: 0.5, stride: 30, knee: 42, armSwing: 8, elbow: 26, bounce: 0.12, lean: 10, sway: 1, twist: 5, heavy: 0, headBob: 0.2, armOut: 12, idle: 0.8 },
+      gait: { cadence: 0.5, stride: 32, knee: 42, armSwing: 8, elbow: 26, bounce: 0.2, lean: 10, sway: 1, twist: 5, heavy: 0, headBob: 0.2, armOut: 12, idle: 0.8 },
       stance: REAPER_STANCE,
       stanceRun: 0.75,
       victory: 'raise',

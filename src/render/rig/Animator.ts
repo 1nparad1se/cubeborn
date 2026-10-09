@@ -514,7 +514,7 @@ export class HeroAnimator {
   /** Writes the pose into the bone transforms. */
   private write() {
     const rig = this.rig;
-    const sc = rig.def.scale;
+    const sc = rig.def.posScale ?? rig.def.scale;
     for (const id of BONES) {
       const v = this.pose.get(id)!;
       const r = rig.restRot[id];

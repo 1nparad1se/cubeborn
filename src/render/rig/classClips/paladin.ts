@@ -1,5 +1,5 @@
 import type { Clip } from '../clips';
-import { crouch, ev, k, lunge, makeClip, mix, plus, restPose, type KeyIn, type Pose } from './heavyKit';
+import { crouch, ev, forwardRoll, k, lunge, makeClip, mix, plus, restPose, type KeyIn, type Pose } from './heavyKit';
 
 /**
  * Paladin action clips: crisp knightly sword cuts, shield bashes and holy gestures. The shield
@@ -34,27 +34,13 @@ function cut(name: string, dur: number, hit: number, wind: Pose, end: Pose, legs
   return clip(name, dur, [k(0, R), k(hit * 0.5, wind, 'io'), k(hit, mix(end, legs), 'out'), k(hit + (dur - hit) * 0.4, mix(end, legs)), k(dur, R)], { events: [ev(hit)] });
 }
 
-/** Forward roll around the tucked body's centre (root turns a full circle, then snaps to 0). */
-function roll(): KeyIn[] {
-  const c = 7;
-  const tuckPose = mix(crouch(1, 0), { chest: [40, 0, 0], spine: [20, 0, 0], head: [30, 0, 0], armR: [-30, 0, -45], foreR: [-20, 0, 0], handR: [0, 0, 0] });
-  const keys: KeyIn[] = [k(0, R), k(0.06, mix(tuckPose, { rootPos: [0, -1.5, 0.5] }), 'in')];
-  for (let i = 1; i <= 6; i++) {
-    const a = (i * 60 * Math.PI) / 180;
-    keys.push(k(0.06 + i * 0.045, mix(tuckPose, { root: [i * 60, 0, 0], rootPos: [0, c - c * Math.cos(a) - 1.5, -c * Math.sin(a)] }), 'lin'));
-  }
-  keys.push(k(0.3405, mix(tuckPose, { root: [0, 0, 0], rootPos: [0, -1.5, 0] }), 'lin'));
-  keys.push(k(0.5, R));
-  return keys;
-}
-
 const shieldSword = (shield: Pose, sword: Pose): Pose => mix(sword, { armL: shield.armL!, foreL: shield.foreL!, handL: shield.handL! });
 
 export const PALADIN_CLIPS: Record<string, Clip> = {
   pl_basic1: cut('pl_basic1', 0.45, 0.2, P.swordHigh, P.slashLow),
   pl_basic2: cut('pl_basic2', 0.45, 0.2, P.backHigh, P.slashLowR),
   pl_basic3: clip('pl_basic3', 0.6, [k(0, R), k(0.14, plus(P.shieldBrace, { chest: [-8, -16, 0], armL: [20, 0, 0] }, R), 'io'), k(0.28, mix(P.bash, lunge(0.8, 1)), 'out'), k(0.42, mix(P.bash, lunge(0.6, 0.8))), k(0.6, R)], { events: [ev(0.28)] }),
-  pl_dodge: clip('pl_dodge', 0.5, roll(), { full: true }),
+  pl_dodge: clip('pl_dodge', 0.5, forwardRoll(R, 0.5, { arms: { armR: [-30, 0, -45], foreR: [-20, 0, 0], handR: [0, 0, 0] } }), { full: true }),
   pl_q1: cut('pl_q1', 0.4, 0.18, P.swordHigh, P.slashLow),
   pl_q2: cut('pl_q2', 0.4, 0.18, P.backHigh, P.slashLowR),
   pl_q3: clip('pl_q3', 0.6, [k(0, R), k(0.16, mix(P.thrustBack, crouch(0.2)), 'io'), k(0.3, mix(P.thrust, lunge(0.9, 1.2)), 'out'), k(0.42, mix(P.thrust, lunge(0.8, 1.0))), k(0.6, R)], { events: [ev(0.3)] }),

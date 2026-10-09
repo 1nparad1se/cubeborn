@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { skinQuads, skinSize, type SkinAtlas, type SkinRef } from './skins';
 
 export type V3 = [number, number, number];
 
@@ -35,6 +36,11 @@ export interface RigPart {
   flat?: boolean;
   /** 'rbox' chamfers: vertical edges, top edges and bottom edges (voxels). */
   bv?: [number, number?, number?];
+  /**
+   * Pixel skin: the part is a textured box (or a horizontal slice of one) from the rig's skin
+   * atlas. Its size comes from the skin box (`d` is ignored) and `c` tints it (use 0xffffff).
+   */
+  sk?: SkinRef;
 }
 
 const tmpC = new THREE.Color();
@@ -75,7 +81,11 @@ export class GeoSink {
  * Vertex colors get a soft painted gradient: darker toward the bottom of each part and
  * brighter on up-facing faces, which reads as hand-painted shading from the game camera.
  */
-export function addPart(sink: GeoSink, part: RigPart, scale: number) {
+export function addPart(sink: GeoSink, part: RigPart, scale: number, atlas?: SkinAtlas | null) {
+  if (part.sk && atlas) {
+    addSkinPart(sink, part, part.sk, scale, atlas);
+    return;
+  }
   const tris = shapeTriangles(part);
   const [w, h, d] = part.d;
   euler.set((part.r?.[0] ?? 0) * DEG, (part.r?.[1] ?? 0) * DEG, (part.r?.[2] ?? 0) * DEG);
@@ -100,7 +110,8 @@ export function addPart(sink: GeoSink, part: RigPart, scale: number) {
       const ax = Math.abs(tmpN.x);
       const ay = Math.abs(tmpN.y);
       const az = Math.abs(tmpN.z);
-      if (ay >= ax && ay >= az) sink.uv.push(lx * 0.5, lz * 0.5);
+      if (atlas) sink.uv.push(atlas.white[0], atlas.white[1]);
+      else if (ay >= ax && ay >= az) sink.uv.push(lx * 0.5, lz * 0.5);
       else if (ax >= az) sink.uv.push(lz * 0.5, ly * 0.5);
       else sink.uv.push(lx * 0.5, ly * 0.5);
       let m = 1;
@@ -116,6 +127,34 @@ export function addPart(sink: GeoSink, part: RigPart, scale: number) {
   }
   void w;
   void d;
+}
+
+/** A textured skin box: six quads with atlas UVs, untinted by the painted gradient. */
+function addSkinPart(sink: GeoSink, part: RigPart, ref: SkinRef, scale: number, atlas: SkinAtlas) {
+  const size = skinSize(ref);
+  const inf = ref.inf ?? 0;
+  const hx = size[0] / 2 + inf;
+  const hy = size[1] / 2 + inf;
+  const hz = size[2] / 2 + inf;
+  euler.set((part.r?.[0] ?? 0) * DEG, (part.r?.[1] ?? 0) * DEG, (part.r?.[2] ?? 0) * DEG);
+  quat.setFromEuler(euler);
+  tmpC.setHex(part.c);
+  const glow = part.g ? 1 : 0;
+  for (const q of skinQuads(ref, atlas, hx, hy, hz)) {
+    e1.set(q.c[3][0] - q.c[0][0], q.c[3][1] - q.c[0][1], q.c[3][2] - q.c[0][2]);
+    e2.set(q.c[1][0] - q.c[0][0], q.c[1][1] - q.c[0][1], q.c[1][2] - q.c[0][2]);
+    tmpN.crossVectors(e1, e2).normalize().applyQuaternion(quat);
+    // TL, BL, BR / TL, BR, TR (counter-clockwise from outside)
+    for (const k of [0, 3, 2, 0, 2, 1]) {
+      const c = q.c[k];
+      tmpV.set(c[0], c[1], c[2]).applyQuaternion(quat);
+      sink.pos.push((tmpV.x + part.p[0]) * scale, (tmpV.y + part.p[1]) * scale, (tmpV.z + part.p[2]) * scale);
+      sink.nor.push(tmpN.x, tmpN.y, tmpN.z);
+      sink.uv.push(q.uv[k][0], q.uv[k][1]);
+      sink.col.push(tmpC.r, tmpC.g, tmpC.b);
+      sink.glow.push(glow);
+    }
+  }
 }
 
 /** Triangles (x,y,z * 3 per tri) of a part centred at the origin, before rotation. */

@@ -3,6 +3,7 @@ import { Rng } from '../../core/Rng';
 import { CELL, Terrain, replaceAll } from '../Terrain';
 import { fbm } from './noise';
 import { addZones } from './zones';
+import { elevate } from './elevate';
 import { border, blobs, clearCenter, disk, distToCenter, fillTiles, path, pine, pond, rockCluster, scatterDecor, sealUnreachable, tree, type GenCtx } from './common';
 
 type Gen = (g: GenCtx) => void;
@@ -61,9 +62,6 @@ const forest: Gen = (g) => {
     const z = rng.int(6, t.size - 6);
     if (distToCenter(g, x, z) > 10) rockCluster(g, x, z, 'stone', rng.int(1, 4));
   }
-  scatterDecor(g, 1600 * g.k, [0x6fb34a, 0x7cc455, 0x5a9a3a], { size: 0.12, h: 0.35, sway: true, onTile: ['grass', 'grass2'] });
-  scatterDecor(g, 260 * g.k, [0xe85a8a, 0xfff07a, 0x9a7aff, 0xffffff], { size: 0.16, h: 0.22, sway: true, onTile: ['grass', 'grass2'] });
-  scatterDecor(g, 160 * g.k, [0xc8483a, 0xb84aff, 0xe0d0b0], { size: 0.22, h: 0.25, onTile: ['grass', 'grass2', 'dirt'] });
   scatterDecor(g, 120 * g.k, [0x9aff6a], { size: 0.12, h: 0.12, glow: true, onTile: ['bog'] });
   border(g, 'stone', 3, 4);
   clearCenter(g, 7, 'grass');
@@ -147,8 +145,6 @@ const city: Gen = (g) => {
     }
   // fountain at center
   disk(g, g.c, g.c, 3.2, 'plaza');
-  scatterDecor(g, 400 * g.k, [0x4a4a52, 0x5a5048, 0x6a6a72], { size: 0.25, h: 0.12, onTile: ['road', 'cobble'] });
-  scatterDecor(g, 300 * g.k, [0x5a8a3a, 0x6a9a44], { size: 0.12, h: 0.3, sway: true, onTile: ['grass', 'cobble'] });
   border(g, 'brick', 3, 6);
   clearCenter(g, 6, 'plaza');
   for (let i = 0; i < 8; i++) {
@@ -260,7 +256,7 @@ const catacombs: Gen = (g) => {
       t.lights.push({ x: x + 0.5, z: z + 0.5, y: 1.6, color: 0xff9a3a, intensity: 1.8 });
     }
   }
-  scatterDecor(g, 500 * g.k, [0xd8d0b8, 0xc8c0a8, 0xe8e0c8], { size: 0.2, h: 0.12, onTile: ['floor', 'tile'] });
+  scatterDecor(g, 200 * g.k, [0xd8d0b8, 0xc8c0a8, 0xe8e0c8], { size: 0.2, h: 0.12, onTile: ['floor', 'tile'] });
   scatterDecor(g, 120 * g.k, [0x5aff9a], { size: 0.1, h: 0.1, glow: true, onTile: ['moss'] });
   border(g, 'wall', 3, 3);
   clearCenter(g, 6, 'tile');
@@ -329,7 +325,6 @@ const volcano: Gen = (g) => {
     }
   }
   scatterDecor(g, 400 * g.k, [0xff6a1a, 0xffaa3a], { size: 0.1, h: 0.1, glow: true, onTile: ['scorch', 'ash'] });
-  scatterDecor(g, 500 * g.k, [0x2a2428, 0x3a3236], { size: 0.25, h: 0.15, onTile: ['ash', 'basalt'] });
   border(g, 'obsidian', 3, 5);
   clearCenter(g, 7, 'basalt');
 };
@@ -380,8 +375,6 @@ const tundra: Gen = (g) => {
     }
   }
   for (let i = 0; i < 50 * g.k; i++) rockCluster(g, rng.int(6, t.size - 6), rng.int(6, t.size - 6), 'rock', rng.int(1, 4));
-  scatterDecor(g, 500 * g.k, [0xffffff, 0xe8f0ff], { size: 0.22, h: 0.12, onTile: ['snow', 'snow2'] });
-  scatterDecor(g, 200 * g.k, [0x8a9a7a, 0x7a8a6a], { size: 0.1, h: 0.25, sway: true, onTile: ['snow2', 'rock'] });
   border(g, 'ice', 3, 4);
   clearCenter(g, 7, 'snow');
 };
@@ -453,8 +446,6 @@ const ruins: Gen = (g) => {
       t.column(x, z, 3, 'gold');
     }
   }
-  scatterDecor(g, 500 * g.k, [0x5a8a4a, 0x6a9a54], { size: 0.12, h: 0.3, sway: true, onTile: ['moss', 'sand'] });
-  scatterDecor(g, 200 * g.k, [0xb89a6a, 0xd8c8a8], { size: 0.25, h: 0.15, onTile: ['sand', 'marble'] });
   scatterDecor(g, 150 * g.k, [0xb89aff], { size: 0.08, h: 0.08, glow: true, onTile: ['rune', 'void'] });
   border(g, 'sandstone', 3, 4);
   clearCenter(g, 7, 'marble');
@@ -470,8 +461,10 @@ export function generateTerrain(map: MapDef, seed: number, opts: { zones?: boole
   for (const name of Object.keys(map.palette.tiles)) t.tileId(name);
   const gen = GENERATORS[map.generator] ?? forest;
   gen(g);
+  let cleared: Uint8Array | null = null;
+  if (opts.zones !== false) cleared = addZones(g, map.generator);
+  elevate(g, map.generator, cleared);
   if (opts.zones !== false) {
-    addZones(g, map.generator);
     sealUnreachable(g);
     // drop markers that ended up walled off
     const keep = t.markers.filter((m) => t.walkableAt(m.x, m.z) || m.kind === 'rune');

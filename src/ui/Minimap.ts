@@ -91,7 +91,7 @@ export class Minimap {
         const open = !blocked[i];
         let rgba: [number, number, number, number];
         if (open) {
-          const c3 = cell === CELL.hazard ? tint(0xc04030, [44, 48, 54], 0.35) : tint(tileCol[t.tile[i]] ?? 0x666666, [44, 48, 54], 0.14);
+          const c3 = cell === CELL.hazard ? tint(0xc04030, [44, 48, 54], 0.35) : tint(tileCol[t.tile[i]] ?? 0x666666, [38, 54, 58], 0.12);
           rgba = [c3[0], c3[1], c3[2], 200];
         } else if (cell === CELL.liquid) {
           const c3 = tint(tileCol[t.tile[i]] ?? 0x2255aa, [30, 44, 66], 0.25);
@@ -264,21 +264,33 @@ export class Minimap {
       ctx.fillRect(sx - r * 0.35, sy - r * 0.35, r * 0.25, r * 0.25);
       ctx.fillRect(sx + r * 0.1, sy - r * 0.35, r * 0.25, r * 0.25);
     }
-    // the hero: white arrow in the facing direction
+    // the hero: a gold diamond with a small white pointer in the facing direction
     const [hx, hy] = toScreen(p.x, p.z);
     const a = Math.atan2(p.fz, p.fx) + this.yaw;
     const s = 6.5 * u;
     ctx.save();
     ctx.translate(hx, hy);
+    ctx.save();
     ctx.rotate(a);
     outline(() => {
       ctx.beginPath();
-      ctx.moveTo(s, 0);
-      ctx.lineTo(-s * 0.75, -s * 0.7);
-      ctx.lineTo(-s * 0.35, 0);
-      ctx.lineTo(-s * 0.75, s * 0.7);
+      ctx.moveTo(s * 1.55, 0);
+      ctx.lineTo(s * 0.95, -s * 0.42);
+      ctx.lineTo(s * 0.95, s * 0.42);
       ctx.closePath();
     }, '#ffffff');
+    ctx.restore();
+    const d = s * 0.78;
+    outline(() => {
+      ctx.beginPath();
+      ctx.moveTo(0, -d);
+      ctx.lineTo(d, 0);
+      ctx.lineTo(0, d);
+      ctx.lineTo(-d, 0);
+      ctx.closePath();
+    }, '#ffd23d');
+    ctx.fillStyle = '#fff6c0';
+    ctx.fillRect(-d * 0.22, -d * 0.22, d * 0.44, d * 0.44);
     ctx.restore();
   }
 }

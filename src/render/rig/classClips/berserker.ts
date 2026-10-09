@@ -1,5 +1,5 @@
 import type { Clip } from '../clips';
-import { crouch, ev, k, lunge, makeClip, mix, plus, restPose, tremble, tuck, type KeyIn, type Pose } from './heavyKit';
+import { crouch, ev, forwardRoll, k, lunge, makeClip, mix, plus, restPose, tremble, tuck, type KeyIn, type Pose } from './heavyKit';
 
 /**
  * Berserker action clips: slow, heavy wind-ups and crushing two-handed greatsword swings.
@@ -58,7 +58,7 @@ export const BERSERKER_CLIPS: Record<string, Clip> = {
   bz_basic1: sweep('bz_basic1', 0.62, 0.3, P.windR, P.sweepMid, P.sweepL),
   bz_basic2: sweep('bz_basic2', 0.62, 0.3, P.windL, P.sweepMid, P.sweepR, lunge(0.5)),
   bz_basic3: clip('bz_basic3', 0.9, [k(0, R), k(0.3, mix(P.overhead, crouch(0.2)), 'io'), k(0.45, P.slam, 'out'), k(0.62, P.slam), k(0.9, R)], { events: [ev(0.45)] }),
-  bz_dodge: clip('bz_dodge', 0.55, [k(0, R), k(0.06, mix(shoulderCharge, lunge(1, 1.2)), 'out'), k(0.32, mix(shoulderCharge, lunge(0.9, 1.0))), k(0.55, R)], { full: true }),
+  bz_dodge: clip('bz_dodge', 0.55, forwardRoll(R, 0.55, { start: 0.06, spin: 0.3, arms: { armR: [-60, -10, 20], foreR: [-40, 0, 0], armL: [-40, 0, 20], foreL: [-60, 0, 0] } }), { full: true }),
   bz_q1: sweep('bz_q1', 0.55, 0.28, P.windR, P.sweepMid, P.sweepL, lunge(0.8)),
   bz_q2: clip('bz_q2', 0.75, [k(0, R), k(0.1, mix(P.spin, root(0))), ...spinKeys(0.12, 0.45, 0.36, 290).slice(1), k(0.75, R)], { full: true, events: [ev(0.36)] }),
   bz_w: clip('bz_w', 1.0, [

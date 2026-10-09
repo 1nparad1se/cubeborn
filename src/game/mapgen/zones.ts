@@ -41,7 +41,8 @@ interface Poi {
 
 const RADIUS: Record<PoiKind, number> = { village: 11, ruin: 9, camp: 6, clearing: 12, tower: 5, shrine: 3, secret: 5 };
 
-export function addZones(g: GenCtx, generator: string) {
+/** Places the points of interest; returns the mask of cleared ground (zones and roads). */
+export function addZones(g: GenCtx, generator: string): Uint8Array {
   const { t, rng } = g;
   const n = t.size;
   const th = THEMES[generator] ?? THEMES.forest;
@@ -192,6 +193,7 @@ export function addZones(g: GenCtx, generator: string) {
         break;
     }
   }
+  return mask;
 }
 
 function paint(g: GenCtx, cx: number, cz: number, r: number, tile: string) {

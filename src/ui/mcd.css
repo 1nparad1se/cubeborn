@@ -1,0 +1,1685 @@
+/* ==================================================================================================
+   MCD theme (v3.1): dungeon-crawler look modelled on the feel of Minecraft Dungeons — blocky pixel
+   headings, bevelled dark slots with cream key badges, a faceted heart gauge, a hexagonal soul gauge,
+   dark-teal translucent panels with thin light borders. Original artwork: no logos or game assets.
+   Loaded after style.css and classSelect.css, so it overrides both.
+   ================================================================================================== */
+:root {
+  /* Press Start 2P (crisp, full Cyrillic) for short caps headings, numbers and key badges; Russo One / Rubik
+     stay for anything longer so Russian text remains readable */
+  --font-px: 'Press Start 2P', 'Russo One', monospace;
+  --font-hud: 'Russo One', 'Rubik', system-ui, sans-serif;
+  /* teal-dark translucent panels */
+  --mc-panel: rgba(13, 36, 42, 0.9);
+  --mc-panel2: rgba(22, 54, 61, 0.92);
+  --mc-panel-hi: rgba(36, 78, 86, 0.95);
+  --mc-cell: rgba(7, 20, 24, 0.82);
+  --mc-line: rgba(176, 222, 226, 0.32);
+  --mc-line-hi: rgba(214, 240, 242, 0.7);
+  --mc-text: #eaf3f3;
+  --mc-dim: #9dbcc0;
+  --mc-gold: #ffd84a;
+  --mc-key: #ece6d2;
+  --mc-key-dk: #b4ab92;
+  --mc-xp: #9a6cff;
+  --mc-bevel-hi: #a7adb5;
+  --mc-bevel: #6d737b;
+  --mc-bevel-dk: #3c4047;
+}
+
+/* ------------------------------------------------------------------ shared bits */
+.hud .key,
+.mframe .key,
+.hb-key .key,
+.mc-key {
+  font: 400 10px/1 var(--font-px);
+  color: #1d1a12;
+  background: var(--mc-key);
+  border-radius: 2px;
+  box-shadow:
+    0 0 0 1px #050607,
+    inset 0 -2px 0 var(--mc-key-dk);
+  text-transform: uppercase;
+}
+
+/* ------------------------------------------------------------------ HUD: top centre (timer, boss) */
+.hud-time {
+  font: 400 20px var(--font-px);
+  color: #f6f8f8;
+  text-shadow:
+    2px 2px 0 #000,
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000;
+}
+.boss-bar {
+  width: min(560px, 50vw);
+  padding: 0 12px;
+}
+.boss-name {
+  font: 400 14px/1.4 var(--font-px);
+  margin-bottom: 3px;
+  text-shadow:
+    2px 2px 0 #000,
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000;
+}
+.boss-track {
+  position: relative;
+  height: 14px;
+  background: linear-gradient(#2a0d12, #14060a);
+  border: 2px solid #0a0b0d;
+  box-shadow:
+    0 0 0 2px var(--mc-bevel),
+    0 0 0 3px #0a0b0d,
+    0 3px 8px rgba(0, 0, 0, 0.55);
+  clip-path: none;
+  overflow: visible;
+}
+.boss-track::before,
+.boss-track::after {
+  /* angled end caps like a sword guard */
+  content: '';
+  position: absolute;
+  top: -5px;
+  width: 12px;
+  height: 20px;
+  background: var(--mc-bevel);
+  box-shadow: inset 0 0 0 2px #0a0b0d;
+  z-index: 2;
+}
+.boss-track::before {
+  left: -16px;
+  clip-path: polygon(100% 0, 100% 100%, 0 50%);
+}
+.boss-track::after {
+  right: -16px;
+  clip-path: polygon(0 0, 0 100%, 100% 50%);
+}
+.boss-fill {
+  background: linear-gradient(#ff5b5b 0 30%, #d8262f 30% 75%, #9e1420 75%);
+}
+.boss-bar.invuln .boss-fill {
+  background: linear-gradient(#bfeaff 0 30%, #6ab4e0 30% 75%, #3a7aaa 75%);
+}
+.boss-fill::after {
+  /* little diamond notches along the bar */
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, transparent 0 calc(25% - 1px), rgba(0, 0, 0, 0.45) calc(25% - 1px) 25%);
+}
+.boss-stag {
+  height: 6px;
+  width: 64%;
+  margin-top: 7px;
+  background: #16130a;
+  box-shadow:
+    0 0 0 1px #0a0b0d,
+    0 0 0 2px #6a5a2a;
+}
+.boss-stag-text {
+  font: 400 12px var(--font-hud);
+  letter-spacing: 0.5px;
+}
+.boss-phase {
+  margin-top: 5px;
+  align-items: center;
+}
+.boss-phase i {
+  width: 8px;
+  height: 8px;
+  transform: rotate(45deg);
+  background: #3a2a30;
+  box-shadow: 0 0 0 1px #000;
+  margin: 0 2px;
+}
+.boss-phase i.on {
+  background: #ff4a4a;
+}
+.boss-phase-t {
+  font: 400 13px var(--font-hud);
+  color: #ffd0a0;
+  text-shadow: 1px 1px 0 #000;
+}
+.fx-chip {
+  font: 400 11px var(--font-hud);
+  border-radius: 0;
+  padding: 1px 6px;
+  box-shadow: 0 0 0 1px #000;
+}
+
+/* hovered-enemy card */
+.hover-info {
+  background: var(--mc-panel);
+  border: 1px solid var(--mc-line);
+  border-radius: 0;
+  box-shadow: 0 0 0 1px #050607;
+}
+.hv-name {
+  font: 400 12px/1.5 var(--font-px);
+  text-transform: uppercase;
+}
+.hv-track {
+  border-radius: 0;
+  border: 1px solid #000;
+  box-shadow: 0 0 0 1px var(--mc-bevel);
+}
+.hv-fill {
+  background: linear-gradient(#ff5b5b 0 35%, #d8262f 35% 75%, #9e1420 75%);
+}
+.hv-hp {
+  font: 400 11px/13px var(--font-hud);
+}
+
+/* ------------------------------------------------------------------ HUD: top right (map, objective) */
+.minimap {
+  width: 210px;
+  height: 196px;
+  background: rgba(10, 24, 28, 0.38);
+  box-shadow:
+    0 0 0 1px rgba(5, 6, 7, 0.75),
+    inset 0 0 0 1px rgba(226, 240, 242, 0.62);
+}
+.minimap::after {
+  /* thin inner corner ticks */
+  content: '';
+  position: absolute;
+  inset: 4px;
+  pointer-events: none;
+  background:
+    linear-gradient(var(--mc-line-hi), var(--mc-line-hi)) left top / 8px 1px no-repeat,
+    linear-gradient(var(--mc-line-hi), var(--mc-line-hi)) left top / 1px 8px no-repeat,
+    linear-gradient(var(--mc-line-hi), var(--mc-line-hi)) right top / 8px 1px no-repeat,
+    linear-gradient(var(--mc-line-hi), var(--mc-line-hi)) right top / 1px 8px no-repeat,
+    linear-gradient(var(--mc-line-hi), var(--mc-line-hi)) left bottom / 8px 1px no-repeat,
+    linear-gradient(var(--mc-line-hi), var(--mc-line-hi)) left bottom / 1px 8px no-repeat;
+}
+.minimap {
+  position: relative;
+}
+.minimap.big {
+  position: fixed;
+  background: rgba(8, 22, 26, 0.78);
+}
+.map-key {
+  right: 6px;
+  bottom: 6px;
+}
+.hud .map-key.key {
+  min-width: 18px;
+  height: 18px;
+  font-size: 11px;
+}
+
+.daynight {
+  background: var(--mc-panel);
+  border: 1px solid var(--mc-line);
+  border-radius: 0;
+  box-shadow: 0 0 0 1px #050607;
+}
+.dn-name {
+  font: 400 12px/1.4 var(--font-px);
+  text-transform: uppercase;
+}
+.dn-next {
+  font: 400 13px var(--font-hud);
+}
+
+/* objective (wave) tracker: diamond bullet, pixel caps, rule with a diamond end */
+.wave-panel {
+  min-width: 230px;
+  gap: 3px;
+}
+.wave-head {
+  gap: 7px;
+}
+.wave-title {
+  position: relative;
+  padding-left: 20px;
+  font: 400 14px/1.4 var(--font-px);
+  text-shadow:
+    2px 2px 0 #000,
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000;
+}
+.wave-title::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  margin-top: -6px;
+  transform: rotate(45deg);
+  background: var(--wc, var(--mc-gold));
+  box-shadow:
+    0 0 0 2px #1a1408,
+    0 0 0 3px var(--mc-gold);
+}
+.wave-head .key {
+  min-width: 18px;
+  height: 18px;
+  font-size: 11px;
+}
+.wave-rule {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(240, 246, 246, 0.9) 22%);
+}
+.wave-rule::after {
+  right: 22px;
+  top: -3px;
+  width: 6px;
+  height: 6px;
+}
+.wave-sub {
+  position: relative;
+  padding-right: 14px;
+  font: 400 14px var(--font-hud);
+  letter-spacing: 0.3px;
+  color: #eef3f3;
+  text-shadow:
+    1px 1px 0 #000,
+    -1px 0 0 #000;
+}
+.wave-sub::after {
+  content: '';
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  margin-top: -2px;
+  transform: rotate(45deg);
+  background: #f0f4f4;
+  box-shadow: 0 0 0 1px #000;
+}
+.wave-track {
+  width: 150px;
+  height: 4px;
+}
+.wave-strip i {
+  width: 5px;
+  height: 7px;
+}
+.mod-chip {
+  font: 400 12px var(--font-hud);
+  letter-spacing: 0.3px;
+}
+.wave-record {
+  font: 400 13px var(--font-hud);
+}
+
+/* effects (top-left) */
+.buff {
+  font-family: var(--font-hud);
+  border-radius: 0;
+}
+
+/* banner (wave start, boss) */
+.banner-main {
+  font-family: var(--font-px) !important;
+  font-size: clamp(18px, 3vw, 34px) !important;
+  line-height: 1.45;
+  text-shadow:
+    3px 3px 0 #000,
+    -2px -2px 0 #000,
+    2px -2px 0 #000,
+    -2px 2px 0 #000 !important;
+}
+.banner-sub {
+  font-family: var(--font-hud) !important;
+  letter-spacing: 0.5px;
+}
+
+/* ------------------------------------------------------------------ HUD: bottom bar */
+.arpg-hud {
+  bottom: 6px;
+  gap: 4px;
+}
+.arpg-hud .ah-plate {
+  position: relative;
+  isolation: isolate;
+  padding: 0 30px 7px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+/* the slab: a dark plate with angled ends behind the lower part of the bar, bevelled grey rim */
+.arpg-hud .ah-plate::before,
+.arpg-hud .ah-plate::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 40px;
+  bottom: 0;
+  clip-path: polygon(0 50%, 26px 0, calc(100% - 26px) 0, 100% 50%, calc(100% - 26px) 100%, 26px 100%);
+  pointer-events: none;
+}
+.arpg-hud .ah-plate::before {
+  z-index: -2;
+  background: linear-gradient(#7c838c, #3b3f46);
+}
+.arpg-hud .ah-plate::after {
+  z-index: -1;
+  inset: 42px 3px 2px;
+  clip-path: polygon(0 50%, 25px 0, calc(100% - 25px) 0, 100% 50%, calc(100% - 25px) 100%, 25px 100%);
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.07), transparent 40%),
+    linear-gradient(rgba(22, 25, 30, 0.94), rgba(10, 12, 15, 0.96));
+}
+.arpg-hud .ah-main {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  padding: 0;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.arpg-hud .ah-left {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-end;
+  margin-bottom: 6px;
+}
+.arpg-hud .ah-gold {
+  font: 400 10px var(--font-px);
+  gap: 4px;
+  color: var(--mc-gold);
+  text-shadow: 1px 1px 0 #000;
+}
+.arpg-hud .ah-gold i.ic-coin {
+  width: 11px;
+  height: 11px;
+}
+.arpg-hud .ah-center {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  align-items: stretch;
+}
+
+/* --- heart */
+.ah-heart {
+  --heart: polygon(50% 20%, 63% 6%, 70% 2%, 86% 2%, 94% 7%, 100% 18%, 100% 44%, 94% 56%, 52% 99%, 48% 99%, 6% 56%, 0 44%, 0 18%, 6% 7%, 14% 2%, 30% 2%, 37% 6%);
+  position: relative;
+  width: 90px;
+  height: 82px;
+  flex: none;
+  margin-bottom: 2px;
+  filter: drop-shadow(0 3px 0 rgba(0, 0, 0, 0.55));
+}
+.ah-heart-rim {
+  position: absolute;
+  inset: 0;
+  clip-path: var(--heart);
+  background:
+    linear-gradient(135deg, var(--mc-bevel-hi) 0 30%, var(--mc-bevel) 30% 70%, var(--mc-bevel-dk) 70%);
+}
+.ah-heart-rim::after {
+  content: '';
+  position: absolute;
+  inset: 3px 4px 4px;
+  clip-path: var(--heart);
+  background: #0b0c0f;
+}
+.ah-heart-in {
+  position: absolute;
+  inset: 6px 8px 8px;
+  clip-path: var(--heart);
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.04), transparent),
+    #191b20;
+  overflow: hidden;
+}
+.ah-heart .ah-fill,
+.ah-heart .ah-shield {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 100%;
+  width: auto;
+  border: 0;
+  mix-blend-mode: normal;
+  transform-origin: bottom;
+  transition: transform 0.15s linear;
+}
+.ah-heart .ah-fill {
+  background:
+    linear-gradient(#ff8a8a, #ff8a8a) top / 100% 3px no-repeat,
+    linear-gradient(90deg, rgba(255, 255, 255, 0.1) 0 18%, transparent 18% 82%, rgba(0, 0, 0, 0.18) 82%),
+    linear-gradient(#f2434b, #c41d2a 60%, #8e1220);
+}
+.ah-heart .ah-shield {
+  transform: scaleY(0);
+  background:
+    linear-gradient(#ffffff, #ffffff) top / 100% 3px no-repeat,
+    repeating-linear-gradient(45deg, #cfe2f4 0 4px, #a8c4e0 4px 8px);
+}
+.ah-heart-gloss {
+  position: absolute;
+  left: 14%;
+  top: 14%;
+  width: 14%;
+  height: 12%;
+  background: rgba(255, 255, 255, 0.35);
+  pointer-events: none;
+}
+.ah-heart-num {
+  position: absolute;
+  left: -10px;
+  right: -10px;
+  top: 34px;
+  text-align: center;
+  font: 400 10px var(--font-px);
+  color: #fff;
+  text-shadow:
+    2px 2px 0 #000,
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000;
+  pointer-events: none;
+}
+.ah-heart-sh {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 18px;
+  text-align: center;
+  font: 400 8px var(--font-px);
+  color: #d8ecff;
+  text-shadow:
+    1px 1px 0 #0a2038,
+    -1px -1px 0 #0a2038;
+  pointer-events: none;
+}
+.ah-heart-sh:empty {
+  display: none;
+}
+.ah-heart.shielded .ah-heart-rim {
+  background: linear-gradient(135deg, #ffffff 0 30%, #b8d6f0 30% 70%, #5a7a9a 70%);
+}
+.ah-heart.low .ah-heart-in {
+  animation: mc-heart-low 0.7s steps(2) infinite;
+}
+@keyframes mc-heart-low {
+  50% {
+    filter: brightness(1.45);
+  }
+}
+
+/* --- resource bar under the skill grid (bar or orbs) */
+.arpg-hud .ah-bar.res {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+.arpg-hud .ah-bar.res .ah-label {
+  margin: 0;
+  font: 400 11px var(--font-hud);
+  letter-spacing: 0.5px;
+  color: color-mix(in srgb, var(--res) 55%, #ffffff);
+  text-shadow: 1px 1px 0 #000;
+  max-width: 92px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.arpg-hud .ah-bar.res .ah-track {
+  height: 9px;
+  border-radius: 0;
+  background: #07080a;
+  border: 1px solid #000;
+  box-shadow: 0 0 0 1px var(--mc-bevel-dk);
+}
+.arpg-hud .ah-bar.res .ah-fill {
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0.45)) top / 100% 2px no-repeat,
+    linear-gradient(color-mix(in srgb, var(--res) 80%, white), var(--res) 55%, color-mix(in srgb, var(--res) 60%, black));
+}
+.arpg-hud .ah-bar.res .ah-text {
+  position: static;
+  font: 400 8px var(--font-px);
+  color: #e8f0f0;
+  text-shadow: 1px 1px 0 #000;
+}
+.arpg-hud .ah-bar.res.orb .ah-track {
+  height: 12px;
+  background: none;
+  border: 0;
+  box-shadow: none;
+}
+.arpg-hud .ah-orbs {
+  inset: 0;
+  gap: 3px;
+  justify-content: center;
+}
+.arpg-hud .ah-orbs i {
+  flex: 0 0 12px;
+  height: 12px;
+  border-radius: 0;
+  transform: rotate(45deg) scale(0.78);
+  background: #101216;
+  box-shadow:
+    0 0 0 1px #000,
+    0 0 0 2px var(--mc-bevel);
+  margin: 0 3px;
+}
+.arpg-hud .ah-orbs i.on b {
+  box-shadow: 0 0 6px var(--res);
+}
+.arpg-hud .ah-bar.res.ready .ah-track {
+  box-shadow:
+    0 0 0 1px var(--res),
+    0 0 8px var(--res);
+}
+.arpg-hud .ah-bar.res.orb.ready .ah-track {
+  box-shadow: none;
+}
+.arpg-hud .ah-bar.res.active .ah-track {
+  box-shadow: 0 0 0 1px #fff;
+}
+
+/* --- skill slots: bevelled dark squares, cream key badges */
+.arpg-hud .ah-grid {
+  grid-template-columns: repeat(4, 48px);
+  gap: 9px 9px;
+}
+.arpg-hud .sk {
+  width: 48px;
+  height: 48px;
+  border-radius: 0;
+  border: 3px solid;
+  border-color: var(--mc-bevel-hi) var(--mc-bevel) var(--mc-bevel-dk) var(--mc-bevel);
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.05), transparent 45%),
+    #121418;
+  box-shadow:
+    0 0 0 1px #050607,
+    inset 0 0 0 1px #000,
+    inset 0 4px 8px rgba(0, 0, 0, 0.55);
+  transition:
+    border-color 0.12s,
+    box-shadow 0.12s,
+    transform 0.08s;
+}
+.arpg-hud .sk-icon {
+  inset: 3px;
+}
+.arpg-hud .sk-cd {
+  inset: 0;
+  border-radius: 0;
+}
+.arpg-hud .sk-timer {
+  font: 400 16px var(--font-px);
+  text-shadow:
+    2px 2px 0 #000,
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000;
+}
+.arpg-hud .sk-key {
+  left: auto;
+  top: auto;
+  right: -8px;
+  bottom: -8px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 3px;
+  border: 0;
+  border-radius: 2px;
+  background: var(--mc-key);
+  color: #1d1a12;
+  font: 400 10px/17px var(--font-px);
+  box-shadow:
+    0 0 0 1px #050607,
+    inset 0 -2px 0 var(--mc-key-dk);
+  z-index: 2;
+}
+.arpg-hud .sk-key.mouse,
+.arpg-hud .sk.dodge .sk-key {
+  font-size: 8px;
+}
+.arpg-hud .sk-cost {
+  top: 0;
+  bottom: auto;
+  right: 2px;
+  font: 400 8px var(--font-px);
+  text-shadow:
+    1px 1px 0 #000,
+    -1px 0 0 #000;
+}
+.arpg-hud .sk-sub {
+  left: -6px;
+  bottom: -8px;
+  transform: none;
+  height: 14px;
+  min-width: 14px;
+  padding: 0 3px;
+  border-radius: 0;
+  background: #0b0c0f;
+  border: 1px solid var(--mc-bevel);
+  font: 400 10px/12px var(--font-hud);
+  color: var(--mc-gold);
+  white-space: nowrap;
+}
+.arpg-hud .sk-sub.lock {
+  color: #d8dce4;
+  border-color: var(--mc-bevel-dk);
+}
+.arpg-hud .sk-sub.pips {
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: -7px;
+  background: #0b0c0f;
+}
+.arpg-hud .sk-sub.pips i {
+  border-radius: 0;
+  width: 6px;
+  height: 6px;
+  transform: rotate(45deg);
+  margin: 0 1px;
+}
+.arpg-hud .sk-plus {
+  top: -8px;
+  right: -8px;
+  width: 17px;
+  height: 17px;
+  border-radius: 0;
+  font: 400 12px/17px var(--font-px);
+  box-shadow:
+    0 0 0 1px #050607,
+    0 0 8px #ffc040;
+}
+/* states */
+.arpg-hud .sk.ready {
+  border-color: #e4e8ec #a2a8b0 #5e636b #a2a8b0;
+  box-shadow:
+    0 0 0 1px #050607,
+    inset 0 0 0 1px #000,
+    inset 0 4px 8px rgba(0, 0, 0, 0.35);
+}
+.arpg-hud .sk.cd {
+  border-color: #5b6068 #464a51 #2c2f34 #464a51;
+}
+.arpg-hud .sk.cd .sk-icon {
+  filter: saturate(0.5) brightness(0.75);
+}
+.arpg-hud .sk.nores {
+  border-color: #50648a #3b4c6c #263248 #3b4c6c;
+}
+.arpg-hud .sk.nores::after {
+  border-radius: 0;
+}
+.arpg-hud .sk.locked {
+  border-color: #44484f #36393f #24262a #36393f;
+}
+.arpg-hud .sk.locked .sk-icon {
+  filter: grayscale(1) brightness(0.3);
+}
+.arpg-hud .sk.flash {
+  transform: scale(1.08);
+  box-shadow:
+    0 0 0 1px #050607,
+    0 0 14px rgba(255, 255, 255, 0.75);
+}
+.arpg-hud .sk.learn {
+  animation: mc-learn 0.9s steps(2) infinite;
+}
+@keyframes mc-learn {
+  50% {
+    box-shadow:
+      0 0 0 1px #050607,
+      0 0 12px #ffd34a;
+  }
+}
+
+/* identity (Z): class-coloured bevel */
+.arpg-hud .sk.ident {
+  width: 50px;
+  height: 50px;
+  border-color: color-mix(in srgb, var(--res) 45%, var(--mc-bevel-hi)) color-mix(in srgb, var(--res) 40%, var(--mc-bevel))
+    color-mix(in srgb, var(--res) 30%, var(--mc-bevel-dk)) color-mix(in srgb, var(--res) 40%, var(--mc-bevel));
+}
+.arpg-hud .sk.ident.ready {
+  border-color: var(--res);
+  box-shadow:
+    0 0 0 1px #050607,
+    0 0 12px var(--res);
+  animation: sk-glow 0.8s steps(3) infinite alternate;
+}
+.arpg-hud .sk.ident.active {
+  border-color: #fff;
+  box-shadow:
+    0 0 0 1px #050607,
+    0 0 16px var(--res),
+    inset 0 0 10px var(--res);
+}
+
+/* basic / dodge / special */
+.arpg-hud .ah-extra {
+  grid-template-columns: repeat(2, 40px);
+  gap: 13px 10px;
+  margin-bottom: 18px;
+}
+.arpg-hud .sk.small {
+  width: 40px;
+  height: 40px;
+}
+.arpg-hud .sk.small .sk-icon {
+  inset: 2px;
+}
+.arpg-hud .sk.small .sk-timer {
+  font-size: 15px;
+}
+.arpg-hud .sk.basic {
+  border-color: #b8a888 #8a7c62 #54493a #8a7c62;
+}
+.arpg-hud .sk.basic.ready {
+  border-color: #e8dcc0 #b4a280 #6a5c44 #b4a280;
+}
+.arpg-hud .sk.dodge.ready {
+  border-color: #cfe6ff #8ab0d8 #4a6888 #8ab0d8;
+}
+
+/* --- Awakening (V): hexagonal soul gauge */
+.arpg-hud .sk.ult {
+  --hex: polygon(50% 0, 100% 24%, 100% 76%, 50% 100%, 0 76%, 0 24%);
+  width: 72px;
+  height: 80px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  overflow: visible;
+  margin-bottom: 4px;
+  filter: drop-shadow(0 3px 0 rgba(0, 0, 0, 0.55));
+}
+.arpg-hud .sk.ult::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  clip-path: var(--hex);
+  background: linear-gradient(135deg, var(--mc-bevel-hi) 0 35%, var(--mc-bevel) 35% 65%, var(--mc-bevel-dk) 65%);
+}
+.arpg-hud .sk.ult .sk-gauge {
+  inset: 5px;
+  border-radius: 0;
+  clip-path: var(--hex);
+  background: #0f1115;
+  -webkit-mask: none;
+  mask: none;
+  overflow: hidden;
+}
+.arpg-hud .sk.ult .sk-gauge i {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 100%;
+  transform-origin: bottom;
+  transform: scaleY(var(--gk, 0));
+  transition: transform 0.2s;
+  background:
+    linear-gradient(#fff3b0, #fff3b0) top / 100% 3px no-repeat,
+    linear-gradient(#ffcf4a, #e0901a 70%, #a85a10);
+  opacity: 0.85;
+}
+.arpg-hud .sk.ult .sk-icon {
+  inset: 16px 12px;
+  border-radius: 0;
+  overflow: visible;
+}
+.arpg-hud .sk.ult .sk-cd {
+  inset: 5px;
+  border-radius: 0;
+  clip-path: var(--hex);
+}
+.arpg-hud .sk.ult .sk-key {
+  left: auto;
+  top: auto;
+  right: 0;
+  bottom: 6px;
+}
+.arpg-hud .sk.ult .sk-sub {
+  left: 50%;
+  bottom: -8px;
+  transform: translateX(-50%);
+}
+.arpg-hud .sk.ult.locked .sk-gauge i {
+  opacity: 0.35;
+}
+.arpg-hud .sk.ult.ready {
+  box-shadow: none;
+  border: 0;
+  animation: mc-ult 0.8s ease-in-out infinite alternate;
+}
+.arpg-hud .sk.ult.ready::before {
+  background: linear-gradient(135deg, #fff6c8 0 35%, #ffd060 35% 65%, #b07a1a 65%);
+}
+.arpg-hud .sk.ult.ready .sk-gauge i {
+  opacity: 1;
+  background:
+    linear-gradient(#ffffff, #ffffff) top / 100% 3px no-repeat,
+    linear-gradient(#fff2a0, #ffc040 60%, #e08a10);
+}
+@keyframes mc-ult {
+  from {
+    filter: drop-shadow(0 3px 0 rgba(0, 0, 0, 0.55)) drop-shadow(0 0 4px #ffc04088);
+  }
+  to {
+    filter: drop-shadow(0 3px 0 rgba(0, 0, 0, 0.55)) drop-shadow(0 0 12px #ffc040);
+  }
+}
+
+/* --- bag / skills buttons: small slots with key badges */
+.arpg-hud .ah-side {
+  flex-direction: column;
+  gap: 12px;
+  align-self: flex-end;
+  margin-bottom: 8px;
+}
+.arpg-hud .ah-bag {
+  width: 38px;
+  height: 38px;
+  border-radius: 0;
+  border: 3px solid;
+  border-color: #c4a46a #8a6a3a #4e3a1c #8a6a3a;
+  background: #17130d;
+  box-shadow: 0 0 0 1px #050607;
+}
+.arpg-hud .ah-bag.ah-skb {
+  border-color: #8ab4d8 #4a7298 #263e56 #4a7298;
+  background: #0d141b;
+}
+.arpg-hud .ah-bag .icon {
+  width: 26px;
+  height: 26px;
+}
+.arpg-hud .ah-bag .key {
+  left: auto;
+  top: auto;
+  right: -9px;
+  bottom: -9px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  border: 0;
+  border-radius: 2px;
+  font: 400 10px/16px var(--font-px);
+  color: #1d1a12;
+  background: var(--mc-key);
+  box-shadow:
+    0 0 0 1px #050607,
+    inset 0 -2px 0 var(--mc-key-dk);
+}
+.arpg-hud .ah-bag::after {
+  right: auto;
+  left: -6px;
+  bottom: auto;
+  top: -8px;
+  font: 400 8px var(--font-px);
+  color: var(--mc-gold);
+  text-shadow:
+    1px 1px 0 #000,
+    -1px -1px 0 #000;
+}
+
+/* --- level + XP: purple segmented bar like a soul track */
+.arpg-hud .ah-xp {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: auto;
+  min-width: 360px;
+  max-width: 70%;
+  padding: 0 4px;
+}
+.ah-xp-lv {
+  font: 400 12px var(--font-px);
+  color: #c4a8ff;
+  text-shadow:
+    1px 1px 0 #000,
+    -1px -1px 0 #000;
+  min-width: 16px;
+  text-align: right;
+}
+.arpg-hud .ah-xp-track {
+  position: relative;
+  flex: 1;
+  height: 6px;
+  border-radius: 0;
+  background: #1a1626;
+  border: 1px solid #000;
+}
+.arpg-hud .ah-xp-fill {
+  background: linear-gradient(#c8b0ff, #8a5cf0 60%, #6a3ad0);
+}
+.ah-xp-seg {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, transparent 0 calc(10% - 2px), #000 calc(10% - 2px) 10%);
+  pointer-events: none;
+}
+.arpg-hud .ah-xp-text {
+  margin: 0;
+  font: 400 12px var(--font-hud);
+  color: #cdbcf0;
+  white-space: nowrap;
+  text-shadow: 1px 1px 0 #000;
+}
+
+/* --- above the bar: cast bar, buffs, unspent points */
+.arpg-hud .ah-cast {
+  width: 260px;
+}
+.arpg-hud .ah-cast-name {
+  font: 400 14px var(--font-hud);
+  letter-spacing: 0.5px;
+  text-shadow:
+    2px 2px 0 #000,
+    -1px -1px 0 #000;
+}
+.arpg-hud .ah-cast-track {
+  height: 8px;
+  border-radius: 0;
+  border: 1px solid #000;
+  box-shadow: 0 0 0 2px var(--mc-bevel);
+}
+.arpg-hud .ah-buff {
+  font: 400 12px var(--font-hud);
+  letter-spacing: 0.3px;
+  border-radius: 0;
+  background: rgba(10, 26, 30, 0.85);
+  box-shadow:
+    0 0 0 1px #050607,
+    inset 3px 0 0 var(--bc, #9adfff);
+}
+.arpg-hud .ah-points {
+  font: 400 13px var(--font-hud);
+  letter-spacing: 0.3px;
+  border-radius: 0;
+  background: rgba(40, 32, 8, 0.88);
+  border: 1px solid var(--mc-gold);
+  box-shadow: 0 0 0 1px #050607;
+  padding: 3px 10px 3px 22px;
+  position: relative;
+}
+.arpg-hud .ah-points::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  margin-top: -4px;
+  transform: rotate(45deg);
+  background: var(--mc-gold);
+}
+
+/* --- tooltip over a slot: teal card */
+.sk-tip {
+  background: rgba(12, 32, 38, 0.97);
+  border: 1px solid var(--mc-line-hi);
+  border-radius: 0;
+  box-shadow:
+    0 0 0 1px #050607,
+    0 8px 20px rgba(0, 0, 0, 0.6);
+  color: var(--mc-text);
+}
+.tip-head {
+  font: 400 11px/1.5 var(--font-px);
+  text-transform: uppercase;
+}
+.tip-key {
+  border: 0;
+  border-radius: 2px;
+  padding: 0 4px;
+  font: 400 8px/15px var(--font-px);
+  color: #1d1a12;
+  background: var(--mc-key);
+  box-shadow: inset 0 -2px 0 var(--mc-key-dk);
+}
+.tip-lv {
+  font-family: var(--font-hud);
+}
+.tip-kv {
+  border-bottom-color: rgba(176, 222, 226, 0.14);
+}
+.tip-tags span,
+.sks-tags span {
+  border-radius: 0;
+  background: rgba(176, 222, 226, 0.12);
+  color: #c4dde0;
+}
+.tip-next {
+  border-top-color: rgba(176, 222, 226, 0.2);
+}
+
+/* ------------------------------------------------------------------ toasts */
+.toast {
+  font: 400 15px var(--font-hud);
+  letter-spacing: 0.3px;
+  background: rgba(12, 32, 38, 0.92);
+  border: 1px solid var(--mc-line);
+  border-radius: 0;
+  box-shadow: 0 0 0 1px #050607;
+  padding: 8px 16px 8px 30px;
+  position: relative;
+  text-shadow: 1px 1px 0 #000;
+}
+.toast::before {
+  content: '';
+  position: absolute;
+  left: 11px;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  margin-top: -4px;
+  transform: rotate(45deg);
+  background: var(--tc, #fff);
+  box-shadow: 0 0 0 1px #000;
+}
+.toast.ach-toast {
+  padding-left: 12px;
+}
+.toast.ach-toast::before {
+  display: none;
+}
+.ach-toast-head {
+  font-family: var(--font-hud);
+  letter-spacing: 0.5px;
+}
+.ach-toast-name {
+  font-family: var(--font-hud);
+}
+
+/* ==================================================================================================
+   Panels: modals, menus, inventory, skills, pause, results, settings — dark-teal translucent cards
+   ================================================================================================== */
+.modal-back {
+  background: radial-gradient(ellipse at center, rgba(6, 20, 24, 0.55), rgba(3, 8, 10, 0.82));
+}
+.modal {
+  border-radius: 0;
+  background:
+    linear-gradient(rgba(40, 90, 98, 0.35), transparent 120px),
+    var(--mc-panel);
+  border: 1px solid var(--mc-line-hi);
+  box-shadow:
+    0 0 0 1px #050607,
+    0 14px 50px rgba(0, 0, 0, 0.6);
+  color: var(--mc-text);
+  backdrop-filter: blur(3px);
+}
+.modal h2 {
+  font: 400 clamp(16px, 2.4vw, 24px)/1.35 var(--font-px);
+  text-transform: uppercase;
+  text-shadow:
+    3px 3px 0 #000,
+    -1px -1px 0 #000;
+}
+.modal .sub,
+.modal .kv {
+  font-family: var(--font-ui);
+}
+
+/* buttons: teal stone with a dark lip; green for the main action */
+.btn {
+  font-family: var(--font-hud);
+  font-weight: 700;
+  letter-spacing: 1px;
+  border-radius: 0;
+  color: var(--mc-text);
+  background: linear-gradient(#2e5a62, #1f434a);
+  box-shadow:
+    0 0 0 1px #050607,
+    inset 0 0 0 1px rgba(214, 240, 242, 0.28),
+    inset 0 -4px 0 rgba(0, 0, 0, 0.35),
+    0 3px 0 1px #050607;
+  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.6);
+}
+.btn.primary {
+  background: linear-gradient(#6cc24f, #3f8f36);
+  color: #fff;
+  text-shadow: 1px 1px 0 #1a3a12;
+}
+.btn.danger {
+  background: linear-gradient(#d24a4a, #932a2e);
+  color: #fff;
+}
+.btn.active {
+  background: linear-gradient(#7a5a1a, #5a400e);
+}
+.btn:active {
+  box-shadow:
+    0 0 0 1px #050607,
+    inset 0 0 0 1px rgba(214, 240, 242, 0.28),
+    inset 0 -2px 0 rgba(0, 0, 0, 0.35),
+    0 1px 0 1px #050607;
+}
+
+/* ------------------------------------------------------------------ menu frame */
+.mframe {
+  background: rgba(6, 18, 22, 0.84);
+}
+.mframe.showcase {
+  background: linear-gradient(90deg, rgba(6, 18, 22, 0.9) 0 52%, rgba(6, 18, 22, 0.55) 70%, rgba(6, 18, 22, 0.2));
+}
+.mtop {
+  background: linear-gradient(#050d10, rgba(10, 26, 30, 0.96));
+  box-shadow: 0 1px 0 var(--mc-line);
+}
+.mtab {
+  font: 400 12px/1.4 var(--font-px);
+  color: #8fb0b4;
+}
+.mtab:hover {
+  color: #e2f0f0;
+}
+.mtab.sel {
+  color: #fff;
+}
+.mtab.sel::after {
+  height: 3px;
+  left: 6px;
+  right: 6px;
+  background: #f0a030;
+  box-shadow: 0 0 8px rgba(240, 160, 48, 0.6);
+}
+.mtab.sel::before {
+  /* small diamond over the selected tab, like a notification gem */
+  content: '';
+  position: absolute;
+  right: 4px;
+  top: 6px;
+  width: 5px;
+  height: 5px;
+  transform: rotate(45deg);
+  background: #f0a030;
+}
+.mfoot {
+  background: linear-gradient(rgba(10, 26, 30, 0.9), #050d10);
+  box-shadow: 0 -1px 0 var(--mc-line);
+}
+.mhint {
+  font: 400 15px var(--font-hud);
+  letter-spacing: 0.5px;
+}
+.mframe .gold-chip,
+.mframe .count {
+  font: 400 14px var(--font-px);
+}
+
+/* cards and lists */
+.panel,
+.detail,
+.hero-grid,
+.map-list,
+.icon-grid,
+.upgrade-list,
+.ach-list,
+.settings {
+  border-radius: 0;
+  background: var(--mc-panel);
+  box-shadow:
+    0 0 0 1px #050607,
+    inset 0 0 0 1px var(--mc-line);
+}
+.mframe .detail {
+  background:
+    linear-gradient(rgba(40, 90, 98, 0.35), transparent 90px),
+    var(--mc-panel);
+  box-shadow:
+    0 0 0 1px #050607,
+    inset 0 0 0 1px var(--mc-line-hi);
+  scrollbar-color: #4a7a80 transparent;
+}
+.mframe .detail h3,
+.detail h3 {
+  font: 400 20px/1.3 var(--font-px);
+  text-transform: uppercase;
+}
+.mframe .detail-title {
+  border-bottom-color: var(--mc-line);
+}
+.mframe .detail .kv {
+  border-bottom-color: rgba(176, 222, 226, 0.12);
+}
+.mframe .detail .kv > span:first-child::before {
+  width: 6px;
+  height: 6px;
+  transform: rotate(45deg);
+  background: #9dbcc0;
+  box-shadow: none;
+}
+.pill {
+  font: 400 10px/1.6 var(--font-px);
+  border-radius: 0;
+  box-shadow:
+    0 0 0 1px #050607,
+    inset 0 -2px 0 rgba(0, 0, 0, 0.25);
+}
+.mframe .icon-cell,
+.mframe .hero-card {
+  background:
+    linear-gradient(to top, color-mix(in srgb, var(--rc) 22%, transparent), transparent 55%),
+    var(--mc-cell);
+  box-shadow:
+    0 0 0 1px #050607,
+    inset 0 0 0 2px color-mix(in srgb, var(--rc) 45%, #2c4c52),
+    inset 0 -3px 0 color-mix(in srgb, var(--rc) 70%, transparent);
+}
+.mframe .icon-cell.sel,
+.mframe .hero-card.sel,
+.mframe .map-card.sel {
+  box-shadow:
+    0 0 0 1px #050607,
+    0 0 0 3px #ffffff,
+    inset 0 0 0 2px var(--rc, #fff),
+    inset 0 -3px 0 var(--rc, #fff);
+}
+.mframe .map-card,
+.mframe .upgrade,
+.mframe .ach {
+  background: var(--mc-panel2);
+  box-shadow:
+    0 0 0 1px #050607,
+    inset 0 0 0 1px var(--mc-line);
+}
+.mframe .map-card .name,
+.mframe .up-name,
+.mframe .ach-name {
+  font-family: var(--font-hud);
+  letter-spacing: 0.5px;
+}
+.mframe .tab {
+  font: 400 10px/1.4 var(--font-px);
+  background: rgba(22, 54, 61, 0.92);
+  color: #b4d0d4;
+  box-shadow:
+    0 0 0 1px #050607,
+    inset 0 0 0 1px var(--mc-line);
+}
+.mframe .tab.sel {
+  background: #eaf3f3;
+  color: #0c2226;
+}
+
+/* ------------------------------------------------------------------ class select */
+.cs-card {
+  border-radius: 0;
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--hc) 26%, transparent), transparent 70%),
+    var(--mc-cell);
+  box-shadow:
+    0 0 0 1px #050607,
+    inset 0 0 0 1px color-mix(in srgb, var(--hc) 45%, #2c4c52);
+}
+.cs-card.sel {
+  box-shadow:
+    0 0 0 1px #050607,
+    0 0 0 3px #ffffff,
+    inset 0 0 0 2px var(--hc);
+}
+.cs-card-name {
+  font: 400 10px/1.5 var(--font-px);
+}
+.cs-name {
+  font-family: var(--font-px) !important;
+  font-size: 20px !important;
+  line-height: 1.4;
+}
+.cs-sec,
+.cs-alabel {
+  font-family: var(--font-px) !important;
+  font-size: 10px !important;
+  line-height: 1.6;
+}
+.cs-stage {
+  border-radius: 0;
+}
+.cs-sheet,
+.cs-info {
+  border-radius: 0;
+}
+
+/* ------------------------------------------------------------------ inventory (I) */
+.modal.inventory .inv-top h2 {
+  font-size: 30px;
+}
+.inv-label,
+.it-title {
+  font: 400 10px/1.5 var(--font-px);
+  color: #b4d0d4;
+  position: relative;
+  padding-left: 14px;
+}
+.inv-label::before,
+.it-title::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin-top: -4px;
+  transform: rotate(45deg);
+  border: 1px solid #b4d0d4;
+}
+.inv-slot {
+  border-radius: 0;
+  border: 2px solid color-mix(in srgb, var(--rc, #2c4c52) 70%, #1a3036);
+  background:
+    linear-gradient(to top, color-mix(in srgb, var(--rc, transparent) 22%, transparent), transparent 60%),
+    var(--mc-cell);
+  box-shadow:
+    0 0 0 1px #050607,
+    inset 0 0 0 1px rgba(0, 0, 0, 0.6);
+}
+.inv-slot.empty {
+  border: 2px solid #1e3a40;
+  border-style: solid;
+  background: rgba(6, 18, 22, 0.7);
+}
+.inv-slot.sel {
+  border-color: #ffffff;
+  box-shadow:
+    0 0 0 1px #050607,
+    0 0 10px var(--rc, #fff);
+}
+.inv-ph {
+  font: 400 11px var(--font-hud);
+  color: #4f7a80;
+}
+.inv-gold {
+  font: 400 14px var(--font-px);
+}
+.inv-stats .ist {
+  border-bottom-color: rgba(176, 222, 226, 0.12);
+}
+.it-card {
+  border-radius: 0;
+  border: 1px solid var(--mc-line-hi);
+  background:
+    linear-gradient(rgba(40, 90, 98, 0.4), transparent 60px),
+    rgba(10, 28, 33, 0.95);
+  box-shadow:
+    0 0 0 1px #050607,
+    inset 0 3px 0 var(--rc);
+}
+.it-name {
+  font: 400 12px/1.5 var(--font-px);
+  text-transform: uppercase;
+}
+.it-line.implicit {
+  border-bottom-color: rgba(176, 222, 226, 0.15);
+}
+.it-verdict {
+  font-family: var(--font-hud);
+  letter-spacing: 0.5px;
+}
+.inv-hint,
+.sks-hint {
+  font-family: var(--font-ui);
+  color: var(--mc-dim);
+}
+
+/* ------------------------------------------------------------------ skills window (K) */
+.modal.sks .sks-head h2 {
+  font-size: 28px;
+}
+.sks-cls {
+  font: 400 17px var(--font-hud);
+  letter-spacing: 0.8px;
+}
+.sks-points {
+  font: 400 10px/1.4 var(--font-px);
+  border-radius: 0;
+  border-color: var(--mc-line);
+}
+.sks-row {
+  border-radius: 0;
+  background: rgba(8, 24, 28, 0.78);
+  border: 1px solid rgba(176, 222, 226, 0.18);
+  box-shadow: 0 0 0 1px #050607;
+}
+.sks-row.sel {
+  border-color: #ffffff;
+  background: rgba(24, 58, 64, 0.88);
+}
+.sks-icon {
+  border-radius: 0;
+  border: 3px solid;
+  border-color: var(--mc-bevel-hi) var(--mc-bevel) var(--mc-bevel-dk) var(--mc-bevel);
+  background: #121418;
+  box-shadow: 0 0 0 1px #050607;
+}
+.sks-icon.ult {
+  border-radius: 0;
+  border: 0;
+  background: linear-gradient(135deg, #fff6c8 0 35%, #ffd060 35% 65%, #b07a1a 65%);
+  clip-path: polygon(50% 0, 100% 24%, 100% 76%, 50% 100%, 0 76%, 0 24%);
+}
+.sks-icon.ult .icon {
+  border-radius: 0;
+  width: 38px;
+  height: 38px;
+}
+.sks-key,
+.sk-mini-key,
+.cs-key {
+  font-size: 8px !important;
+  line-height: 14px !important;
+  border: 0 !important;
+  border-radius: 2px !important;
+  font-family: var(--font-px) !important;
+  color: #1d1a12 !important;
+  background: var(--mc-key) !important;
+  box-shadow:
+    0 0 0 1px #050607,
+    inset 0 -2px 0 var(--mc-key-dk) !important;
+}
+.sks-name {
+  font: 400 12px/1.5 var(--font-px);
+  text-transform: uppercase;
+}
+.sks-lvn {
+  font-family: var(--font-hud);
+}
+.sks-pips i {
+  border-radius: 0;
+}
+.sks-plus {
+  border-radius: 0;
+  font-family: var(--font-px);
+  font-size: 14px;
+}
+.sks-tier-h {
+  font-family: var(--font-hud);
+  letter-spacing: 1px;
+}
+.sks-card {
+  border-radius: 0;
+  background: rgba(14, 36, 42, 0.92);
+  border: 1px solid rgba(176, 222, 226, 0.2);
+}
+.sks-card:hover {
+  border-color: var(--mc-line-hi);
+}
+.sks-card.on {
+  border-color: var(--mc-gold);
+  background: rgba(58, 48, 14, 0.9);
+}
+.sks-detail {
+  border-radius: 0;
+  background:
+    linear-gradient(rgba(40, 90, 98, 0.4), transparent 90px),
+    rgba(10, 28, 33, 0.96);
+  border: 1px solid var(--mc-line-hi);
+  box-shadow: 0 0 0 1px #050607;
+}
+.sks-dicon .icon {
+  border-radius: 0;
+  border: 3px solid;
+  border-color: var(--mc-bevel-hi) var(--mc-bevel) var(--mc-bevel-dk) var(--mc-bevel);
+}
+
+/* ------------------------------------------------------------------ pause / results */
+.build-cls {
+  font: 400 16px var(--font-hud);
+  letter-spacing: 0.8px;
+}
+.build-head {
+  font: 400 10px var(--font-px);
+  color: #b4d0d4;
+}
+.build-row.skills .sk-mini {
+  border-radius: 0;
+  border: 3px solid;
+  border-color: var(--mc-bevel-hi) var(--mc-bevel) var(--mc-bevel-dk) var(--mc-bevel);
+  background: #121418;
+  box-shadow: 0 0 0 1px #050607;
+}
+.build-row.skills .sk-mini.ult {
+  border-radius: 0;
+  border-color: #ffe08a #d0a040 #8a6a1a #d0a040;
+}
+.build-row.skills .sk-mini b {
+  font-family: var(--font-px);
+  font-size: 8px;
+  border-radius: 0;
+}
+.stat-grid .kv,
+.modal .kv {
+  border-bottom-color: rgba(176, 222, 226, 0.12);
+}
+.record-line {
+  font-family: var(--font-hud);
+  letter-spacing: 0.5px;
+}
+.unlock {
+  border-radius: 0;
+}
+
+/* ------------------------------------------------------------------ settings */
+.set-sub {
+  position: relative;
+  padding-left: 16px;
+  font: 400 11px/1.6 var(--font-px);
+  color: #f0b040;
+}
+.set-sub::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  margin-top: -4px;
+  transform: rotate(45deg);
+  background: #f0b040;
+}
+.settings .set-row {
+  border-bottom-color: rgba(176, 222, 226, 0.12);
+}
+.bind {
+  border-radius: 0;
+  font: 400 10px/1 var(--font-px);
+  color: #1d1a12;
+  background: var(--mc-key);
+  box-shadow:
+    0 0 0 1px #050607,
+    inset 0 -3px 0 var(--mc-key-dk);
+}
+.bind:hover {
+  box-shadow:
+    0 0 0 1px #050607,
+    0 0 0 3px #ffffff,
+    inset 0 -3px 0 var(--mc-key-dk);
+}
+.bind.empty {
+  color: #6a7478;
+  background: rgba(7, 20, 24, 0.82);
+  box-shadow:
+    0 0 0 1px #050607,
+    inset 0 0 0 1px var(--mc-line);
+}
+.bind.wait {
+  background: var(--mc-gold);
+}
+.toggle,
+.seg button,
+.tab {
+  border-radius: 0;
+  font-family: var(--font-hud);
+  background: rgba(22, 54, 61, 0.92);
+  color: #c4dde0;
+  box-shadow:
+    0 0 0 1px #050607,
+    inset 0 0 0 1px var(--mc-line);
+}
+.toggle.on {
+  background: linear-gradient(#6cc24f, #3f8f36);
+  color: #fff;
+}
+.seg button.sel,
+.tab.sel {
+  background: #eaf3f3;
+  color: #0c2226;
+}
+.set-note:not(:empty) {
+  border-radius: 0;
+}
+
+/* ------------------------------------------------------------------ smaller screens */
+@media (max-width: 1100px) {
+  .arpg-hud .ah-main {
+    gap: 7px;
+  }
+  .arpg-hud .ah-plate {
+    padding: 0 22px 6px;
+  }
+  .arpg-hud .ah-grid {
+    grid-template-columns: repeat(4, 44px);
+    gap: 9px 8px;
+  }
+  .arpg-hud .ah-grid .sk {
+    width: 44px;
+    height: 44px;
+  }
+  .ah-heart {
+    width: 80px;
+    height: 74px;
+  }
+  .ah-heart-num {
+    top: 30px;
+    font-size: 13px;
+  }
+  .minimap {
+    width: 180px;
+    height: 168px;
+  }
+}
+@media (min-width: 1700px) {
+  .arpg-hud {
+    zoom: 1.2;
+  }
+  .hud-tr {
+    zoom: 1.15;
+  }
+  .hud-top {
+    zoom: 1.15;
+  }
+}

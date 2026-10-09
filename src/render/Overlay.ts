@@ -142,7 +142,7 @@ export class Overlay {
       }
       if (bc.checkT > 0) {
         const cy = sy - 26;
-        ctx.font = '13px "Russo One", Rubik, sans-serif';
+        ctx.font = '10px "Press Start 2P", "Russo One", monospace';
         ctx.lineWidth = 3;
         ctx.strokeStyle = 'rgba(10,8,16,0.9)';
         const label = run.tr('act_check');
@@ -179,13 +179,19 @@ export class Overlay {
       const pop = k > 0.8 ? 1 + (k - 0.8) * 2.5 : 1;
       const size = Math.round(n.size * pop);
       ctx.globalAlpha = Math.min(1, k * 3);
-      // Russo One reads cleanly at small sizes in Cyrillic and Latin; sizes were authored for the pixel font
-      ctx.font = `${Math.round(size * 1.3)}px "Russo One", Rubik, sans-serif`;
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = 'rgba(10,8,16,0.9)';
+      // blocky pixel digits (Press Start 2P has Cyrillic too) with a hard drop shadow and a square outline
+      const fs = Math.max(8, Math.round(size * 1.1));
+      ctx.font = `${fs}px "Press Start 2P", "Russo One", monospace`;
+      ctx.lineJoin = 'miter';
+      const off = Math.max(2, Math.round(fs / 8));
+      ctx.fillStyle = 'rgba(0,0,0,0.85)';
+      ctx.fillText(n.text, v.x + off, v.y + off);
+      ctx.lineWidth = Math.max(3, Math.round(fs / 5));
+      ctx.strokeStyle = 'rgba(8,8,12,0.95)';
       ctx.strokeText(n.text, v.x, v.y);
       ctx.fillStyle = n.color;
       ctx.fillText(n.text, v.x, v.y);
+      ctx.lineJoin = 'round';
     }
     ctx.globalAlpha = 1;
   }

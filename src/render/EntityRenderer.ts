@@ -17,6 +17,7 @@ import { HeroRig } from './rig/HeroRig';
 import { HeroAnimator } from './rig/Animator';
 import { makeCreatureTexture, makeHeroTexture } from './Textures';
 import { ActionFxRenderer } from './ActionFxRenderer';
+import { getSkinMaterial, packAnim, skinOf } from './creatureSkins';
 import { SUMMON_MODELS } from '../models/summons';
 
 const TAU = Math.PI * 2;
@@ -24,6 +25,8 @@ const TAU = Math.PI * 2;
 /** Pair of walk-frame batches for one voxel model. */
 interface ModelBatches {
   frames: InstancedBatch[];
+  /** Pixel-skinned creature: one batch, walk cycle in the vertex shader (packAnim in the flash slot). */
+  skinned?: boolean;
 }
 
 function flatPlane(): THREE.BufferGeometry {
@@ -123,6 +126,15 @@ export class EntityRenderer {
     if (b) return b;
     if (!model) return null;
     const list: InstancedBatch[] = [];
+    const skinMat = skinOf(model) ? getSkinMaterial(model, { instanced: true, anim: true }) : null;
+    if (skinMat) {
+      // pixel-skinned creature: one instanced batch per model, limbs animated on the GPU
+      const g = buildVoxelGeometry(model, { skin: true, anim: true });
+      list.push(new InstancedBatch(g, skinMat, this.group, 32, true, this.enemyShadows));
+      b = { frames: list, skinned: true };
+      this.models.set(id, b);
+      return b;
+    }
     for (let f = 0; f < frames; f++) {
       const g = buildVoxelGeometry(model, { frame: frames > 1 ? f : -1 });
       list.push(new InstancedBatch(g, this.voxMat, this.group, 32, true, this.enemyShadows));
@@ -315,7 +327,7 @@ export class EntityRenderer {
       let y = e.y;
       // launched into the air by a skill: a short hop arc
       if (e.launchT > 0) y += Math.sin((1 - e.launchT / 0.6) * Math.PI) * 1.4;
-      let flash = Math.min(1, e.flash * 6);
+      let flash = Math.min(0.55, e.flash * 4);
       let ex = e.x;
       let ez = e.z;
       if (e.hitT > 0 && e.dying === 0) {
@@ -380,7 +392,12 @@ export class EntityRenderer {
       } else if (run.dayNight.night > 0.5 && (e.dayKind === 'nocturnal' || e.dayKind === 'sleeper') && e.dying === 0) {
         this.glowDisc.push(e.x, 0.05, e.z, 0, e.radius * 2.8, 1, e.radius * 2.8, run.dayNight.bloodMoon ? 0xff3a4a : 0x7a6aff, 0, 0, 0, 0.28 * run.dayNight.night);
       }
-      if (mb) {
+      if (mb?.skinned) {
+        // same step rate as the old two-frame flip (one stride per 1/1.2 anim units)
+        const still = frames < 2 || e.freezeT > 0 || e.asleep;
+        const mv = still ? 0 : Math.min(1, Math.hypot(e.vx, e.vz) / 1.2);
+        mb.frames[0].pushFast(ex, y, ez, e.yaw, s, sy, r, g, bl, packAnim(still ? 0 : e.anim * 1.2 * Math.PI, mv, flash));
+      } else if (mb) {
         const fi = frames > 1 && e.freezeT <= 0 ? Math.floor(e.anim * 1.2) & 1 : 0;
         mb.frames[fi].pushFast(ex, y, ez, e.yaw, s, sy, r, g, bl, flash);
       } else {
@@ -462,9 +479,16 @@ export class EntityRenderer {
       if (!mb) continue;
       const spec = m.kind === 'golem' ? 1.5 : m.kind === 'ancient' ? 2.2 : m.kind === 'drake' ? 1.8 : m.kind === 'serpent' ? 1.3 : m.kind === 'wisp' ? 0.6 : m.kind === 'hawk' ? 0.9 : 1;
       const atk = m.attackT > 0 ? 1 : 0;
-      const fi = atk ? 1 : Math.floor(m.anim * (m.kind === 'hawk' || m.kind === 'drake' ? 3 : 2.4)) & 1;
+      const rate = m.kind === 'hawk' || m.kind === 'drake' ? 3 : 2.4;
       const s = spec * (0.4 + fade * 0.6) * (1 + atk * 0.06);
-      mb.frames[fi].pushFast(m.x, m.y, m.z, m.yaw, s, s, 1.05, 1.1, 1.15, atk * 0.2 + (1 - fade) * 0.6);
+      const fl = atk * 0.2 + (1 - fade) * 0.6;
+      if (mb.skinned) {
+        const mv = Math.max(atk, Math.min(1, Math.hypot(m.vx, m.vz) / 1.5));
+        mb.frames[0].pushFast(m.x, m.y, m.z, m.yaw, s, s, 1.05, 1.1, 1.15, packAnim(m.anim * rate * Math.PI, mv, fl));
+      } else {
+        const fi = atk ? 1 : Math.floor(m.anim * rate) & 1;
+        mb.frames[fi].pushFast(m.x, m.y, m.z, m.yaw, s, s, 1.05, 1.1, 1.15, fl);
+      }
       const sh = Math.max(0.7, spec * 0.9);
       this.shadows.push(m.x, 0.02, m.z, 0, sh, 1, sh);
       this.glowRingThin.push(m.x, 0.04, m.z, 0, sh * 0.6, 1, sh * 0.6, this.run.hero.color, 0, 0, 0, 0.35 * fade);
@@ -478,9 +502,10 @@ export class EntityRenderer {
       if (!a.active || !visible(a.x, a.z)) continue;
       const mb = this.batchesFor(a.model, getModel(a.model), 2);
       if (!mb) continue;
-      const fi = Math.floor(a.anim * 1.2) & 1;
       const fade = Math.min(1, a.life * 2);
-      mb.frames[fi].pushFast(a.x, 0, a.z, a.yaw, a.scale * fade, a.scale * fade, 1, 1.05, 1.15, a.attack > 0 ? 0.25 : 0);
+      const fl = a.attack > 0 ? 0.25 : 0;
+      if (mb.skinned) mb.frames[0].pushFast(a.x, 0, a.z, a.yaw, a.scale * fade, a.scale * fade, 1, 1.05, 1.15, packAnim(a.anim * 1.2 * Math.PI, 1, fl));
+      else mb.frames[Math.floor(a.anim * 1.2) & 1].pushFast(a.x, 0, a.z, a.yaw, a.scale * fade, a.scale * fade, 1, 1.05, 1.15, fl);
       this.shadows.push(a.x, 0.02, a.z, 0, 0.9, 1, 0.9);
     }
   }
@@ -517,19 +542,48 @@ export class EntityRenderer {
         const c = p.color;
         this.glowBox.push(p.x, p.y, p.z, time * 5, 0.32 * s, 0.32 * s, 0.32 * s, c);
       }
-      // trail glow for bright projectiles
+      // trail glow for bright projectiles (kept faint: many shots must not wash the ground out)
       if (p.glow > 0 || p.vis === 'fireball' || p.vis === 'bolt' || p.vis === 'wisp' || p.vis === 'shard') {
-        this.glowDisc.push(p.x, 0.05, p.z, 0, 1.4 * s, 1, 1.4 * s, p.color, 0, 0, 0, 0.45);
+        this.glowDisc.push(p.x, 0.05, p.z, 0, 1.2 * s, 1, 1.2 * s, p.color, 0, 0, 0, 0.3);
         if (lights < 6 && (p.vis === 'fireball' || p.glow > 0)) {
           lights++;
           this.lights.request(p.x, 1, p.z, p.color, 0.8, 5, px, pz);
+        }
+      }
+      // MCD-style flight trails: light ribbons behind arrows / lances, square flames behind fire,
+      // soul flames behind dark orbs
+      if (p.y > 0.2) {
+        const sp = Math.hypot(p.vx, p.vz);
+        if (sp > 0.5) {
+          const ux = p.vx / sp;
+          const uz = p.vz / sp;
+          const tv = TRAIL_VIS[p.vis];
+          if (tv) {
+            const len = Math.min(p.age * sp, tv * s);
+            if (len > 0.05) {
+              const yaw = Math.atan2(ux, uz);
+              this.glowPlane.push(p.x - ux * len * 0.5, p.y, p.z - uz * len * 0.5, yaw, 0.16 * s, 1, len, p.color, 0, 0, 0, 0.55 * fadeIn);
+              this.glowPlane.push(p.x - ux * len * 0.35, p.y + 0.01, p.z - uz * len * 0.35, yaw, 0.05 * s, 1, len * 0.7, 0xffffff, 0, 0, 0, 0.5 * fadeIn);
+            }
+          }
+          const flame = FLAME_VIS[p.vis];
+          if (flame) {
+            // procedural square flames streaming behind (no pool cost)
+            for (let i = 1; i <= 5; i++) {
+              const u = i / 5;
+              const jit = Math.sin(time * 37 + i * 2.3 + p.serial) * 0.08 * u * s;
+              const sz = 0.3 * s * (1 - u * 0.7);
+              const c = u < 0.5 ? mixHex(flame[0], flame[1], u * 2) : mixHex(flame[1], flame[2], (u - 0.5) * 2);
+              this.actFx.square(p.x - ux * u * 0.9 * s + uz * jit, p.y + u * 0.15 + jit, p.z - uz * u * 0.9 * s - ux * jit, sz, c, 1.15 - u * 0.2);
+            }
+          }
         }
       }
       // element trail (follow-through of the release): embers, frost, sparks, bubbles, wisps
       if (trailLv >= 1 && p.dmg.weaponId && p.y > 0.2 && Math.random() < 0.15 * trailLv) {
         const F = ELEMENT_FX[this.run.vfx.elementOf(p.dmg.weaponId)];
         // smoke would smear the screen behind fast shots: trails use the light layers only
-        const L = F.residue.find((l) => l.kind !== 'smoke') ?? F.release;
+        const L = F.residue.find((l) => l.kind !== 'smoke' && l.kind !== 'puff') ?? F.release;
         this.run.fx.emit(p.x, p.y, p.z, L, 0, 0, 0.3);
       }
     }
@@ -668,7 +722,7 @@ export class EntityRenderer {
         case 'ring': {
           const r = e.r * (0.35 + (1 - k) * 0.65);
           this.glowRing.push(e.x, 0.15, e.z, 0, r, 1, r, c, 0, 0, 0, k);
-          this.glowDisc.push(e.x, 0.1, e.z, 0, r * 2.2, 1, r * 2.2, c, 0, 0, 0, k * 0.4);
+          this.glowDisc.push(e.x, 0.1, e.z, 0, r * 2.2, 1, r * 2.2, c, 0, 0, 0, k * 0.25);
           break;
         }
         case 'beam': {
@@ -771,8 +825,13 @@ export class EntityRenderer {
         }
         case 'flash': {
           const r = e.r * (0.5 + (1 - k) * 0.7);
-          this.glowDisc.push(e.x, 0.1, e.z, 0, r * 2.6, 1, r * 2.6, c, 0, 0, 0, k);
-          this.glowDisc.push(e.x, 0.12, e.z, 0, r * 1.3, 1, r * 1.3, 0xffffff, 0, 0, 0, k * k);
+          // kept below bloom wash: a coloured pool, a small hot core and square motes
+          this.glowDisc.push(e.x, 0.1, e.z, 0, r * 2.6, 1, r * 2.6, c, 0, 0, 0, k * 0.45);
+          this.glowDisc.push(e.x, 0.12, e.z, 0, r * 1.1, 1, r * 1.1, 0xffffff, 0, 0, 0, k * k * 0.3);
+          for (let i = 0; i < 8; i++) {
+            const a = (i / 8) * TAU + e.seed;
+            this.actFx.square(e.x + Math.cos(a) * r, 0.4 + (1 - k) * 0.8, e.z + Math.sin(a) * r, 0.14 * k, i & 1 ? c : 0xffffff, 1.05);
+          }
           this.glowRing.push(e.x, 0.14, e.z, 0, r, 1, r, c, 0, 0, 0, k * 0.8);
           break;
         }
@@ -832,6 +891,29 @@ const ROCK: VoxelModel = {
   ],
   scale: 0.1,
 };
+
+/** Projectiles that leave a light ribbon behind them, and its max length (model scale units). */
+const TRAIL_VIS: Record<string, number> = {
+  arrow: 1.4, bigarrow: 2.4, firearrow: 1.6, markarrow: 1.6, heavybolt: 1.4, spear: 1.8, frostlance: 1.8, dagger: 1, shard: 1.2,
+  wispbolt: 1.2, wispshot: 1, shadowblade: 1.2, crescent: 1, palm: 1, fistwave: 1, arcanebolt: 1, spiritorb: 1,
+};
+
+/** Projectiles that stream square flames: hot, mid and tip colours. */
+const FLAME_VIS: Record<string, [number, number, number]> = {
+  fireball: [0xffe060, 0xff8a1a, 0xc82a14],
+  firearrow: [0xffd040, 0xff6a10, 0xa82a14],
+  meteor: [0xffe060, 0xff6a10, 0x4a4440],
+  soulorb: [0xd8c8ff, 0xa070ff, 0x4a6aff],
+  spiritorb: [0xe0fff4, 0x6ae8c8, 0x2a9aa0],
+  bolt: [0xe8d0ff, 0xa070ff, 0x5a3aaa],
+};
+
+function mixHex(a: number, b: number, t: number): number {
+  const r = ((a >> 16) & 255) + ((((b >> 16) & 255) - ((a >> 16) & 255)) * t);
+  const g = ((a >> 8) & 255) + ((((b >> 8) & 255) - ((a >> 8) & 255)) * t);
+  const bl = (a & 255) + (((b & 255) - (a & 255)) * t);
+  return (Math.round(r) << 16) | (Math.round(g) << 8) | Math.round(bl);
+}
 
 function rnd(n: number): number {
   const x = Math.sin(n * 127.1) * 43758.5453;
