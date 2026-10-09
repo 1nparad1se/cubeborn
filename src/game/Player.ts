@@ -1,3 +1,4 @@
+import { PROG } from '../config/progression';
 import { BALANCE } from '../config/balance';
 import { clamp } from '../core/math';
 import type { Enemy } from './Enemy';
@@ -27,7 +28,7 @@ export class Player {
   stats!: PlayerStats;
   level = 1;
   xp = 0;
-  xpNext = BALANCE.xpForLevel(1);
+  xpNext = PROG.xpForLevel(1);
   pendingLevels = 0;
   invulnT = 0;
   hurtT = 0;
@@ -471,7 +472,7 @@ export class Player {
 
   addXp(v: number) {
     // fewer, tougher foes: each is worth more experience
-    v *= this.run.debug.xpMul * 1.35;
+    v *= this.run.debug.xpMul * PROG.xpMul(this.run.zoneLevel, this.level);
     this.xp += v * this.stats.growth;
     this.run.stats.xpGained += v * this.stats.growth;
     while (this.xp >= this.xpNext) {
@@ -484,7 +485,7 @@ export class Player {
       this.level++;
       this.pendingLevels++;
       this.run.action.onLevel(this.level);
-      this.xpNext = BALANCE.xpForLevel(this.level);
+      this.xpNext = PROG.xpForLevel(this.level);
     }
   }
 }

@@ -1,5 +1,6 @@
 import type { EquipPos, Item } from '../game/arpg/Gear';
 import type { Lang } from '../i18n';
+import { fixChar, type CharSave } from './Characters';
 
 export type Quality = 'low' | 'medium' | 'high' | 'ultra' | 'custom';
 export type Level3 = 'low' | 'medium' | 'high';
@@ -131,10 +132,13 @@ export interface SaveData {
   last: { hero: string; map: string; diff: string; mode: 'campaign' | 'endless' };
   /** Action-RPG equipment: one shared bag, equipped sets per hero. */
   gear: { bag: Item[]; equipped: Record<string, Partial<Record<EquipPos, Item>>>; shop?: Item[] };
+  /** Created characters (v6) and the one picked at the campfire. Old `gear` goes to the first one created. */
+  chars: CharSave[];
+  activeChar: string | null;
 }
 
 const KEY = 'cubeborn.save.v1';
-const VERSION = 5;
+const VERSION = 6;
 
 export function defaultSettings(): Settings {
   const lang: Lang = (navigator.language || 'ru').toLowerCase().startsWith('ru') ? 'ru' : 'en';
@@ -180,6 +184,8 @@ export function defaultSave(): SaveData {
     permSpent: 0,
     last: { hero: 'berserker', map: 'blightwood', diff: 'normal', mode: 'campaign' },
     gear: { bag: [], equipped: {} },
+    chars: [],
+    activeChar: null,
   };
 }
 
@@ -235,6 +241,8 @@ export function migrate(raw: any): SaveData {
     }
     if (!known.includes(out.last.hero)) out.last.hero = 'berserker';
   }
+  out.chars = Array.isArray(raw.chars) ? (raw.chars.map(fixChar).filter(Boolean) as CharSave[]) : [];
+  out.activeChar = out.chars.some((c) => c.id === raw.activeChar) ? raw.activeChar : (out.chars[0]?.id ?? null);
   out.version = VERSION;
   return out;
 }

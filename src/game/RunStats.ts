@@ -30,6 +30,8 @@ export class RunStats {
   direKilled = 0;
   /** Achievements: critical hits, kills per skill element, the longest stretch without taking damage. */
   crits = 0;
+  /** Mob wind-ups broken by the hero's hits. */
+  interrupts = 0;
   combos = 0;
   skillsCast = 0;
   dodges = 0;

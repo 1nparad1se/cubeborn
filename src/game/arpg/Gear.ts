@@ -2,6 +2,7 @@ import type { Loc, Rarity, StatMods } from '../../data/types';
 import { RARITIES } from '../../data/types';
 import type { DmgType } from '../types';
 import { POWERS } from '../action/powers';
+import { PROG } from '../../config/progression';
 
 /**
  * Loot: equipment slots, base items, affixes and item generation. Items are plain JSON so they
@@ -42,6 +43,10 @@ export interface Item {
   /** Name parts (indices) so names stay translatable. */
   prefix: number;
   suffix: number;
+  /** Enhancement level (+0..+15), stones spent on it and the artisan's pity of the next step. */
+  enh?: number;
+  enhSpent?: number;
+  pity?: number;
 }
 
 interface BaseDef {
@@ -110,9 +115,14 @@ export function isPct(stat: AffixStat): boolean {
 
 /** Affix count by rarity. */
 const AFFIX_COUNT: Record<Rarity, number> = { common: 0, uncommon: 1, rare: 2, epic: 3, legendary: 4 };
-const RARITY_MUL: Record<Rarity, number> = { common: 1, uncommon: 1.1, rare: 1.25, epic: 1.45, legendary: 1.7 };
-export const RARITY_COLOR: Record<Rarity, string> = { common: '#d8d8d8', uncommon: '#5ad66a', rare: '#5ab4ff', epic: '#c070ff', legendary: '#ff9a2a' };
-export const RARITY_HEX: Record<Rarity, number> = { common: 0xd8d8d8, uncommon: 0x5ad66a, rare: 0x5ab4ff, epic: 0xc070ff, legendary: 0xff9a2a };
+export const AFFIX_COUNT_OF = AFFIX_COUNT;
+const RARITY_MUL: Record<Rarity, number> = { common: 1, uncommon: 1.12, rare: 1.3, epic: 1.55, legendary: 1.9 };
+/**
+ * Item tiers shown to the player: common = Simple, uncommon = Common, rare = Epic, epic = Legendary,
+ * legendary = Mythic (internal ids kept so chests and old saves stay valid).
+ */
+export const RARITY_COLOR: Record<Rarity, string> = { common: '#c8c8c8', uncommon: '#5ad66a', rare: '#b366ff', epic: '#ff9a2a', legendary: '#ff4048' };
+export const RARITY_HEX: Record<Rarity, number> = { common: 0xc8c8c8, uncommon: 0x5ad66a, rare: 0xb366ff, epic: 0xff9a2a, legendary: 0xff4048 };
 
 const PREFIX: Loc[] = [
   loc('Крепкий', 'Sturdy'), loc('Пылающий', 'Blazing'), loc('Ледяной', 'Frozen'), loc('Грозовой', 'Stormy'), loc('Ядовитый', 'Venomous'),
@@ -144,8 +154,19 @@ export function rollRarity(rand: () => number, bonus = 0): Rarity {
   return 'common';
 }
 
+/** Picks a base item by its own drop weight. */
+export function pickBase(rand: () => number): BaseDef {
+  const w = BASES.map((b) => PROG.baseWeight[b.id] ?? 8);
+  let r = rand() * w.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < BASES.length; i++) {
+    r -= w[i];
+    if (r <= 0) return BASES[i];
+  }
+  return BASES[0];
+}
+
 export function makeItem(rand: () => number, ilvl: number, rarity: Rarity, baseId?: string): Item {
-  const base = baseId ? BASE_BY_ID[baseId] : BASES[Math.floor(rand() * BASES.length)];
+  const base = baseId ? BASE_BY_ID[baseId] : pickBase(rand);
   const rm = RARITY_MUL[rarity];
   const implicit: Affix = { stat: base.implicit, v: round(base.implicit, (base.iv[0] + base.iv[1] * (ilvl - 1)) * rm) };
   const affixes: Affix[] = [];
@@ -172,7 +193,8 @@ export function makeItem(rand: () => number, ilvl: number, rarity: Rarity, baseI
     prefix: Math.floor(rand() * PREFIX.length),
     suffix: Math.floor(rand() * SUFFIX.length),
   };
-  if (rarity === 'legendary') item.power = POWERS[Math.floor(rand() * POWERS.length)].id;
+  // Legendary and Mythic items carry a build-changing power
+  if (rarity === 'legendary' || rarity === 'epic') item.power = POWERS[Math.floor(rand() * POWERS.length)].id;
   return item;
 }
 
@@ -201,7 +223,14 @@ export function baseIcon(it: Item): string {
 
 /** All stat lines of an item (implicit first). */
 export function itemStats(it: Item): Affix[] {
-  return [it.implicit, ...it.affixes];
+  const k = 1 + (it.enh ?? 0) * PROG.enhStep;
+  if (k === 1) return [it.implicit, ...it.affixes];
+  return [it.implicit, ...it.affixes].map((a) => ({ stat: a.stat, v: round(a.stat, a.v * k) }));
+}
+
+/** Hero level needed to wear an item. */
+export function reqLevel(it: Item): number {
+  return Math.max(1, Math.min(PROG.maxLevel, it.ilvl));
 }
 
 /** Gear totals: StatMods for resolveStats plus the action-RPG extras. */
@@ -253,7 +282,7 @@ function addAffix(out: GearTotals, a: Affix, baseHp: number) {
 /** Gold an item sells for. */
 export function sellPrice(it: Item): number {
   const r = RARITIES.indexOf(it.rarity);
-  return Math.round((2 + it.ilvl * 0.6) * [1, 2, 4, 8, 16][r]);
+  return Math.round((2 + it.ilvl * 0.6) * [1, 2, 4, 8, 16][r] * (1 + (it.enh ?? 0) * 0.2));
 }
 
 /** A rough power score used to say whether an item is an upgrade. */

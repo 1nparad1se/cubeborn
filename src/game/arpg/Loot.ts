@@ -1,6 +1,9 @@
 import type { Enemy } from '../Enemy';
 import type { Run } from '../Run';
-import { EQUIP_POS, gearTotals, makeItem, rollRarity, sellPrice, slotOf, RARITY_HEX, type EquipPos, type GearTotals, type Item } from './Gear';
+import { PROG } from '../../config/progression';
+import { RARITIES } from '../../data/types';
+import type { Rarity } from '../../data/types';
+import { EQUIP_POS, gearTotals, makeItem, reqLevel, sellPrice, slotOf, RARITY_HEX, type EquipPos, type GearTotals, type Item } from './Gear';
 
 export interface GroundItem {
   id: number;
@@ -16,7 +19,7 @@ export interface GearSave {
   bag: Item[];
 }
 
-export const BAG_SIZE = 30;
+export const BAG_SIZE = 60;
 let groundN = 1;
 
 /**
@@ -63,35 +66,34 @@ export class Loot {
 
   /** Item level for drops right now. */
   get ilvl(): number {
-    return Math.max(1, Math.round(this.run.waves.wave.n * 0.8 + this.run.map.tier * 3 + this.run.player.level * 0.4));
+    // the zone's level, with a small chance of an item a level or two above it
+    const z = this.run.zoneLevel;
+    const r = Math.random();
+    return Math.max(1, Math.min(PROG.maxLevel, z + (r < 0.1 ? 2 : r < 0.3 ? 1 : 0)));
   }
 
   onKill(e: Enemy) {
     const run = this.run;
     if (e.def.category === 'prop' || e.noReward) return;
     const luck = run.player.stats.luck;
-    let chance = 0.025;
-    let bonus = (luck - 1) * 0.6;
-    let count = 1;
-    if (e.elite) {
-      chance = 0.45;
-      bonus += 0.8;
-    }
-    if (e.boss) {
-      chance = 1;
-      bonus += 2.5;
-      count = 3;
-    }
-    for (let i = 0; i < count; i++) {
+    // each enemy kind has its own chance (category default, `drop` on the def overrides it)
+    const kind = e.boss ? (e.def.id === run.map.midBoss ? 'miniboss' : 'boss') : e.elite ? 'elite' : 'normal';
+    const P = PROG;
+    let chance = (e.def as { drop?: number }).drop ?? P.dropChance[e.def.category] ?? P.dropChance.normal;
+    if (e.elite) chance = Math.max(chance, P.dropChance.elite);
+    if (e.boss) chance = 1;
+    const rolls = kind === 'boss' ? P.bossRolls.boss : kind === 'miniboss' ? P.bossRolls.miniboss : 1;
+    const bonus = P.rarityBonus[kind] + (luck - 1) * 0.6;
+    for (let i = 0; i < rolls; i++) {
       if (Math.random() >= chance * luck) continue;
-      const rar = rollRarity(Math.random, bonus);
+      const rar = rollDropRarity(Math.random, bonus, P.mythicFrom.includes(kind));
       this.drop(makeItem(Math.random, this.ilvl, rar), e.x + (Math.random() - 0.5) * 1.2, e.z + (Math.random() - 0.5) * 1.2);
     }
   }
 
   /** Drops a random item of at least the given rarity tier (chests). Returns its base id. */
   dropAt(x: number, z: number, minTier: number): string | null {
-    const rar = rollRarity(Math.random, minTier * 0.8 + (this.run.player.stats.luck - 1) * 0.6);
+    const rar = rollDropRarity(Math.random, minTier * 0.8 + (this.run.player.stats.luck - 1) * 0.6, minTier >= 3);
     const it = makeItem(Math.random, this.ilvl, rar);
     const a = Math.random() * Math.PI * 2;
     this.drop(it, x + Math.cos(a) * 1.2, z + Math.sin(a) * 1.2);
@@ -147,6 +149,10 @@ export class Loot {
     if (i < 0) return false;
     const target = pos ?? this.bestPos(item);
     if (!target || slotOf(target) !== item.slot) return false;
+    if (reqLevel(item) > this.run.player.level) {
+      this.run.fx.text(this.run.player.x, this.run.player.z, this.run.tr('inv_req_level').replace('{n}', String(reqLevel(item))), 0xff8080);
+      return false;
+    }
     const old = this.equipped[target];
     this.bag.splice(i, 1);
     this.equipped[target] = item;
@@ -201,4 +207,15 @@ export class Loot {
   give(item: Item) {
     if (this.bag.length < BAG_SIZE) this.bag.push(item);
   }
+}
+
+/** Rolls a drop's tier from the progression weights; mythic only where allowed. */
+export function rollDropRarity(rand: () => number, bonus: number, mythic: boolean): Rarity {
+  const w = PROG.rarityWeights.map((x, i) => (i === 4 && !mythic ? 0 : x * (1 + bonus * i)));
+  let r = rand() * w.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < 5; i++) {
+    r -= w[i];
+    if (r <= 0) return RARITIES[i];
+  }
+  return 'common';
 }

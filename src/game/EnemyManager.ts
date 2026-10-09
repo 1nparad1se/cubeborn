@@ -1,3 +1,4 @@
+import { PROG } from '../config/progression';
 import { DayNight } from './DayNight';
 import { SpatialGrid } from '../core/SpatialGrid';
 import { BALANCE } from '../config/balance';
@@ -64,8 +65,11 @@ export class EnemyManager {
     const sc = r.waveScale;
     const tier = r.map.tier;
     const curse = r.player.stats.curse;
-    const hpMul = opts.noScale ? 1 : tier * r.diff.hp * sc.hp * (1 + (curse - 1) * 0.5);
-    const dmgMul = opts.noScale ? 1 : (0.85 + tier * 0.15) * r.diff.damage * sc.damage;
+    // zone level vs hero level replaces the old per-map tier and difficulty multipliers
+    const zs = PROG.enemyScale(r.zoneLevel, r.player.level);
+    const hpMul = opts.noScale ? 1 : zs.hp * sc.hp * (1 + (curse - 1) * 0.5);
+    const dmgMul = opts.noScale ? 1 : zs.dmg * sc.damage;
+    void tier;
     e.maxHp = e.hp = Math.max(1, def.hp * hpMul * (opts.hpMul ?? 1) * r.debug.enemyHp);
     e.damage = def.damage * dmgMul * r.debug.enemyDmg;
     this.spawned++;

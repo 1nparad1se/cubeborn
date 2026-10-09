@@ -70,6 +70,16 @@ export class Combat {
     if (info.curse > 0) e.curseT = Math.max(e.curseT, info.curse * st.duration);
     if (info.weaken > 0) e.weakenT = Math.max(e.weakenT, info.weaken * st.duration);
     if (info.el) run.action.onHit(e, info, dmg, crit);
+    // counterattack: the hero's hits break a mob's wind-up (always for common mobs, 80% for elites, never bosses)
+    if (info.el && e.atkT > 0 && !e.boss && e.hp > 0 && Math.random() < (e.elite ? 0.8 : 1)) {
+      if (e.atkZone) e.atkZone.active = false;
+      e.atkZone = null;
+      e.atkT = 0;
+      e.atkCd = Math.max(e.atkCd, 0.9);
+      if (e.state === 1 && e.role === 'assassin') e.state = 0;
+      run.stats.interrupts++;
+      run.fx.text(e.x, e.z, run.tr('act_interrupt'), 0xffd060);
+    }
     if (info.stag > 0 || info.launch || info.root > 0 || info.mark > 0) this.actionEffects(e, info);
     if (crit) run.stats.crits++;
     if (run.settings.damageNumbers) run.fx.number(e.x, e.z, dmg, crit);

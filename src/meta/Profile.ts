@@ -4,6 +4,8 @@ import { HEROES } from '../data/heroes';
 import { MAPS } from '../data/maps';
 import { RELIC_BY_ID } from '../data/bosses';
 import type { AchievementDef, StatMods, UnlockRef } from '../data/types';
+import { CHAR_BAG, MAX_CHARS, newChar, type CharSave } from './Characters';
+import type { Item } from '../game/arpg/Gear';
 import { loadSave, writeSave, defaultSave, clearSave, type SaveData } from './Save';
 
 /** Account-level state: currency, unlocks, achievements and lifetime stats. */
@@ -42,6 +44,45 @@ export class Profile {
     clearSave();
     this.data = defaultSave();
     this.data.settings = settings;
+    this.save();
+  }
+
+  // ---------------------------------------------------------------- characters
+  get char(): CharSave | null {
+    const d = this.data;
+    return d.chars.find((c) => c.id === d.activeChar) ?? d.chars[0] ?? null;
+  }
+
+  selectChar(id: string) {
+    if (this.data.chars.some((c) => c.id === id)) {
+      this.data.activeChar = id;
+      this.save();
+    }
+  }
+
+  /** Creates a character; the first one also receives the equipment stored before characters existed. */
+  createChar(name: string, cls: string): CharSave | null {
+    const d = this.data;
+    if (d.chars.length >= MAX_CHARS) return null;
+    const c = newChar(name, cls);
+    if (d.chars.length === 0) {
+      const g = d.gear;
+      const eq = g.equipped[cls] ?? {};
+      c.equipped = { ...eq };
+      const rest = [...g.bag, ...Object.entries(g.equipped).filter(([k]) => k !== cls).flatMap(([, set]) => Object.values(set ?? {}))].filter(Boolean) as Item[];
+      c.bag = rest.slice(0, CHAR_BAG);
+      d.gear = { bag: [], equipped: {} };
+    }
+    d.chars.push(c);
+    d.activeChar = c.id;
+    this.save();
+    return c;
+  }
+
+  deleteChar(id: string) {
+    const d = this.data;
+    d.chars = d.chars.filter((c) => c.id !== id);
+    if (d.activeChar === id) d.activeChar = d.chars[0]?.id ?? null;
     this.save();
   }
 

@@ -1,3 +1,5 @@
+import { newChar, addCharXp, learn } from '../src/meta/Characters';
+import { PROG } from '../src/config/progression';
 /**
  * Headless balance simulator: plays runs with a simple kiting bot and prints per-checkpoint metrics.
  * Usage: npx tsx tools/sim.ts [mapId] [heroId] [diffId] [runs] [perm 0|1|2] [mode campaign|endless]
@@ -132,6 +134,13 @@ for (let r = 0; r < Number(runsArg); r++) {
   const run = new Run({
     map, diff, hero, permanent: perm, mode,
     fx: NullFx, settings: { damageNumbers: false, dayLength: Number(process.env.DAY ?? 300) }, tr: (k) => k, seed: 1000 + r,
+    // LEVEL=n plays a character of that level with its points spread over the skills in order
+    char: process.env.LEVEL ? (() => {
+      const c = newChar('sim', hero.id);
+      addCharXp(c, PROG.xpTotal(Number(process.env.LEVEL)));
+      for (let k = 0; c.points > 0 && k < 400; k++) learn(c, k % 8);
+      return c;
+    })() : null,
   });
   run.debug.god = god;
   // --- instrumentation
@@ -220,7 +229,7 @@ for (let r = 0; r < Number(runsArg); r++) {
   line('END');
   const s = run.summary();
   const ms = performance.now() - t0;
-  const res = `RUN ${r}: ${s.victory ? 'VICTORY' : run.state === 'dead' || run.ending ? 'DEAD' : 'TIMEOUT'} time=${s.time.toFixed(0)} wave=${s.wave} level=${s.level} kills=${s.kills} maxAlive=${maxEnemies} taken=${taken.toFixed(0)} runGold=${s.gold} reward=${Run.goldReward(s, diff.reward)} elites=${s.elites} chests=${s.chestRarity.join('/')} bosses=${s.bosses.join('/')} staggers=${run.stats.combos} casts=${run.stats.skillsCast} sim=${(ms / 1000).toFixed(1)}s`;
+  const res = `RUN ${r}: ${s.victory ? 'VICTORY' : run.state === 'dead' || run.ending ? 'DEAD' : 'TIMEOUT'} time=${s.time.toFixed(0)} wave=${s.wave} level=${s.level} kills=${s.kills} maxAlive=${maxEnemies} taken=${taken.toFixed(0)} runGold=${s.gold} reward=${Run.goldReward(s, diff.reward)} elites=${s.elites} chests=${s.chestRarity.join('/')} bosses=${s.bosses.join('/')} xp=${run.stats.xpGained.toFixed(0)} staggers=${run.stats.combos} casts=${run.stats.skillsCast} sim=${(ms / 1000).toFixed(1)}s`;
   results.push(res);
   console.log(res);
   if (process.env.DMG) console.log('  taken by:', Object.entries(dmgBy).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + '=' + v.toFixed(0)).join(' '));

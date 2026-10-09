@@ -1,3 +1,4 @@
+import { PROG } from './config/progression';
 import { BAG_SIZE } from './game/arpg/Loot';
 import { iconImg } from './ui/icons';
 import { RARITY_COLOR } from './data/achievements';
@@ -365,6 +366,9 @@ export class App implements MenuApi {
   }
 
   // ------------------------------------------------------------------ run lifecycle
+  /** Id of the character the current run plays (null for developer runs of another class). */
+  private runChar: string | null = null;
+
   startRun(heroId: string, mapId: string, diffId: string, mode: RunMode = 'campaign') {
     this.runArgs = [heroId, mapId, diffId, mode];
     this.menus.setVisible(false);
@@ -382,8 +386,10 @@ export class App implements MenuApi {
       settings: { damageNumbers: p.data.settings.damageNumbers, dayLength: DAY_NIGHT.lengths[p.data.settings.dayNight] ?? DAY_NIGHT.lengths[DAY_NIGHT.defaultLength] },
       tr: (k) => t(k),
       mode,
-      gear: { bag: p.data.gear.bag, equipped: p.data.gear.equipped[heroId] ?? {} },
+      // the active character carries its own level, skills and items; other classes (developer runs) use the old shared gear
+      ...(p.char && p.char.cls === heroId ? { char: structuredClone(p.char) } : { gear: { bag: p.data.gear.bag, equipped: p.data.gear.equipped[heroId] ?? {} } }),
     });
+    this.runChar = p.char && p.char.cls === heroId ? p.char.id : null;
     fx.target = this.renderer.startRun(run, { sound: (id, v) => audio.play(id, v), vibrate: () => {} });
     this.renderer.setZoom(p.data.settings.cameraZoom);
     this.run = run;
@@ -498,10 +504,24 @@ export class App implements MenuApi {
     }
     // equipment and bag persist between runs
     const gs = run.loot.serialize();
-    // the run carried the first slice of the stash as its bag; the rest stays in storage
-    p.data.gear.bag = [...gs.bag, ...p.data.gear.bag.slice(BAG_SIZE)];
-    p.data.gear.shop = [];
-    p.data.gear.equipped[run.hero.id] = gs.equipped;
+    const ch = this.runChar ? p.data.chars.find((c) => c.id === this.runChar) : null;
+    if (ch) {
+      // the character keeps everything it earned: level, experience, skills, items
+      ch.level = run.player.level;
+      ch.xp = run.player.level >= PROG.maxLevel ? 0 : run.player.xp;
+      ch.skills = [...run.action.levels];
+      ch.tri = run.action.tri.map((t) => [t[0], t[1]]);
+      ch.points = run.action.points;
+      ch.equipped = gs.equipped;
+      ch.bag = gs.bag;
+      ch.runs++;
+      ch.playTime += Math.round(run.time);
+    } else {
+      // the run carried the first slice of the stash as its bag; the rest stays in storage
+      p.data.gear.bag = [...gs.bag, ...p.data.gear.bag.slice(BAG_SIZE)];
+      p.data.gear.shop = [];
+      p.data.gear.equipped[run.hero.id] = gs.equipped;
+    }
     const s = run.summary();
     const diff = run.diff;
     const goldEarned = Run.goldReward(s, diff.reward);

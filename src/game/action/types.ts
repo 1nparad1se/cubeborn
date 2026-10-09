@@ -377,7 +377,7 @@ export interface Tripod {
   st?: StatusId;
 }
 
-export const SKILL_MAX = 10;
+export const SKILL_MAX = 8;
 export const TRIPOD_LEVELS = [4, 7];
-export const MAX_LEVEL = 30;
+export const MAX_LEVEL = 50;
 export const SLOT_KEYS = ['Q', 'W', 'E', 'R', 'A', 'S', 'D', 'F'] as const;

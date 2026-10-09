@@ -1,3 +1,5 @@
+import { PROG } from '../../config/progression';
+import type { CharSave } from '../../meta/Characters';
 import type { StatMods } from '../../data/types';
 import { TAU } from '../../core/math';
 import type { Enemy } from '../Enemy';
@@ -336,11 +338,23 @@ export class ActionSystem {
   // ------------------------------------------------------------------ levels
   /** Gives level-1 to every skill whose unlock level is reached. */
   unlockSkills(level: number) {
-    for (let i = 0; i < 8; i++) if (this.levels[i] === 0 && level >= this.cls.skills[i].unlock) this.levels[i] = 1;
+    // one new skill per hero level in Q W E R A S D F order
+    for (let i = 0; i < 8; i++) if (this.levels[i] === 0 && level >= i + 1) this.levels[i] = 1;
+  }
+
+  /** Takes skill levels, tripods and points from the played character. */
+  applyChar(c: CharSave) {
+    for (let i = 0; i < 8; i++) {
+      this.levels[i] = Math.max(0, Math.min(SKILL_MAX, c.skills[i] ?? 0));
+      this.tri[i][0] = c.tri[i]?.[0] ?? -1;
+      this.tri[i][1] = c.tri[i]?.[1] ?? -1;
+    }
+    this.points = c.points;
+    this.unlockSkills(c.level);
   }
 
   onLevel(level: number) {
-    this.points++;
+    if (level > PROG.autoSkillLevels) this.points++;
     const before = this.levels.filter((l) => l > 0).length;
     this.unlockSkills(level);
     const run = this.run;
@@ -387,10 +401,12 @@ export class ActionSystem {
   statMods(): StatMods {
     const lv = Math.max(0, (this.run.player?.level ?? 1) - 1);
     const m = this.melee ? 1 : 0;
+    const g = PROG.perLevel;
     return {
-      armor: this.cls.armor + lv * (0.15 + m * 0.2),
-      maxHp: this.cls.baseHp * lv * (0.06 + m * 0.03),
-      regen: (0.3 + lv * 0.05) * (1 + m),
+      might: lv * g.might,
+      armor: this.cls.armor + lv * (g.armor + m * 0.15),
+      maxHp: this.cls.baseHp * lv * (g.maxHpPct + m * 0.02),
+      regen: (0.3 + lv * g.regen) * (1 + m),
     };
   }
 
