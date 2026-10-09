@@ -40,6 +40,8 @@ function mix(a: number, b: number, t: number): number {
 export class ActionFxRenderer {
   private time = 0;
   private dt = 0;
+  /** Brightness share when many bright effects overlap. */
+  private dim = 1;
 
   constructor(
     private run: Run,
@@ -51,6 +53,10 @@ export class ActionFxRenderer {
     this.dt = dt;
     this.time += dt;
     const list = this.run.action.fx.list;
+    // many overlapping falls / flashes would white out the screen with bloom: share the brightness
+    let heavy = 0;
+    for (const f of list) if (f.k === 'fall' || f.k === 'flash' || (f.k === 'hit' && f.fx === 'holy')) heavy++;
+    this.dim = 1 / Math.sqrt(Math.max(1, heavy / 2));
     for (const f of list) {
       const first = f.max - f.life <= dt * 1.5 + 0.001;
       switch (f.k) {
@@ -83,10 +89,10 @@ export class ActionFxRenderer {
           break;
         }
         case 'flash': {
-          const k = f.life / f.max;
+          const k = (f.life / f.max) * this.dim;
           const r = f.r * (1 + (1 - k) * 1.6);
-          this.b.glowDisc.push(f.x, 0.1, f.z, 0, r * 3, 1, r * 3, f.color, 0, 0, 0, k * 0.8);
-          this.b.glowDisc.push(f.x, 1, f.z, 0, r * 1.6, 1, r * 1.6, WHITE, 0, 0, 0, k * k * 0.7);
+          this.b.glowDisc.push(f.x, 0.1, f.z, 0, r * 3, 1, r * 3, f.color, 0, 0, 0, k * 0.4);
+          this.b.glowDisc.push(f.x, 1, f.z, 0, r * 1.6, 1, r * 1.6, WHITE, 0, 0, 0, k * k * 0.3);
           this.b.glowRing.push(f.x, 0.14, f.z, 0, r * 1.4, 1, r * 1.4, f.color, 0, 0, 0, k * 0.8);
           if (first) this.run.fx.burst(f.x, 1, f.z, f.color, 16, 5, 0.12, 0.5, 'glow');
           break;
@@ -253,9 +259,9 @@ export class ActionFxRenderer {
     const c = f.color;
     const t = 1 - k;
     const rr = r * (0.35 + t * 0.75);
-    this.b.glowRing.push(f.x, 0.1, f.z, 0, rr, 1, rr, c, 0, 0, 0, k);
-    this.b.glowDisc.push(f.x, 0.08, f.z, 0, r * 2.2, 1, r * 2.2, c, 0, 0, 0, k * 0.45);
-    this.b.glowDisc.push(f.x, 0.1, f.z, 0, r * 1.1, 1, r * 1.1, WHITE, 0, 0, 0, k * k * 0.5);
+    this.b.glowRing.push(f.x, 0.1, f.z, 0, rr, 1, rr, c, 0, 0, 0, k * 0.8);
+    this.b.glowDisc.push(f.x, 0.08, f.z, 0, r * 2.2, 1, r * 2.2, c, 0, 0, 0, k * 0.3);
+    this.b.glowDisc.push(f.x, 0.1, f.z, 0, r * 1.1, 1, r * 1.1, WHITE, 0, 0, 0, k * k * 0.25);
     switch (style) {
       case 'smash':
       case 'shock':
@@ -274,8 +280,8 @@ export class ActionFxRenderer {
       case 'holy': {
         // pillar of light
         const w = r * 0.5 * (1 - t * 0.6);
-        this.b.glowBoxTop.push(f.x, 2.5, f.z, this.time, w, 5, w, c, 0, 0, 0, k * 0.7);
-        this.b.glowBox.push(f.x, 2.5, f.z, -this.time, w * 0.35, 5, w * 0.35, WHITE, 0, 0, 0, k);
+        this.b.glowBoxTop.push(f.x, 2.5, f.z, this.time, w, 5, w, c, 0, 0, 0, k * 0.3);
+        this.b.glowBox.push(f.x, 2.5, f.z, -this.time, w * 0.3, 5, w * 0.3, WHITE, 0, 0, 0, k * 0.5);
         break;
       }
       case 'fire': {
@@ -443,15 +449,15 @@ export class ActionFxRenderer {
         break;
       }
       case 'light':
-        b.glowDisc.push(f.x, 0.06, f.z, 0, r * 2.3, 1, r * 2.3, c, 0, 0, 0, 0.35 * fade);
-        b.glowRing.push(f.x, 0.07, f.z, t * 0.5, r, 1, r, 0xfff2b0, 0, 0, 0, 0.55 * fade);
-        b.glowBoxTop.push(f.x, 2, f.z, t, r * 0.25, 4, r * 0.25, c, 0, 0, 0, 0.25 * fade);
+        b.glowDisc.push(f.x, 0.06, f.z, 0, r * 2.3, 1, r * 2.3, c, 0, 0, 0, 0.18 * fade);
+        b.glowRing.push(f.x, 0.07, f.z, t * 0.5, r, 1, r, 0xfff2b0, 0, 0, 0, 0.45 * fade);
+        b.glowBoxTop.push(f.x, 2, f.z, t, r * 0.15, 4, r * 0.15, c, 0, 0, 0, 0.15 * fade);
         break;
       default:
         // aura / generic ward
         b.glowRing.push(f.x, 0.08, f.z, t * 0.8, r, 1, r, c, 0, 0, 0, 0.55 * fade);
         b.glowRingThin.push(f.x, 0.1, f.z, -t * 1.4, r * 0.8, 1, r * 0.8, c, 0, 0, 0, 0.35 * fade);
-        b.glowDisc.push(f.x, 0.05, f.z, 0, r * 2.1, 1, r * 2.1, c, 0, 0, 0, (0.2 + Math.sin(t * 3) * 0.05) * fade);
+        b.glowDisc.push(f.x, 0.05, f.z, 0, r * 2.1, 1, r * 2.1, c, 0, 0, 0, (0.1 + Math.sin(t * 3) * 0.03) * fade);
     }
     if (f.vis !== 'trap' && f.vis !== 'seal') this.lights.request(f.x, 1, f.z, c, 0.6 * fade, r * 2, this.run.player.x, this.run.player.z);
   }
@@ -459,32 +465,33 @@ export class ActionFxRenderer {
   // ---------------------------------------------------------------- sky falls, lightning, movement
   private fall(f: ActFx, first: boolean) {
     const k = f.life / f.max; // 1 -> 0
+    const d = this.dim;
     const c = f.color;
     if (f.vis === 'meteor_drop') {
       const y = 0.4 + k * 14;
       const ox = k * 4;
       const s = Math.max(0.8, f.r * 0.45);
-      this.b.glowBoxTop.push(f.x - ox, y, f.z - ox * 0.5, this.time * 4, s, s, s, mix(c, 0xffe04a, 0.4), 0, 0, 0, 1);
-      this.b.glowBox.push(f.x - ox, y, f.z - ox * 0.5, -this.time * 3, s * 0.6, s * 0.6, s * 0.6, WHITE, 0, 0, 0, 1);
-      this.b.segment(f.x - ox - 2.4, y + 3.6, f.z - ox * 0.5 - 1.2, f.x - ox, y, f.z - ox * 0.5, s * 0.8, c, 0.5);
+      this.b.glowBoxTop.push(f.x - ox, y, f.z - ox * 0.5, this.time * 4, s, s, s, mix(c, 0xffe04a, 0.4), 0, 0, 0, d);
+      this.b.glowBox.push(f.x - ox, y, f.z - ox * 0.5, -this.time * 3, s * 0.6, s * 0.6, s * 0.6, WHITE, 0, 0, 0, d);
+      this.b.segment(f.x - ox - 2.4, y + 3.6, f.z - ox * 0.5 - 1.2, f.x - ox, y, f.z - ox * 0.5, s * 0.8, c, 0.5 * d);
       this.lights.request(f.x - ox, y, f.z, c, 1.2, 8, this.run.player.x, this.run.player.z);
       return;
     }
     if (f.vis === 'light_drop') {
       const w = f.r * 0.2 * (1 - k * 0.5);
-      this.b.glowBoxTop.push(f.x, 4, f.z, 0, w, 8, w, c, 0, 0, 0, (1 - k) * 0.6);
+      this.b.glowBoxTop.push(f.x, 4, f.z, 0, w, 8, w, c, 0, 0, 0, (1 - k) * 0.35 * d);
       return;
     }
     // impact
     const t = 1 - k;
     const r = f.r * (0.5 + t * 1.1);
-    this.b.glowDisc.push(f.x, 0.1, f.z, 0, f.r * 2.8, 1, f.r * 2.8, c, 0, 0, 0, k * 0.7);
-    this.b.glowDisc.push(f.x, 0.12, f.z, 0, f.r * 1.4, 1, f.r * 1.4, WHITE, 0, 0, 0, k * k * 0.7);
-    this.b.glowRing.push(f.x, 0.14, f.z, 0, r, 1, r, c, 0, 0, 0, k);
+    this.b.glowDisc.push(f.x, 0.1, f.z, 0, f.r * 2.8, 1, f.r * 2.8, c, 0, 0, 0, k * 0.45 * d);
+    this.b.glowDisc.push(f.x, 0.12, f.z, 0, f.r * 1.4, 1, f.r * 1.4, WHITE, 0, 0, 0, k * k * 0.35 * d);
+    this.b.glowRing.push(f.x, 0.14, f.z, 0, r, 1, r, c, 0, 0, 0, k * d);
     if (f.vis === 'light') {
       const w = f.r * 0.45 * k;
-      this.b.glowBoxTop.push(f.x, 4, f.z, this.time, w, 8, w, c, 0, 0, 0, k);
-      this.b.glowBox.push(f.x, 4, f.z, 0, w * 0.4, 8, w * 0.4, WHITE, 0, 0, 0, k);
+      this.b.glowBoxTop.push(f.x, 4, f.z, this.time, w, 8, w, c, 0, 0, 0, k * 0.45 * d);
+      this.b.glowBox.push(f.x, 4, f.z, 0, w * 0.35, 8, w * 0.35, WHITE, 0, 0, 0, k * 0.6 * d);
     } else {
       this.b.darkDisc.push(f.x, 0.04, f.z, 0, f.r * 2, 1, f.r * 2, 0x605048);
     }

@@ -236,7 +236,11 @@ export class CharacterViewer {
     if (!done) return;
     if (this.seqI + 1 < this.seq.length) this.startStep(this.seqI + 1);
     else {
-      if (st.hold !== undefined && a.playing === this.seqClip) a.endLoop();
+      if (st.hold !== undefined && a.playing === this.seqClip) {
+        // looping poses play their tail; held poses (death) stand back up
+        if (/_death$/.test(this.seqClip)) a.reset();
+        else a.endLoop();
+      }
       this.seq = [];
       this.setMode(this.gait);
     }
