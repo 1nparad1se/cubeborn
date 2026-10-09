@@ -187,7 +187,7 @@ class AOPass extends Pass {
 }
 
 /** MCD-style lighting bias applied on top of every map palette. */
-const MCD = {
+export const MCD = {
   /** Cool teal sky fill and deep teal bounce from the ground. */
   sky: 0xa8d8e8,
   skyMix: 0.3,

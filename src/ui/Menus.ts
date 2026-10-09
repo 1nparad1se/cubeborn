@@ -13,6 +13,7 @@ import { MAP_LORE } from '../data/mapLore';
 import { WAVE_TYPE_COLOR, WaveDirector } from '../game/Waves';
 import { BOSSES, RELICS, BOSS_BY_ID } from '../data/bosses';
 import { MAPS } from '../data/maps';
+import { MapPreview } from '../render/MapPreview';
 import { DIFFICULTIES } from '../data/difficulty';
 import { ACHIEVEMENTS, ACHIEVEMENT_CATEGORIES } from '../data/achievements';
 import type { AchievementCategory, AchievementDef } from '../data/types';
@@ -389,10 +390,19 @@ export class Menus {
     this.selMode = this.presetMode ?? p.data.last.mode ?? 'campaign';
     const list = h('div.map-list');
     const detail = h('div.detail.map-detail');
+    const preview = new MapPreview();
+    this.cleanup = () => preview.dispose();
+    const pvName = h('div.map-preview-name');
+    const pvLock = h('div.map-preview-lock');
+    const stage = h('div.map-preview', preview.canvas, pvName, pvLock);
     const show = (id: string) => {
       const m = MAPS.find((x) => x.id === id)!;
       const lore = MAP_LORE[id];
       const unlocked = p.isMapUnlocked(id);
+      preview.show(m);
+      stage.classList.toggle('locked', !unlocked);
+      pvName.textContent = L(m.name);
+      pvLock.textContent = unlocked ? '' : '🔒 ' + tr('Карта закрыта', 'Map locked');
       if (unlocked) this.selMap = id;
       for (const c of list.children) c.classList.toggle('sel', (c as HTMLElement).dataset.id === id);
       clear(detail);
@@ -521,7 +531,7 @@ export class Menus {
       );
     }
     setTimeout(() => show(this.selMap));
-    return this.frame(h('div.split', list, detail));
+    return this.frame(h('div.split.map-split', list, h('div.map-right', stage, detail)));
   }
 
   // ------------------------------------------------------------------ collection

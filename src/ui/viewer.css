@@ -1,0 +1,183 @@
+/* ------------------------------------------------------------------ character viewer: skills panel + demos */
+.cv.cvx {
+  grid-template-columns: 112px minmax(0, 1fr) minmax(300px, 400px);
+}
+.cvx .cv-center .cs-anims.full {
+  max-height: 26vh;
+  overflow-y: auto;
+}
+.cvx-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cvx-head .cvx-name {
+  font: 700 24px var(--font-display);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--hc);
+}
+.cvx-head .cvx-title {
+  font: 700 14px var(--font-ui);
+  color: var(--dim);
+}
+.cvx-note {
+  font-size: 12px;
+  color: var(--dim);
+}
+.cvx-skills {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.cvx-skill {
+  --sc: #fff;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 40px;
+  gap: 10px;
+  align-items: start;
+  padding: 8px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--sc) 14%, transparent), transparent 45%), #23272e;
+  border-radius: 5px;
+  box-shadow: 0 0 0 2px #08090b, inset 3px 0 0 var(--sc);
+}
+.cvx-skill-icon {
+  position: relative;
+}
+.cvx-skill-icon .icon {
+  width: 44px;
+  height: 44px;
+  display: block;
+  image-rendering: pixelated;
+}
+.cvx-key {
+  position: absolute;
+  left: -4px;
+  bottom: -6px;
+  min-width: 18px;
+  padding: 1px 4px;
+  font: 700 10px var(--font-ui);
+  text-align: center;
+  background: #0d0f12;
+  color: #f0e6c8;
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px #50555e;
+}
+.cvx-skill-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+}
+.cvx-skill-head b {
+  font: 700 15px var(--font-ui);
+}
+.cvx-kind {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--dim);
+}
+.cvx-desc {
+  margin: 3px 0 5px;
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: #c9ccd2;
+}
+.cvx-params {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 10px;
+  font-size: 12px;
+}
+.cvx-param i {
+  font-style: normal;
+  color: var(--dim);
+  margin-right: 4px;
+}
+.cvx-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 5px;
+}
+.cvx-chips span {
+  padding: 1px 6px;
+  font-size: 11px;
+  background: color-mix(in srgb, var(--sc) 20%, #15171b);
+  border-radius: 3px;
+}
+.cvx-play {
+  width: 40px;
+  height: 40px;
+  font-size: 16px;
+  color: #1a1408;
+  background: var(--accent);
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px #08090b, inset 0 -3px 0 rgba(0, 0, 0, 0.25);
+  align-self: center;
+}
+.cvx-play:hover {
+  filter: brightness(1.15);
+}
+.cvx-play.on {
+  background: var(--green);
+  box-shadow: 0 0 0 2px #08090b, 0 0 10px var(--green);
+}
+.cvx-sheet summary,
+.cvx-all summary {
+  cursor: pointer;
+  font: 700 13px var(--font-ui);
+  text-transform: uppercase;
+  color: var(--accent);
+  padding: 6px 0;
+}
+.cvx-demobar {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 4px;
+  max-width: min(330px, calc(100% - 16px));
+  opacity: 0.9;
+  padding: 4px 6px;
+  white-space: nowrap;
+  background: rgba(8, 9, 11, 0.55);
+  border-radius: 5px;
+  z-index: 2;
+}
+.cvx-demobar.demo {
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.cvx-status {
+  font: 700 13px var(--font-ui);
+  color: #e6e8eb;
+  padding: 0 4px;
+}
+.cvx-demobar .cv-tool {
+  min-height: 28px;
+  padding: 4px 9px;
+  font-size: 13px;
+}
+.cvx-allclips .cv-anim {
+  padding: 4px 7px;
+  font-size: 11px;
+  text-transform: none;
+}
+@media (max-width: 1100px) {
+  .cv.cvx {
+    grid-template-columns: 96px minmax(0, 1fr) minmax(260px, 320px);
+  }
+}
+@media (max-width: 900px), (max-aspect-ratio: 1/1) {
+  .cv.cvx {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(340px, 60vh) auto;
+  }
+  .cvx-demobar {
+    top: 4px;
+  }
+}

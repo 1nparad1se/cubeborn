@@ -22,15 +22,15 @@ const DMG: Record<DmgType, [string, string]> = {
   dark: ['Тьма', 'Dark'],
   magic: ['Магия', 'Magic'],
 };
-const DMG_COLOR: Record<DmgType, string> = { phys: '#e6dccb', fire: '#ff8a3a', ice: '#7fd8ff', lightning: '#ffe45a', poison: '#8be04e', dark: '#b07aff', magic: '#ff7ae0' };
-const CAST: Record<CastType, [string, string]> = {
+export const DMG_COLOR: Record<DmgType, string> = { phys: '#e6dccb', fire: '#ff8a3a', ice: '#7fd8ff', lightning: '#ffe45a', poison: '#8be04e', dark: '#b07aff', magic: '#ff7ae0' };
+export const CAST: Record<CastType, [string, string]> = {
   normal: ['Мгновенный', 'Instant'],
   combo: ['Комбо (повторные нажатия)', 'Combo (press again)'],
   hold: ['Удержание клавиши', 'Hold the key'],
   charge: ['Заряд (удерживать и отпустить)', 'Charge (hold and release)'],
   cast: ['Подготовка (каст)', 'Cast time'],
 };
-const TAGS: Record<SkillTag, [string, string]> = {
+export const TAGS: Record<SkillTag, [string, string]> = {
   melee: ['ближний бой', 'melee'],
   ranged: ['дальний бой', 'ranged'],
   aoe: ['по области', 'area'],

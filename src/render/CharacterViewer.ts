@@ -3,8 +3,10 @@ import { HeroRig } from './rig/HeroRig';
 import { HeroAnimator, type AnimName } from './rig/Animator';
 import { heroRig } from '../models/rigs';
 import { makeHeroTexture } from './Textures';
+import type { SkillSandbox } from './SkillSandbox';
 
 const MAX_SPARKS = 400;
+const UP = new THREE.Vector3(0, 1, 0);
 
 /** One clip of a previewed sequence; `hold` keeps a looping clip for that many seconds. */
 export interface PreviewStep {
@@ -80,8 +82,18 @@ export class CharacterViewer {
     return 2.4 * this.fit;
   }
   get maxDist() {
-    return 8.5 * this.fit;
+    return (this.demo ? 26 : 8.5) * this.fit;
   }
+  /** Skill demo playing in the stage (the hero is driven by its sandbox). */
+  private demo: SkillSandbox | null = null;
+  private demoYaw = 0;
+  private savedView: [number, number] | null = null;
+  private key!: THREE.DirectionalLight;
+  /** Freezes animation and demos (the camera still moves). */
+  paused = false;
+  /** Small procedural moves of the viewer: turning on the spot and a jump. */
+  private turnT = -1;
+  private jumpT = -1;
   turntable = false;
   speed = 1;
   topView = false;
@@ -124,6 +136,7 @@ export class CharacterViewer {
     const s = this.scene;
     s.add(new THREE.HemisphereLight(0xe4ecff, 0x3a3444, 1.5));
     const key = new THREE.DirectionalLight(0xfff0dc, 2.7);
+    this.key = key;
     key.position.set(2.6, 5.5, 3.8);
     key.castShadow = true;
     key.shadow.mapSize.set(1024, 1024);
@@ -171,6 +184,7 @@ export class CharacterViewer {
   setHero(id: string, color: number, silhouette = false) {
     const def = heroRig(id);
     if (!def) return;
+    this.detachDemo();
     if (this.rig) {
       this.stage.remove(this.rig.root);
       this.rig.dispose();
@@ -200,6 +214,107 @@ export class CharacterViewer {
     return !!this.anim?.has(clip);
   }
 
+  /** Every clip name of the current rig's library. */
+  clipNames(): string[] {
+    const c = (this.anim as unknown as { clips?: Record<string, unknown> } | null)?.clips;
+    return c ? Object.keys(c).sort() : [];
+  }
+
+  get demoActive(): boolean {
+    return !!this.demo;
+  }
+
+  /**
+   * Hands the hero to a skill sandbox: its group joins the stage (rotating with the view), the
+   * rig follows the sandbox hero and plays the clips its ActionSystem requests.
+   */
+  attachDemo(sb: SkillSandbox, key: string) {
+    if (this.demo !== sb) {
+      this.detachDemo(false);
+      this.demo = sb;
+      this.stage.add(sb.group);
+      this.savedView = [this.dist, this.pitch];
+      const sc = this.key.shadow.camera;
+      sc.left = sc.bottom = -12;
+      sc.right = sc.top = 12;
+      sc.far = 30;
+      sc.updateProjectionMatrix();
+      this.key.shadow.mapSize.set(2048, 2048);
+      this.key.shadow.map?.dispose();
+      this.key.shadow.map = null;
+    }
+    this.seq = [];
+    this.turnT = this.jumpT = -1;
+    this.deathT = -1;
+    if (this.anim) {
+      this.anim.reset();
+      this.anim.forceGait = null;
+    }
+    this.demoYaw = Math.atan2(sb.hero.fx, sb.hero.fz);
+    this.demoReq = sb.action.anim.n;
+    this.dist = Math.min(this.maxDist, Math.max(7, Math.min(16, sb.extent * 1.35)));
+    this.pitch = 0.8;
+    this.setMode(key);
+  }
+
+  /** Back to the turntable (disposes the sandbox when `dispose`). */
+  detachDemo(dispose = true) {
+    const sb = this.demo;
+    if (!sb) return;
+    this.demo = null;
+    this.stage.remove(sb.group);
+    if (dispose) sb.dispose();
+    this.stage.rotation.y = 0;
+    if (this.rig) {
+      this.rig.root.position.set(0, 0, 0);
+      const mat = this.rig.material;
+      mat.opacity = 1;
+      if (mat.transparent) {
+        mat.transparent = false;
+        mat.depthWrite = true;
+        mat.needsUpdate = true;
+      }
+    }
+    if (this.anim) {
+      this.anim.reset();
+      this.anim.speed = this.anim.fwd = this.anim.side = this.anim.turn = 0;
+      this.anim.air = false;
+      this.anim.forceGait = this.gait === 'idle' ? null : this.gait;
+    }
+    const sc = this.key.shadow.camera;
+    sc.left = sc.bottom = -2.5;
+    sc.right = sc.top = 2.5;
+    sc.far = 14;
+    sc.updateProjectionMatrix();
+    this.key.shadow.mapSize.set(1024, 1024);
+    this.key.shadow.map?.dispose();
+    this.key.shadow.map = null;
+    if (this.savedView) [this.dist, this.pitch] = this.savedView;
+    this.dist = Math.min(this.maxDist, this.dist);
+    this.savedView = null;
+    this.setMode(this.gait);
+  }
+
+  /** Turns the hero a full circle on the spot (the legs step, the cape sways). */
+  playTurn() {
+    if (!this.anim) return;
+    this.detachDemo();
+    this.seq = [];
+    this.anim.reset();
+    this.turnT = 0;
+    this.setMode('turn');
+  }
+
+  /** A hop: crouch, airborne, landing. */
+  playJump() {
+    if (!this.anim) return;
+    this.detachDemo();
+    this.seq = [];
+    this.anim.reset();
+    this.jumpT = 0;
+    this.setMode('jump');
+  }
+
   private setMode(m: string) {
     if (this.mode === m) return;
     this.mode = m;
@@ -212,6 +327,8 @@ export class CharacterViewer {
    */
   playSeq(steps: PreviewStep[], key = steps[0]?.clip ?? '') {
     if (!this.anim || !steps.length) return;
+    this.detachDemo();
+    this.turnT = this.jumpT = -1;
     this.deathT = -1;
     this.anim.reset();
     this.seq = steps;
@@ -254,6 +371,8 @@ export class CharacterViewer {
   play(name: AnimName) {
     const a = this.anim;
     if (!a) return;
+    if (this.demo && name !== 'hit') this.detachDemo();
+    this.turnT = this.jumpT = -1;
     this.deathT = -1;
     this.seq = [];
     if (name === 'idle' || name === 'walk' || name === 'run') {
@@ -380,14 +499,17 @@ export class CharacterViewer {
 
   /** Advances and draws one frame (exposed for tests). */
   frame(dt: number) {
-    const adt = dt * this.speed;
+    const adt = this.paused ? 0 : dt * this.speed;
     if (this.turntable) this.yaw += dt * 0.6;
     else if (Math.abs(this.yawVel) > 0.01) {
       this.yaw += this.yawVel * dt;
       this.yawVel *= Math.exp(-4 * dt);
     }
-    if (this.rig && this.anim) {
+    if (this.rig && this.anim && this.demo) this.frameDemo(dt, adt);
+    else if (this.rig && this.anim) {
+      this.stage.rotation.y = 0;
       this.rig.root.rotation.y = this.yaw;
+      this.updateMoves(adt);
       this.anim.update(adt);
       this.flashT = Math.max(0, this.flashT - dt);
       this.rig.flash.value = this.flashT > 0 ? this.flashT * 3 : 0;
@@ -396,7 +518,9 @@ export class CharacterViewer {
         if (this.deathT > 2.6) this.play('idle');
       }
       if (this.seq.length) this.updateSeq(adt);
-      else if (this.mode !== this.gait && this.mode !== 'death' && this.mode !== 'victory' && this.anim.current !== this.mode) this.setMode(this.gait);
+      else if (this.turnT >= 0 || this.jumpT >= 0) {
+        /* procedural move running */
+      } else if (this.mode !== this.gait && this.mode !== 'death' && this.mode !== 'victory' && this.anim.current !== this.mode) this.setMode(this.gait);
     }
     // camera: zoom also raises the target toward the face
     this.distNow += (this.dist - this.distNow) * (1 - Math.exp(-10 * dt));
@@ -404,11 +528,121 @@ export class CharacterViewer {
     const zoomT = (this.maxDist - this.distNow) / (this.maxDist - this.minDist);
     const ty = (0.82 + zoomT * 0.55) * this.fit;
     const cp = Math.cos(this.pitchNow);
-    this.camera.position.set(0, ty + Math.sin(this.pitchNow) * this.distNow, cp * this.distNow);
-    this.camera.lookAt(0, ty - zoomT * 0.05, 0);
+    if (this.demo) {
+      // frame the demo: between the skill's focus and the hero, rotated with the stage
+      const sb = this.demo;
+      const f = this.camFocus.set((sb.focusX + sb.hero.x) / 2, 0, (sb.focusZ + sb.hero.z) / 2).applyAxisAngle(UP, this.stage.rotation.y);
+      const sh = sb.shake;
+      const jx = sh > 0 ? (Math.random() - 0.5) * sh * 0.5 : 0;
+      const jy = sh > 0 ? (Math.random() - 0.5) * sh * 0.5 : 0;
+      this.camera.position.set(f.x + jx, 1 + Math.sin(this.pitchNow) * this.distNow + jy, f.z + cp * this.distNow);
+      this.camera.lookAt(f.x + jx, 1 + jy, f.z);
+    } else {
+      this.camera.position.set(0, ty + Math.sin(this.pitchNow) * this.distNow, cp * this.distNow);
+      this.camera.lookAt(0, ty - zoomT * 0.05, 0);
+    }
     this.updateSparks(dt);
     this.gl.render(this.scene, this.camera);
   }
+
+  private camFocus = new THREE.Vector3();
+
+  /** Turn-in-place and jump moves of the viewer (no clip: driven through the animator inputs). */
+  private updateMoves(adt: number) {
+    const a = this.anim!;
+    const rig = this.rig!;
+    if (this.turnT >= 0) {
+      this.turnT += adt;
+      const T = 2.4;
+      const u = Math.min(1, this.turnT / T);
+      // ease in/out a full turn; the yaw rate feeds the lean and the stepping legs
+      const ang = Math.PI * 2 * (u * u * (3 - 2 * u));
+      const rate = (Math.PI * 2 * 6 * u * (1 - u)) / T;
+      rig.root.rotation.y = this.yaw + ang;
+      a.turn = Math.max(-3, Math.min(3, rate / 4));
+      a.speed = Math.min(1.2, rate * 0.35);
+      a.side = a.speed;
+      a.fwd = 0;
+      if (u >= 1) {
+        this.turnT = -1;
+        a.turn = a.speed = a.side = 0;
+        this.setMode(this.gait);
+      }
+    }
+    if (this.jumpT >= 0) {
+      this.jumpT += adt;
+      const W = 0.16;
+      const AIR = 0.62;
+      const LAND = 0.25;
+      const t = this.jumpT;
+      if (t < W) {
+        a.crouch = t / W;
+        a.air = false;
+        rig.root.position.y = 0;
+      } else if (t < W + AIR) {
+        const u = (t - W) / AIR;
+        a.crouch = 0;
+        a.air = true;
+        a.airV = 1 - 2 * u;
+        rig.root.position.y = 4 * 1.1 * u * (1 - u);
+      } else if (t < W + AIR + LAND) {
+        a.air = false;
+        a.crouch = 1 - (t - W - AIR) / LAND;
+        rig.root.position.y = 0;
+      } else {
+        a.crouch = 0;
+        this.jumpT = -1;
+        this.setMode(this.gait);
+      }
+    }
+  }
+
+  /** Drives the rig from the sandbox like the game renderer drives the hero (EntityRenderer.drawHeroRig). */
+  private frameDemo(dt: number, adt: number) {
+    const sb = this.demo!;
+    const a = this.anim!;
+    const rig = this.rig!;
+    this.stage.rotation.y = this.yaw;
+    sb.update(adt);
+    const p = sb.hero;
+    rig.root.position.set(p.x, p.jumpY, p.z);
+    const yaw = Math.atan2(p.fx, p.fz);
+    let d = yaw - this.demoYaw;
+    d = Math.atan2(Math.sin(d), Math.cos(d));
+    const maxTurn = 11 * adt;
+    const dy = Math.max(-maxTurn, Math.min(maxTurn, d * Math.min(1, adt * 16)));
+    this.demoYaw += dy;
+    rig.root.rotation.y = this.demoYaw;
+    const cs = Math.cos(this.demoYaw);
+    const sn = Math.sin(this.demoYaw);
+    a.speed = Math.hypot(p.vx, p.vz);
+    a.fwd = p.vx * sn + p.vz * cs;
+    a.side = p.vx * cs - p.vz * sn;
+    a.turn = adt > 0 ? Math.max(-3, Math.min(3, dy / adt / 4)) : 0;
+    a.air = p.jumpY > 0.05;
+    const act = sb.action;
+    const req = act.anim;
+    if (req.n !== this.demoReq) {
+      this.demoReq = req.n;
+      a.play(req.name, { force: true, rate: req.rate });
+    } else if (!act.cur && a.playing && a.has(a.playing) && (a.playing.endsWith('_charge') || a.playing.endsWith('_cast'))) a.endLoop();
+    a.update(adt);
+    const blink = p.invulnT > 0 && Math.floor(performance.now() / 50) % 2 === 0;
+    rig.flash.value = blink ? 0.3 : 0;
+    // reaper stealth: faint shadow like in the game
+    const want = act.stealth ? 0.35 : 1;
+    const mat = rig.material;
+    mat.opacity += (want - mat.opacity) * Math.min(1, Math.max(adt, 0) * 10);
+    const tr = mat.opacity < 0.99;
+    if (mat.transparent !== tr) {
+      mat.transparent = tr;
+      mat.depthWrite = !tr;
+      mat.needsUpdate = true;
+    }
+    void dt;
+  }
+
+  private demoReq = 0;
 
   private onEvent(ev: string) {
     const rig = this.rig;
@@ -502,6 +736,7 @@ export class CharacterViewer {
 
   dispose() {
     this.stop();
+    this.detachDemo();
     this.ro.disconnect();
     if (this.rig) this.rig.dispose();
     this.texture.dispose();
