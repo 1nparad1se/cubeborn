@@ -177,7 +177,9 @@ export type EliteModId = 'swift' | 'armored' | 'vampiric' | 'splitting' | 'volat
 export interface BossAttack {
   type: string;
   cd: number;
-  [k: string]: number | string | number[] | string[] | undefined;
+  /** Skill name shown over the boss while it winds up. */
+  name?: Loc;
+  [k: string]: number | string | number[] | string[] | Loc | undefined;
 }
 
 export interface BossPhase {
@@ -188,15 +190,24 @@ export interface BossPhase {
   attacks: BossAttack[];
   /** One-shot actions when phase begins. */
   onEnter?: BossAttack[];
+  /** Enrage phase: faster wind-ups, shorter gaps, glowing model. */
+  enrage?: boolean;
+  /** Seconds between two skills (default 1.1). */
+  gap?: number;
 }
 
 export interface BossDef {
   id: string;
   name: Loc;
   title: Loc;
+  /** Relative toughness (1 = a mid-map boss); the absolute health follows the monster level. */
   hp: number;
+  /** Relative damage (1 = a mid-map boss); the absolute damage follows the monster level. */
   damage: number;
+  /** Body (collision) radius in world units. */
   radius: number;
+  /** Standing height in world units (the model is scaled to it). */
+  height: number;
   model: string;
   color: number;
   phases: BossPhase[];

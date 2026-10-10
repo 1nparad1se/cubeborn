@@ -1,11 +1,10 @@
-import { BALANCE } from '../../config/balance';
-import type { BossAttack, BossDef, BossPhase } from '../../data/types';
+import type { BossAttack, BossDef, BossPhase, EnemyDef } from '../../data/types';
 import { BOSS_BY_ID } from '../../data/bosses';
-import { TAU } from '../../core/math';
+import { BOSS_TUNING, bossLevelScale } from '../../config/bossTuning';
+import { PROG } from '../../config/progression';
 import type { Enemy } from '../Enemy';
 import type { Run } from '../Run';
-import { runAttack } from './BossAttacks';
-import type { EnemyDef } from '../../data/types';
+import { detonate, SKILLS, skillName, n, type BossAnim, type BossTele, type Cast } from './BossAttacks';
 
 const bossDefs: Record<string, EnemyDef> = {};
 /** Synthetic enemy definition so a boss can live in the enemy pool. */
@@ -27,35 +26,42 @@ export function bossEnemyDef(def: BossDef): EnemyDef {
   });
 }
 
-/** Drives one boss enemy: phases, movement and attack scheduling. */
+const ENRAGE_ATTACK: BossAttack = { type: 'enrage', cd: 0 };
+
+/**
+ * Drives one boss: intro, phases (with enrage), a skill state machine (wind-up -> act -> recover),
+ * stagger checks and counter windows, body collision with the hero and the death sequence.
+ * The boss fights inside the arena (BossArena): no other monsters are around.
+ */
 export class BossController {
   phase = 0;
   cds: number[] = [];
-  /** Seconds before another attack may start. */
+  /** Seconds before another skill may start. */
   busy = 1.5;
-  // durational attack state
-  spiralT = 0;
-  spiralAngle = 0;
-  spiralAttack: BossAttack | null = null;
-  spiralAcc = 0;
-  dashLeft = 0;
-  /** 0 idle, 1 telegraphing, 2 charging */
-  dashPhase = 0;
-  dashTele = 0.7;
-  dashT = 0;
-  dashX = 0;
-  dashZ = 0;
-  dashSpeed = 0;
-  pullT = 0;
-  pullStrength = 0;
+  cast: Cast | null = null;
+  /** Ground telegraphs (drawn by the renderer; some carry delayed blasts). */
+  readonly teles: BossTele[] = [];
   crystals: Enemy[] = [];
-  wanderX = 0;
-  wanderZ = 0;
-  wanderT = 0;
   hidden = 0;
   anim = 0;
-  /** Visual cue for the renderer (0..1) while casting. */
-  cast = 0;
+  /** Visual cue for the renderer (0..1) while casting (kept for older views). */
+  cast01 = 0;
+  /** Leap height for the renderer. */
+  airY = 0;
+  /** Intro (rise + roar) seconds left; the boss neither acts nor takes damage. */
+  introT = 0;
+  readonly introMax = 3.2;
+  /** Self-stun after ramming a wall or being countered (the renderer plays the stun pose). */
+  dazeT = 0;
+  /** Seconds since the last phase change (enrage flare on the model). */
+  phaseT = 99;
+  /** Wind-up multiplier (enrage phases are quicker). */
+  windMul = 1;
+  /** Boss level (monster level when it appeared). */
+  level = 1;
+  /** Skill name floating over the boss. */
+  label = '';
+  labelT = 0;
 
   constructor(
     public run: Run,
@@ -67,7 +73,7 @@ export class BossController {
     this.enterPhase(0);
   }
 
-  /** Health/damage scale this boss was spawned with (clones inherit it). */
+  /** Health/damage scale this boss was spawned with. */
   hpScale = 1;
   dmgScale = 1;
   enraged = false;
@@ -78,34 +84,48 @@ export class BossController {
   checkMax = 0;
   checkNeed = 1;
   checkDone = 0;
-  nextCheck = 26;
+  nextCheck = 30;
   private checkZone: { active: boolean } | null = null;
 
+  /**
+   * Spawns a boss. Health and damage follow the monster level (PROG) through BOSS_TUNING, times the
+   * boss's own toughness, the difficulty, the hero/zone level gap and the extra `hpMul` / `dmgMul`.
+   */
   static spawn(run: Run, id: string, x: number, z: number, isFinal: boolean, hpMul = 1, isClone = false, dmgMul = 1): BossController | null {
     const def = BOSS_BY_ID[id];
     if (!def) return null;
     const e = run.enemies.spawn(bossEnemyDef(def), x, z, { noScale: true });
     if (!e) return null;
-    // re-skin the pooled enemy as the boss
-    e.maxHp = e.hp = def.hp * BALANCE.bossHpMul * run.diff.hp * hpMul * (1 + (run.player.stats.curse - 1) * 0.5);
-    e.damage = def.damage * run.diff.damage * dmgMul;
+    const lv = run.zoneLevel;
+    const ls = bossLevelScale(lv);
+    const gap = PROG.enemyScale(lv, run.player.level);
+    e.maxHp = e.hp = Math.max(1, ls.hp * def.hp * run.diff.hp * hpMul * gap.hp * (1 + (run.player.stats.curse - 1) * 0.5) * run.debug.enemyHp);
+    e.damage = ls.dmg * def.damage * run.diff.damage * dmgMul * gap.dmg * run.debug.enemyDmg;
     e.speed = 0;
     e.radius = def.radius;
     e.scale = 1;
     e.kbResist = 1;
-    e.xp = isClone ? 20 : 150;
+    e.xp = isClone ? 20 : Math.round(150 * PROG.xpMul(lv, run.player.level) * (isFinal ? 2 : 1));
     e.flying = !!def.flying;
+    // no contact damage: the boss hurts through its skills; its body blocks the hero instead
+    e.touchCd = 1e9;
     const c = new BossController(run, e, def, isFinal, isClone);
     c.hpScale = hpMul;
     c.dmgScale = dmgMul;
+    c.level = lv;
     e.boss = c;
     run.bosses.push(c);
+    if (!isClone) {
+      c.introT = c.introMax;
+      e.invuln = true;
+      run.arena.start(c);
+    }
     return c;
   }
 
   /** Stagger bar size: grows with boss health; each phase refills it. */
   stagMax(): number {
-    return 260 + Math.sqrt(this.e.maxHp) * 5 + this.phase * 80;
+    return (BOSS_TUNING.stagBase + Math.sqrt(this.e.maxHp) * BOSS_TUNING.stagSqrt) * (1 + this.phase * 0.25);
   }
 
   /** Stagger break: every attack in progress is interrupted and the boss is stunned (vulnerable). */
@@ -115,14 +135,24 @@ export class BossController {
       if (this.checkZone) this.checkZone.active = false;
       this.checkZone = null;
     }
-    this.spiralT = 0;
-    this.spiralAttack = null;
-    this.dashPhase = 0;
-    this.dashLeft = 0;
-    this.pullT = 0;
-    this.cast = 0;
+    this.interrupt();
     this.busy = 1.2;
+  }
+
+  /** Cancels the skill in progress and its telegraphs. */
+  interrupt() {
+    const c = this.cast;
+    this.cast = null;
+    this.cast01 = 0;
+    this.airY = 0;
+    this.e.vx = this.e.vz = 0;
+    this.hidden = 0;
+    // a cancelled enrage / hide must never leave the boss invulnerable
+    if (this.introT <= 0) this.e.invuln = false;
+    for (let i = this.teles.length - 1; i >= 0; i--) if (this.teles[i].owned) this.teles.splice(i, 1);
+    for (const l of this.run.hazards.lasers) if (l.active && l.owner === this.e) l.active = false;
     this.run.player.pullX = this.run.player.pullZ = 0;
+    void c;
   }
 
   /** Damage taken multiplier outside a stagger window. */
@@ -134,22 +164,38 @@ export class BossController {
     return this.def.phases[this.phase];
   }
 
+  /** What the model shows: the skill family, its stage (wind / act / recover / idle) and progress. */
+  get animState(): { kind: BossAnim | 'idle' | 'stun' | 'intro' | 'check'; stage: number; k: number } {
+    if (this.introT > 0) return { kind: 'intro', stage: 0, k: 1 - this.introT / this.introMax };
+    if (this.e.brokenT > 0 || this.dazeT > 0 || this.e.stunT > 0 || this.e.freezeT > 0) return { kind: 'stun', stage: 0, k: 0 };
+    if (this.checkT > 0) return { kind: 'check', stage: 0, k: 1 - this.checkT / this.checkMax };
+    const c = this.cast;
+    if (!c) return { kind: 'idle', stage: -1, k: 0 };
+    const dur = c.stage === 0 ? c.wind : c.stage === 1 ? c.act : c.rec;
+    return { kind: c.impl.anim, stage: c.stage, k: dur > 0 ? Math.min(1, c.t / dur) : 1 };
+  }
+
   private enterPhase(i: number) {
     this.phase = i;
     const ph = this.def.phases[i];
     this.e.stag = 0;
     this.e.stagMax = 0;
-    this.cds = ph.attacks.map((a, k) => a.cd * 0.5 + k * 0.7);
+    this.cds = ph.attacks.map((a, k) => a.cd * 0.4 + k * 0.8);
+    this.windMul = ph.enrage ? 0.82 : 1;
     if (i > 0) {
-      this.busy = 1.2;
+      this.phaseT = 0;
       this.run.fx.shake(0.4);
       this.run.fx.burst(this.e.x, 1.5, this.e.z, this.def.color, 40, 6, 0.25, 0.9, 'glow');
       this.run.fx.sound('bossPhase');
       this.run.events.emit('bossPhase', this);
+      if (ph.enrage && !this.isClone) {
+        this.interrupt();
+        this.startCast(ENRAGE_ATTACK);
+      }
+      // every new phase is followed by a stagger check
+      if (!this.isClone) this.nextCheck = 9;
     }
-    if (ph.onEnter) for (const a of ph.onEnter) runAttack(this, a);
-    // every new phase opens with a stagger check
-    if (i > 0 && !this.isClone) this.nextCheck = 2;
+    if (ph.onEnter) for (const a of ph.onEnter) this.startCast(a);
   }
 
   /** Starts the stagger check: the boss channels a huge blast unless broken in time. */
@@ -159,11 +205,10 @@ export class BossController {
     this.checkMax = this.checkT = 6;
     this.checkDone = 0;
     // sized so a focused rotation of stagger skills breaks it, independent of the normal bar
-    this.checkNeed = Math.round((120 + Math.sqrt(e.maxHp) * 2.2 + this.phase * 40) * (this.isFinal ? 1.25 : 1));
+    this.checkNeed = Math.round((BOSS_TUNING.checkBase + Math.sqrt(e.maxHp) * BOSS_TUNING.checkSqrt + this.phase * 40) * (this.isFinal ? 1.2 : 1));
     e.stag = 0;
-    this.spiralT = 0;
-    this.dashPhase = 0;
-    this.checkZone = run.hazards.zone(e.x, e.z, 8, this.checkMax, e.damage * 3.2 * this.dmgScale, { color: 0xff7a1a });
+    this.interrupt();
+    this.checkZone = run.hazards.zone(e.x, e.z, e.radius + 6, this.checkMax, e.damage * 2.6, { color: 0xff7a1a });
     run.fx.sound('bossRoar', 0.8);
     run.fx.text(e.x, e.z, run.tr('act_check'), 0xffb040);
   }
@@ -175,25 +220,110 @@ export class BossController {
     return this.checkDone >= this.checkNeed;
   }
 
-  /** Counter window: the boss is winding up a charge and can be interrupted by a skill. */
+  /** Counter window: the boss is winding up a counterable skill (charge, leap, roar). */
   get counterOpen(): boolean {
-    return this.dashPhase === 1;
+    const c = this.cast;
+    return !!c && c.stage === 0 && !!c.impl.counter && c.t > 0.15;
   }
 
-  /** A skill landed in the counter window: the charge is cancelled and the boss reels. */
+  /** A skill landed in the counter window: the move is cancelled and the boss reels. */
   countered() {
     const run = this.run;
     const e = this.e;
-    this.dashPhase = 0;
-    this.dashLeft = 0;
-    this.busy = 1.6;
-    e.stunT = Math.max(e.stunT, 1.6);
-    e.vx = e.vz = 0;
+    this.interrupt();
+    this.daze(1.8);
     run.fx.text(e.x, e.z, run.tr('act_counter'), 0x8ad8ff);
     run.fx.sound('shield', 0.9);
-    run.fx.shake(0.25);
+    run.fx.shake(0.3);
     const f = run.action.fx.add('break', e.x, e.z, 0.6, 0x8ad8ff);
     f.r = e.radius * 2;
+  }
+
+  /** The boss stands dazed (stun pose, open to punishment). */
+  daze(t: number) {
+    this.dazeT = Math.max(this.dazeT, t);
+    this.busy = Math.max(this.busy, t * 0.5);
+    this.e.vx = this.e.vz = 0;
+  }
+
+  /** Turns toward a direction (x, z); k = turn share per call. */
+  faceDir(dx: number, dz: number, k = 0.2) {
+    if (dx === 0 && dz === 0) return;
+    const want = Math.atan2(dx, dz);
+    let d = want - this.e.yaw;
+    d = Math.atan2(Math.sin(d), Math.cos(d));
+    this.e.yaw += d * k;
+  }
+
+  startCast(a: BossAttack) {
+    const impl = SKILLS[a.type];
+    if (!impl) return;
+    const c: Cast = { a, impl, stage: 0, t: 0, wind: 0.5, act: 0.1, rec: 0.5, ang: 0, tx: 0, tz: 0, sx: 0, sz: 0, dist: 0, left: 0, hit: false, acc: 0, wall: false };
+    this.cast = c;
+    impl.begin(this, c);
+    this.cast01 = 1;
+    const name = skillName(a);
+    if (name) {
+      this.label = name;
+      this.labelT = Math.max(1.2, c.wind + 0.4);
+    }
+  }
+
+  /** Telegraph timers and delayed blasts (they keep running between casts). */
+  private updateTeles(dt: number) {
+    for (let i = this.teles.length - 1; i >= 0; i--) {
+      const tl = this.teles[i];
+      if (tl.done) {
+        tl.t -= dt;
+        if (tl.t < -0.25) this.teles.splice(i, 1);
+        continue;
+      }
+      tl.t -= dt;
+      if (tl.t <= 0) {
+        if (tl.blast) detonate(this, tl);
+        else tl.done = true;
+        tl.t = 0;
+      }
+    }
+  }
+
+  private updateCast(dt: number) {
+    const c = this.cast!;
+    c.t += dt;
+    const e = this.e;
+    const p = this.run.player;
+    if (c.stage === 0) {
+      e.vx = e.vz = 0;
+      // track the hero a little during the first part of a wind-up
+      if (c.impl.anim !== 'charge' && c.impl.anim !== 'leap') this.faceDir(p.x - e.x, p.z - e.z, 0.08);
+      else this.faceDir(Math.cos(c.ang), Math.sin(c.ang), 0.25);
+      if (c.t >= c.wind) {
+        c.stage = 1;
+        c.t = 0;
+        c.impl.strike?.(this, c);
+      }
+      return;
+    }
+    if (c.stage === 1) {
+      if (c.impl.tick) c.impl.tick(this, c, dt);
+      else e.vx = e.vz = 0;
+      if (c.t >= c.act) {
+        if (c.impl.again?.(this, c)) {
+          c.stage = 0;
+          c.t = 0;
+          return;
+        }
+        e.vx = e.vz = 0;
+        c.stage = 2;
+        c.t = 0;
+      }
+      return;
+    }
+    e.vx = e.vz = 0;
+    if (c.t >= c.rec) {
+      this.cast = null;
+      this.busy = (this.phaseDef.gap ?? 1.1) * (this.phaseDef.enrage ? 0.75 : 1);
+    }
   }
 
   update(dt: number) {
@@ -201,28 +331,31 @@ export class BossController {
     const e = this.e;
     const p = run.player;
     this.anim += dt;
-    if (this.cast > 0) this.cast -= dt * 2;
+    if (this.cast01 > 0) this.cast01 -= dt * 2;
+    if (this.introT > 0) {
+      this.introT -= dt;
+      e.vx = e.vz = 0;
+      this.faceDir(p.x - e.x, p.z - e.z, 0.1);
+      if (this.introT <= this.introMax - 1.3 && this.introT + dt > this.introMax - 1.3) {
+        run.fx.sound('bossRoar', 1);
+        run.fx.shake(0.8);
+        run.fx.burst(e.x, 2, e.z, this.def.color, 50, 8, 0.3, 1, 'glow');
+      }
+      if (this.introT <= 0) e.invuln = false;
+      return;
+    }
     // phase transitions
     const frac = e.hp / e.maxHp;
     const next = this.def.phases[this.phase + 1];
     if (next && frac <= next.hp && !this.isClone) this.enterPhase(this.phase + 1);
-    // shield crystals
-    if (this.crystals.length) {
-      this.crystals = this.crystals.filter((c) => c.alive && c.def.id === 'shield_crystal');
-      e.invuln = this.crystals.length > 0;
-    }
-    if (this.hidden > 0) {
-      this.hidden -= dt;
+    if (this.dazeT > 0) {
+      this.dazeT -= dt;
       e.vx = e.vz = 0;
-      if (this.hidden <= 0) {
-        e.invuln = this.crystals.length > 0;
-        run.hazards.explode(e.x, e.z, 2.6, e.damage, this.def.color);
-      }
       return;
     }
     if (this.checkT > 0) {
       e.vx = e.vz = 0;
-      this.cast = 1;
+      this.cast01 = 1;
       this.checkT -= dt;
       if (this.checkZone) {
         const z = this.checkZone as { x: number; z: number; active: boolean };
@@ -230,115 +363,73 @@ export class BossController {
         z.z = e.z;
       }
       if (this.checkT <= 0) {
-        // failed: the blast lands (the hazard zone deals the damage)
+        // failed: the blast lands (the hazard zone deals the damage) and a shock rolls out
         this.checkZone = null;
         run.fx.text(e.x, e.z, run.tr('act_check_fail'), 0xff5a3a);
-        run.fx.shake(0.6);
-        run.hazards.shock(e.x, e.z, 14, 9, 1.2, e.damage * 0.8, 0xff7a1a);
+        run.fx.shake(0.7);
+        run.hazards.shock(e.x, e.z, 16, 9, 1.2, e.damage * 0.7, 0xff7a1a);
         this.busy = 1.2;
       }
       return;
     }
-    if (!this.isClone && (this.phase > 0 || this.isFinal) && e.stunT <= 0 && this.dashPhase === 0 && this.spiralT <= 0) {
+    if (this.cast) {
+      this.updateCast(dt);
+      return;
+    }
+    if (!this.isClone && (this.phase > 0 || this.isFinal) && e.stunT <= 0) {
       this.nextCheck -= dt;
       if (this.nextCheck <= 0) {
-        this.nextCheck = 24 + Math.random() * 8;
+        this.nextCheck = BOSS_TUNING.checkEvery + Math.random() * 10;
         this.startCheck();
         return;
       }
     }
-    if (this.pullT > 0) {
-      this.pullT -= dt;
-      const dx = e.x - p.x;
-      const dz = e.z - p.z;
-      const d = Math.hypot(dx, dz) || 1;
-      p.pullX = (dx / d) * this.pullStrength;
-      p.pullZ = (dz / d) * this.pullStrength;
-    }
-    // spiral emission
-    if (this.spiralT > 0 && this.spiralAttack) {
-      const a = this.spiralAttack;
-      this.spiralT -= dt;
-      this.spiralAcc += dt * (a.rate as number);
-      this.spiralAngle += (((a.turn as number) ?? 60) * Math.PI) / 180 * dt;
-      const arms = (a.arms as number) ?? 4;
-      while (this.spiralAcc >= 1) {
-        this.spiralAcc--;
-        for (let k = 0; k < arms; k++) {
-          const ang = this.spiralAngle + (k / arms) * TAU;
-          const sp = (a.speed as number) ?? 5;
-          run.hazards.bullet(e.x, e.z, Math.cos(ang) * sp, Math.sin(ang) * sp, e.damage * 0.55, 0.32, 5, a.slow ? 0x8ae8ff : 0xff3a8a, !!a.slow);
-        }
-      }
-      this.cast = 1;
-    }
-    // dash sequence: telegraph -> charge, repeated dashLeft times
-    if (this.dashPhase === 1) {
-      e.vx = e.vz = 0;
-      this.dashT -= dt;
-      if (this.dashT <= 0) {
-        this.dashPhase = 2;
-        this.dashT = this.dashDist / this.dashSpeed;
-        run.fx.sound('dash');
-      }
-      return;
-    }
-    if (this.dashPhase === 2) {
-      e.vx = this.dashX * this.dashSpeed;
-      e.vz = this.dashZ * this.dashSpeed;
-      this.dashT -= dt;
-      if (this.dashT <= 0) {
-        this.dashLeft--;
-        if (this.dashLeft > 0) this.startDash();
-        else {
-          this.dashPhase = 0;
-          this.busy = 0.7;
-        }
-      }
-      return;
-    }
-    this.move(dt);
-    // attack scheduling
-    if (this.busy > 0) {
-      this.busy -= dt;
-      return;
-    }
+    // pick a skill: any ready one whose reach covers the hero; otherwise walk closer
     const ph = this.phaseDef;
     for (let i = 0; i < this.cds.length; i++) this.cds[i] -= dt;
+    const gapToHero = Math.hypot(p.x - e.x, p.z - e.z) - e.radius;
     let pick = -1;
-    for (let i = 0; i < this.cds.length; i++) if (this.cds[i] <= 0 && (pick < 0 || this.cds[i] < this.cds[pick])) pick = i;
+    if (this.busy > 0) this.busy -= dt;
+    else {
+      const ready: number[] = [];
+      for (let i = 0; i < this.cds.length; i++) if (this.cds[i] <= 0 && gapToHero <= n(ph.attacks[i], 'range', 99) && gapToHero >= n(ph.attacks[i], 'min', -9)) ready.push(i);
+      if (ready.length) pick = ready[Math.floor(Math.random() * ready.length)];
+    }
     if (pick >= 0) {
       const a = ph.attacks[pick];
-      this.cds[pick] = a.cd * (0.85 + Math.random() * 0.3) / Math.sqrt(run.diff.speed);
-      this.busy = 0.6;
-      this.cast = 1;
-      runAttack(this, a);
+      this.cds[pick] = (a.cd * (0.85 + Math.random() * 0.3)) / Math.sqrt(run.diff.speed) / (ph.enrage ? 1.15 : 1);
+      e.vx = e.vz = 0;
+      this.startCast(a);
+      return;
+    }
+    this.move(dt, gapToHero);
+  }
+
+  /** Runs every frame, even while the boss is stunned or frozen (called by the arena). */
+  tick(dt: number) {
+    this.phaseT += dt;
+    if (this.labelT > 0) this.labelT -= dt;
+    this.e.touchCd = 1e9;
+    this.updateTeles(dt);
+    if (this.introT <= 0) this.pushHero();
+  }
+
+  /** The body is solid: the hero is pushed out of it. */
+  private pushHero() {
+    const p = this.run.player;
+    const e = this.e;
+    if (this.hidden > 0 || this.airY > 0.5 || p.dead) return;
+    const dx = p.x - e.x;
+    const dz = p.z - e.z;
+    const d = Math.hypot(dx, dz);
+    const min = e.radius * 0.9 + p.radius;
+    if (d < min) {
+      const k = (min - d) / Math.max(d, 0.01);
+      p.slide(dx * k, dz * k);
     }
   }
 
-  dashDist = 10;
-
-  startDash() {
-    const e = this.e;
-    const p = this.run.player;
-    const dx = p.x - e.x;
-    const dz = p.z - e.z;
-    const d = Math.hypot(dx, dz) || 1;
-    this.dashX = dx / d;
-    this.dashZ = dz / d;
-    this.dashDist = Math.min(14, d + 4);
-    this.dashPhase = 1;
-    this.dashT = this.dashTele;
-    this.run.hazards.lineTelegraph(e.x, e.z, this.dashX, this.dashZ, this.dashDist, e.radius * 2, this.dashTele);
-  }
-
-  /** Sets a phase without its entry actions (used by clones). */
-  forcePhase(i: number) {
-    this.phase = i;
-    this.cds = this.def.phases[i].attacks.map((a, k) => a.cd * 0.5 + k * 0.7);
-  }
-
-  private move(dt: number) {
+  private move(dt: number, gap: number) {
     const run = this.run;
     const e = this.e;
     const p = run.player;
@@ -349,7 +440,7 @@ export class BossController {
     const sp = ph.speed * run.diff.speed;
     let ux = dx / d;
     let uz = dz / d;
-    if (!this.def.flying && d > 3) {
+    if (!this.def.flying && d > e.radius + 3) {
       const cx = Math.floor(e.x);
       const cz = Math.floor(e.z);
       if (run.nav.has(cx, cz)) {
@@ -363,38 +454,33 @@ export class BossController {
     switch (ph.move) {
       case 'stationary':
         e.vx = e.vz = 0;
-        break;
+        this.faceDir(dx, dz, 0.05);
+        return;
       case 'keep': {
         const want = 7;
-        const m = d > want + 1 ? 1 : d < want - 1 ? -0.8 : 0;
-        e.vx = ux * sp * m - uz * sp * 0.5;
-        e.vz = uz * sp * m + ux * sp * 0.5;
-        break;
-      }
-      case 'wander': {
-        this.wanderT -= dt;
-        if (this.wanderT <= 0) {
-          this.wanderT = 2.5;
-          const a = Math.random() * TAU;
-          this.wanderX = p.x + Math.cos(a) * 6;
-          this.wanderZ = p.z + Math.sin(a) * 6;
-        }
-        const wx = this.wanderX - e.x;
-        const wz = this.wanderZ - e.z;
-        const wd = Math.hypot(wx, wz) || 1;
-        e.vx = wd > 0.5 ? (wx / wd) * sp : 0;
-        e.vz = wd > 0.5 ? (wz / wd) * sp : 0;
-        break;
+        const m = gap > want + 1 ? 1 : gap < want - 2 ? -0.8 : 0;
+        e.vx = ux * sp * m - uz * sp * 0.4;
+        e.vz = uz * sp * m + ux * sp * 0.4;
+        this.faceDir(dx, dz, 0.08);
+        return;
       }
       default:
-        e.vx = d > 1 ? ux * sp : 0;
-        e.vz = d > 1 ? uz * sp : 0;
+        if (gap > 1.2) {
+          e.vx = ux * sp;
+          e.vz = uz * sp;
+        } else {
+          e.vx = e.vz = 0;
+          this.faceDir(dx, dz, 0.08);
+        }
     }
+    void dt;
   }
 
   onDeath() {
     const run = this.run;
     const e = this.e;
+    this.interrupt();
+    this.teles.length = 0;
     run.fx.shake(0.9);
     run.fx.vibrate(120);
     run.fx.light(e.x, e.z, this.def.color, 6, 16, 1);
@@ -413,6 +499,7 @@ export class BossController {
       run.stats.gold += 4 * run.player.stats.greed;
       for (let i = 0; i < 4; i++) run.pickups.spawn('gold', e.x, e.z, 1, true);
       run.events.emit('bossDefeated', this);
+      run.arena.onBossDead(this);
     }
     if (this.isFinal && !run.bosses.some((b) => b.isFinal)) run.onFinalBossDefeated();
   }

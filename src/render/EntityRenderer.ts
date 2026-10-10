@@ -11,6 +11,8 @@ import { InstancedBatch } from './InstancedBatch';
 import { buildVoxelGeometry } from './VoxelGeometry';
 import { makeVoxelMaterial, makeGlowMaterial } from './Materials';
 import { ArticulatedModel } from './ArticulatedModel';
+import { BossModel } from './BossModel';
+import { BossFxRenderer } from './BossFxRenderer';
 import type { LightPool } from './LightPool';
 import { heroRig } from '../models/rigs';
 import { HeroRig } from './rig/HeroRig';
@@ -57,7 +59,9 @@ export class EntityRenderer {
   /** While > 0 the hero faces its attack direction instead of its travel direction. */
   private victoryPlayed = false;
   private creatureTex: THREE.Texture;
-  private bossModels = new Map<string, ArticulatedModel>();
+  private bossModels = new Map<string, BossModel>();
+  private bossFx: BossFxRenderer;
+  private bossDt = 0;
   private shadows: InstancedBatch;
   readonly glowBox: InstancedBatch;
   readonly glowBoxTop: InstancedBatch;
@@ -119,6 +123,7 @@ export class EntityRenderer {
     for (const b of [this.glowBox, this.glowDisc, this.glowRing, this.glowRingThin, this.glowPlane]) b.mesh.renderOrder = 5;
     this.glowBoxTop.mesh.renderOrder = 6;
     this.actFx = new ActionFxRenderer(run, this, lights);
+    this.bossFx = new BossFxRenderer(scene, run);
   }
 
   private batchesFor(id: string, model: VoxelModel | undefined, frames: number): ModelBatches | null {
@@ -144,12 +149,12 @@ export class EntityRenderer {
     return b;
   }
 
-  private bossModel(id: string): ArticulatedModel | null {
+  private bossModel(id: string): BossModel | null {
     let m = this.bossModels.get(id);
     if (m) return m;
     const def = BOSS_MODELS[id];
     if (!def) return null;
-    m = new ArticulatedModel(def, this.creatureTex, this.quality !== 'low');
+    m = new BossModel(def, this.creatureTex, this.quality !== 'low');
     this.bossModels.set(id, m);
     this.group.add(m.root);
     return m;
@@ -157,6 +162,7 @@ export class EntityRenderer {
 
   update(dt: number, camX: number, camZ: number, camera: THREE.Camera) {
     this.time += dt;
+    this.bossDt = dt;
     const time = this.time;
     for (const b of this.models.values()) for (const f of b.frames) f.begin();
     const all = [this.shadows, this.glowBox, this.glowBoxTop, this.glowDisc, this.glowRing, this.glowRingThin, this.glowPlane, this.darkDisc];
@@ -175,6 +181,7 @@ export class EntityRenderer {
     this.drawEffects(time);
     this.drawSummons(time, visible);
     this.actFx.update(dt);
+    this.bossFx.update(dt);
 
     for (const b of this.models.values()) for (const f of b.frames) f.end();
     for (const b of all) b.end();
@@ -314,8 +321,9 @@ export class EntityRenderer {
     for (const e of run.enemies.list) {
       if (!e.active) continue;
       if (e.boss) {
+        if (e.dying > 0) continue;
         this.drawBoss(e, time);
-        usedBoss.add(e.def.id);
+        usedBoss.add(e.boss.def.model);
         continue;
       }
       if (!visible(e.x, e.z)) continue;
@@ -422,6 +430,11 @@ export class EntityRenderer {
       if (e.brokenT > 0 && e.dying === 0) this.stars(e.x, y + 1.2 * s + 0.5, e.z, 0.45 * s + 0.2, time);
       if (e.shieldT > 0) this.glowRing.push(e.x, 0.6 * s, e.z, time * 3, e.radius * 2.6, 1, e.radius * 2.6, 0x9a7aff, 0, 0, 0, 0.7);
     }
+    const corpse = this.run.arena.corpse;
+    if (corpse && !usedBoss.has(corpse.model)) {
+      this.drawCorpse(corpse, time);
+      usedBoss.add(corpse.model);
+    }
     for (const [id, m] of this.bossModels) if (!usedBoss.has(id)) m.root.visible = false;
   }
 
@@ -431,25 +444,68 @@ export class EntityRenderer {
     if (!m) return;
     const hidden = b.hidden > 0;
     m.root.visible = !hidden;
-    const dying = e.dying > 0 ? e.dying / 0.28 : 1;
-    m.root.position.set(e.x, e.y + (hidden ? -2 : 0), e.z);
-    m.root.rotation.y += angleDelta(m.root.rotation.y, e.yaw) * 0.15;
-    m.root.scale.setScalar(e.scale * (b.isClone ? 0.6 : 1) * (0.5 + dying * 0.5));
+    const st = b.animState;
+    // scale the model to the boss's standing height
+    const s = (b.def.height / Math.max(0.5, m.top)) * e.scale;
+    // intro: the boss climbs out of the ground during the first part
+    const ik = st.kind === 'intro' ? Math.min(1, st.k / 0.33) : 1;
+    const rise = st.kind === 'intro' ? -(1 - ik * (2 - ik)) * b.def.height * 0.9 : 0;
+    m.root.position.set(e.x, e.y + b.airY + rise + (b.def.flying ? 0.4 : 0), e.z);
+    m.root.rotation.y += angleDelta(m.root.rotation.y, e.yaw) * 0.18;
+    m.root.scale.setScalar(s);
     const sp = Math.hypot(e.vx, e.vz);
-    m.pose({ walk: time * (3 + sp * 1.5), moving: Math.min(1, sp / 1.5), attack: 0, cast: b.cast, time, flash: Math.min(1, e.flash * 6) + (b.dashPhase === 1 ? 0.3 + Math.sin(time * 30) * 0.3 : 0) });
-    const sh = e.radius * 3;
+    const enr = b.phaseDef.enrage ? 1 : 0;
+    m.bossPose({
+      dt: this.bossDt,
+      time,
+      walk: b.anim * (2.2 + sp * 0.9),
+      moving: Math.min(1, sp / 1.2),
+      flash: Math.min(1, e.flash * 6) + (b.counterOpen ? 0.25 + Math.sin(time * 30) * 0.2 : 0) + (b.phaseT < 0.6 ? (0.6 - b.phaseT) : 0),
+      kind: st.kind,
+      stage: st.stage,
+      k: st.k,
+      enrage: enr,
+      death: 0,
+      float: !!b.def.flying,
+    });
+    const sh = e.radius * 2.6 * (hidden ? 0.6 : 1) * (b.airY > 0 ? Math.max(0.5, 1 - b.airY * 0.08) : 1);
     this.shadows.push(e.x, 0.03, e.z, 0, sh, 1, sh);
     if (hidden) {
-      // burrow mound
-      this.glowDisc.push(e.x, 0.05, e.z, time, 3, 1, 3, b.def.color, 0, 0, 0, 0.5);
+      // burrow mound / shadow portal
+      this.glowDisc.push(e.x, 0.05, e.z, time, 4, 1, 4, b.def.color, 0, 0, 0, 0.5);
     }
-    if (e.brokenT > 0) {
-      this.stars(e.x, e.y + e.scale * 3.2 + 0.6, e.z, e.radius * 0.8 + 0.4, time);
-      this.glowDisc.push(e.x, 0.06, e.z, 0, e.radius * 4, 1, e.radius * 4, 0xffe080, 0, 0, 0, 0.25 + Math.sin(time * 8) * 0.1);
+    const top = b.def.height;
+    if (e.brokenT > 0 || b.dazeT > 0) {
+      this.stars(e.x, e.y + top + 0.6, e.z, e.radius * 0.5 + 0.5, time);
+      if (e.brokenT > 0) this.glowDisc.push(e.x, 0.06, e.z, 0, e.radius * 3, 1, e.radius * 3, 0xffe080, 0, 0, 0, 0.25 + Math.sin(time * 8) * 0.1);
     }
-    if (e.invuln) this.glowRing.push(e.x, 1.2, e.z, time, e.radius * 2, 1, e.radius * 2, 0x9adfff, 0, 0, 0, 0.8);
-    this.glowRing.push(e.x, 0.05, e.z, -time * 0.5, e.radius * 1.8, 1, e.radius * 1.8, b.def.color, 0, 0, 0, 0.6);
-    this.lights.request(e.x, 3, e.z, b.def.color, 1.4, 10, this.run.player.x, this.run.player.z);
+    if (e.invuln && st.kind !== 'intro') this.glowRing.push(e.x, 1.2, e.z, time, e.radius * 1.4, 1, e.radius * 1.4, 0x9adfff, 0, 0, 0, 0.8);
+    // body ring; enraged bosses burn with a pulsing aura and embers
+    this.glowRing.push(e.x, 0.05, e.z, -time * 0.5, e.radius * 1.15, 1, e.radius * 1.15, b.def.color, 0, 0, 0, 0.6);
+    if (enr) {
+      const pk = 0.35 + Math.sin(time * 6) * 0.15;
+      this.glowDisc.push(e.x, 0.07, e.z, 0, e.radius * 3.4, 1, e.radius * 3.4, 0xff3a1a, 0, 0, 0, pk);
+      if (Math.random() < 0.5) this.run.fx.burst(e.x + (Math.random() - 0.5) * e.radius * 1.6, 0.4 + Math.random() * top * 0.8, e.z + (Math.random() - 0.5) * e.radius * 1.6, 0xff6a2a, 1, 1.2, 0.12, 0.6, 'glow');
+    }
+    // counter window: a bright ring flashing around the feet
+    if (b.counterOpen) this.glowRingThin.push(e.x, 0.1, e.z, 0, e.radius * 1.6, 1, e.radius * 1.6, 0x8ad8ff, 0, 0, 0, 0.6 + Math.sin(time * 30) * 0.4);
+    this.lights.request(e.x, 4, e.z, b.def.color, 2, 14, this.run.player.x, this.run.player.z);
+  }
+
+  /** The fallen boss: topples over, then sinks into the ground in a cloud of its colour. */
+  private drawCorpse(c: NonNullable<Run['arena']['corpse']>, time: number) {
+    const m = this.bossModel(c.model);
+    if (!m) return;
+    const k = 1 - Math.max(0, c.t) / c.max; // 0 -> 1
+    const sinkK = Math.max(0, -c.t); // 0 -> 1 during the last second
+    m.root.visible = sinkK < 0.98;
+    const s = c.height / Math.max(0.5, m.top);
+    m.root.position.set(c.x, -sinkK * c.height * 0.5, c.z);
+    m.root.rotation.y += angleDelta(m.root.rotation.y, c.yaw) * 0.2;
+    m.root.scale.setScalar(s * (1 - sinkK * 0.3));
+    m.bossPose({ dt: this.bossDt, time, walk: 0, moving: 0, flash: k < 0.15 ? 0.8 - k * 4 : Math.max(0, k - 0.75) * 2, kind: k < 0.25 ? 'roar' : 'stun', stage: k < 0.25 ? 1 : -1, k: 0, enrage: 0, death: Math.max(0, (k - 0.2) / 0.8), float: false });
+    if (Math.random() < 0.6) this.run.fx.burst(c.x + (Math.random() - 0.5) * 4, 0.5 + Math.random() * 3, c.z + (Math.random() - 0.5) * 4, c.color, 2, 2, 0.2, 0.8, k > 0.7 ? 'smoke' : 'glow');
+    this.shadows.push(c.x, 0.03, c.z, 0, 6, 1, 6);
   }
 
   /** Dizzy stars circling a staggered (broken) enemy. */
@@ -876,6 +932,7 @@ export class EntityRenderer {
   dispose() {
     for (const b of this.models.values()) for (const f of b.frames) f.dispose();
     for (const m of this.bossModels.values()) m.dispose();
+    this.bossFx.dispose();
     this.hero?.dispose();
     this.rig?.dispose();
     this.heroTex?.dispose();

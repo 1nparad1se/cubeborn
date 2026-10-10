@@ -28,12 +28,14 @@ export class ArticulatedModel {
   readonly body = new THREE.Group();
   readonly parts: Partial<Record<string, THREE.Object3D>> = {};
   /** Every joint of a tag (several for split limbs); pose() drives them all. */
-  private joints: Partial<Record<string, THREE.Object3D[]>> = {};
+  protected joints: Partial<Record<string, THREE.Object3D[]>> = {};
   readonly flash = { value: 0 };
   private material: THREE.MeshLambertMaterial;
   private geometries: THREE.BufferGeometry[] = [];
   private skinned: boolean;
-  private heavy: number;
+  protected heavy: number;
+  /** Model height in world units at scale 1. */
+  readonly top: number;
 
   constructor(model: VoxelModel, texture: THREE.Texture, castShadow = true) {
     const skin = skinOf(model);
@@ -45,6 +47,7 @@ export class ArticulatedModel {
     let top = 0;
     for (const b of model.boxes) top = Math.max(top, (b[1] + b[4]) * s);
     this.heavy = Math.min(1, Math.max(0, (top - 2) / 3));
+    this.top = top;
     const core = buildVoxelGeometry(model, { tag: '', skin: this.skinned });
     this.geometries.push(core);
     const coreMesh = new THREE.Mesh(core, this.material);

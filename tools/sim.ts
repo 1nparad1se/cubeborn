@@ -4,13 +4,19 @@ import { PROG } from '../src/config/progression';
  * Headless balance simulator: plays runs with a simple kiting bot and prints per-checkpoint metrics.
  * Usage: npx tsx tools/sim.ts [mapId] [heroId] [diffId] [runs] [perm 0|1|2] [mode campaign|endless]
  * Env: GOD=1 (player cannot die; damage is still counted), MAXT=seconds, QUIET=1, DMG=1 (damage sources), DAY=cycle seconds (0 = off, default 300)
+ * Boss mode: BOSSWAVE=10|20|30 starts straight at that wave and stops when the boss falls (or the hero does);
+ *   BOSS=<id> fights that boss instead of the wave's own; GEAR=1 equips on-level gear (default with BOSSWAVE).
  */
+import { makeItem, EQUIP_POS, slotOf } from '../src/game/arpg/Gear';
+import type { Item } from '../src/game/arpg/Gear';
+import type { Rarity } from '../src/data/types';
 import { Run } from '../src/game/Run';
 import { NullFx } from '../src/game/types';
 import { MAP_BY_ID } from '../src/data/maps';
 import { HERO_BY_ID } from '../src/data/heroes';
 import { DIFFICULTY_BY_ID } from '../src/data/difficulty';
 import { actBot } from './actbot';
+import { inside } from '../src/game/bosses/BossAttacks';
 import type { StatMods } from '../src/data/types';
 import type { Enemy } from '../src/game/Enemy';
 import type { RunMode } from '../src/game/Waves';
@@ -87,6 +93,9 @@ export function bot(run: Run, pref = 0): [number, number] {
         const d = Math.hypot(px - z.x, pz - z.z);
         if (d < z.r + 0.6) score -= 50;
       }
+      // boss telegraphs: stay out of the marked ground
+      for (const bc of run.bosses)
+        for (const tl of bc.teles) if (!tl.done && tl.blast && inside(tl, px, pz, 0.6)) score -= 45;
     }
     // fighting distance: melee classes close in, ranged ones keep range
     if (pref > 0 && near.length) {
@@ -129,12 +138,24 @@ const hero = HERO_BY_ID[heroId];
 const diff = DIFFICULTY_BY_ID[diffId];
 const quiet = !!process.env.QUIET;
 const results: string[] = [];
+const bossWave = Number(process.env.BOSSWAVE ?? 0);
+/** On-level gear: one item per slot at the hero level, a tier below the best the level allows. */
+function levelGear(level: number, seed: number) {
+  let x = seed * 9301 + 49297;
+  const rand = () => ((x = (x * 9301 + 49297) % 233280) / 233280);
+  const rar: Rarity = level >= 31 ? 'rare' : level >= 11 ? 'uncommon' : 'common';
+  const base: Record<string, string> = { weapon: 'blade', helm: 'helm', armor: 'plate', gloves: 'gloves', boots: 'boots', amulet: 'amulet', ring: 'ring', trinket: 'idol' };
+  const equipped: Partial<Record<(typeof EQUIP_POS)[number], Item>> = {};
+  for (const pos of EQUIP_POS) equipped[pos] = makeItem(rand, level, rar, base[slotOf(pos)]);
+  return { equipped, bag: [] };
+}
 for (let r = 0; r < Number(runsArg); r++) {
   const t0 = performance.now();
   const run = new Run({
     map, diff, hero, permanent: perm, mode,
     fx: NullFx, settings: { damageNumbers: false, dayLength: Number(process.env.DAY ?? 300) }, tr: (k) => k, seed: 1000 + r,
     // LEVEL=n plays a character of that level with its points spread over the skills in order
+    gear: process.env.LEVEL && (process.env.GEAR === '1' || (bossWave && process.env.GEAR !== '0')) ? levelGear(Number(process.env.LEVEL), r + 7) : undefined,
     char: process.env.LEVEL ? (() => {
       const c = newChar('sim', hero.id);
       addCharXp(c, PROG.xpTotal(Number(process.env.LEVEL)));
@@ -143,6 +164,35 @@ for (let r = 0; r < Number(runsArg); r++) {
     })() : null,
   });
   run.debug.god = god;
+  let bossT0 = -1;
+  let bossHpMax = 0;
+  let stuns = 0;
+  let knocks = 0;
+  let bossName = '';
+  let bossLv = 0;
+  let fightT = -1;
+  if (bossWave) {
+    run.waves.jumpTo(bossWave, 0);
+    if (process.env.BOSS) run.waves.wave.boss = process.env.BOSS;
+    run.spawner.devWaveStart();
+    const b = run.bosses[0];
+    if (b) {
+      bossT0 = run.time;
+      bossHpMax = b.e.maxHp;
+      bossName = b.def.id;
+      bossLv = b.level;
+    }
+    const st = run.action.stunHero.bind(run.action);
+    run.action.stunHero = (sec: number) => {
+      stuns++;
+      st(sec);
+    };
+    const kn = run.action.knockHero.bind(run.action);
+    run.action.knockHero = (x: number, z: number, pw: number) => {
+      knocks++;
+      kn(x, z, pw);
+    };
+  }
   // --- instrumentation
   let taken = 0;
   let takenWin = 0;
@@ -156,7 +206,8 @@ for (let r = 0; r < Number(runsArg); r++) {
       taken += d;
       takenWin += d;
       if (process.env.DMG) {
-        const k = src ? src.def.id : 'hazard';
+        const bc = run.bosses[0];
+        const k = bossWave && bc ? (src ? 'hit:' : 'shot:') + (bc.cast?.a.type ?? (bc.checkT > 0 ? 'check' : 'tele')) : src ? src.def.id : 'hazard';
         dmgBy[k] = (dmgBy[k] ?? 0) + d;
       }
     }
@@ -211,6 +262,8 @@ for (let r = 0; r < Number(runsArg); r++) {
   };
   while (run.state !== 'dead' && run.state !== 'victory' && run.time < maxT && steps < 200000) {
     steps++;
+    if (bossWave && bossT0 >= 0 && fightT < 0 && !run.bosses.some((b) => b.e.alive)) fightT = run.time - bossT0;
+    if (bossWave && fightT >= 0) break;
     if (run.state === 'chest') {
       run.closeChest();
       continue;
@@ -228,6 +281,14 @@ for (let r = 0; r < Number(runsArg); r++) {
   }
   line('END');
   const s = run.summary();
+  if (bossWave) {
+    const b = run.bosses.find((x) => x.e.alive);
+    const left = b ? b.e.hp / b.e.maxHp : 0;
+    const res = `BOSS ${bossName} lv${bossLv} hp=${bossHpMax.toFixed(0)} hero lv${run.player.level} maxHp=${run.player.stats.maxHp.toFixed(0)} -> ${fightT >= 0 ? 'KILLED in ' + fightT.toFixed(0) + 's' : run.state === 'dead' || run.player.dead ? 'HERO DIED at ' + run.time.toFixed(0) + 's, boss ' + (left * 100).toFixed(0) + '% left' : 'TIMEOUT boss ' + (left * 100).toFixed(0) + '% left'} taken=${taken.toFixed(0)} stuns=${stuns} knocks=${knocks} staggers=${run.stats.combos} revivals=${run.player.revivals}`;
+    console.log(res);
+    if (process.env.DMG) console.log('  taken by:', Object.entries(dmgBy).sort((a, b) => b[1] - a[1]).map(([k, v]) => k + '=' + v.toFixed(0)).join(' '));
+    continue;
+  }
   const ms = performance.now() - t0;
   const res = `RUN ${r}: ${s.victory ? 'VICTORY' : run.state === 'dead' || run.ending ? 'DEAD' : 'TIMEOUT'} time=${s.time.toFixed(0)} wave=${s.wave} level=${s.level} kills=${s.kills} maxAlive=${maxEnemies} taken=${taken.toFixed(0)} runGold=${s.gold} reward=${Run.goldReward(s, diff.reward)} elites=${s.elites} chests=${s.chestRarity.join('/')} bosses=${s.bosses.join('/')} xp=${run.stats.xpGained.toFixed(0)} staggers=${run.stats.combos} casts=${run.stats.skillsCast} sim=${(ms / 1000).toFixed(1)}s`;
   results.push(res);

@@ -204,6 +204,9 @@ export class ActionSystem {
   }
   /** Hero recoils from a heavy hit (cannot act). */
   stunT = 0;
+  /** Hard stun from a boss skill: no movement, no skills, no dodge (dizzy stars over the hero). */
+  hardStunT = 0;
+  hardStunMax = 0;
   /** Steel fist flow stacks / time. */
   private flow = 0;
   private flowT = 0;
@@ -484,6 +487,7 @@ export class ActionSystem {
     }
     if (this.stealthT > 0) this.stealthT -= dt;
     if (this.stunT > 0) this.stunT -= dt;
+    if (this.hardStunT > 0) this.hardStunT -= dt;
     if (this.flowT > 0) {
       this.flowT -= dt;
       if (this.flowT <= 0) this.flow = 0;
@@ -535,7 +539,7 @@ export class ActionSystem {
   }
 
   private tryPressAt(slot: number, c: Controls) {
-    if (this.stunT > 0 && slot !== -2) return;
+    if (this.stunT > 0 && (slot !== -2 || this.hardStunT > 0)) return;
     const cur = this.cur;
     if (slot === -2) {
       // dodge cancels nearly anything (not the Ultimate, not mid-move)
@@ -847,6 +851,44 @@ export class ActionSystem {
       if (this.cur !== cur) return;
     }
     if (cur.t >= cur.step.dur) this.finish(cur, c);
+  }
+
+  /** Boss crowd control: the hero is stunned (input locked, dizzy) for `sec` seconds. */
+  stunHero(sec: number) {
+    const p = this.run.player;
+    if (p.dead || sec <= 0) return;
+    this.cur = null;
+    this.mover = null;
+    this.stunT = Math.max(this.stunT, sec);
+    this.hardStunT = Math.max(this.hardStunT, sec);
+    this.hardStunMax = this.hardStunT;
+    p.cancelJump();
+    p.vx = p.vz = 0;
+    this.playAnim(this.cls.basic.steps[0].anim.slice(0, 2) + '_heavyhit', 0.6);
+  }
+
+  /** Boss knockback: the hero is thrown away from (fromX, fromZ); walls stop the slide. */
+  knockHero(fromX: number, fromZ: number, power: number) {
+    const p = this.run.player;
+    if (p.dead || power <= 0) return;
+    let dx = p.x - fromX;
+    let dz = p.z - fromZ;
+    const d = Math.hypot(dx, dz);
+    if (d < 1e-3) {
+      dx = p.fx;
+      dz = p.fz;
+    } else {
+      dx /= d;
+      dz /= d;
+    }
+    // a skill that moves the hero is interrupted; the slide uses the wall-aware pull velocity
+    this.mover = null;
+    if (this.cur && this.cur.src !== 'dodge') this.cur = null;
+    this.stunT = Math.max(this.stunT, 0.3);
+    p.pullX = dx * power;
+    p.pullZ = dz * power;
+    p.cues.hitX = dx;
+    p.cues.hitZ = dz;
   }
 
   /** Plans the melee basic step-forward: shorter when the target is already close, none when touching. */

@@ -1,6 +1,7 @@
 import type { Run } from '../src/game/Run';
 import type { Enemy } from '../src/game/Enemy';
 import { SLOT_ULT, SLOT_SPECIAL } from '../src/game/action/ActionSystem';
+import { inside } from '../src/game/bosses/BossAttacks';
 
 /**
  * Combat half of the headless bot: aims at the densest nearby group, holds the basic attack,
@@ -51,7 +52,8 @@ export function actBot(run: Run, dt: number): number {
   const e: Enemy = tgt;
   c.aimX = e.x;
   c.aimZ = e.z;
-  const dist = Math.sqrt(td);
+  // distance to the body's edge (bosses are huge)
+  const dist = Math.max(0, Math.sqrt(Math.max(0, td + (e.boss ? 30 : e.elite ? 10 : 0))) - (e.boss ? e.radius : 0));
   // dodge out of a telegraphed zone under the hero
   for (const z of run.hazards.zones) {
     if (!z.active || z.visualOnly) continue;
@@ -60,6 +62,12 @@ export function actBot(run: Run, dt: number): number {
       break;
     }
   }
+  // boss telegraphs: roll out of one that is about to land
+  for (const b of run.bosses)
+    for (const tl of b.teles) {
+      if (tl.done || tl.t > 0.45 || !tl.blast) continue;
+      if (inside(tl, p.x, p.z, p.radius) && Math.random() < 0.35) c.dodge = true;
+    }
   if (a.identityReady && Math.random() < 0.1) c.identity = true;
   if (a.ready(SLOT_ULT) && (e.boss || e.elite || run.enemies.aliveCount > 12) && dist < 7) c.casts.push(SLOT_ULT);
   if (cls.special && a.ready(SLOT_SPECIAL) && Math.random() < 0.05) c.casts.push(SLOT_SPECIAL);

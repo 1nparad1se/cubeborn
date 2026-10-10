@@ -70,6 +70,12 @@ export class Hud {
   private bossStag: HTMLElement;
   private bossStagText: HTMLElement;
   private bossStagBox: HTMLElement;
+  private bossTitle!: HTMLElement;
+  private bossPct!: HTMLElement;
+  private bossTrail!: HTMLElement;
+  private bossMarks!: HTMLElement;
+  private bossCast!: HTMLElement;
+  private bossTrailK = 1;
 
   constructor(parent: HTMLElement) {
     this.xpFill = h('div.xp-fill');
@@ -132,7 +138,19 @@ export class Hud {
     this.bossStag = h('div.boss-stag-fill');
     this.bossStagText = h('div.boss-stag-text');
     this.bossStagBox = h('div.boss-stag', this.bossStag, this.bossStagText);
-    this.bossBox = h('div.boss-bar.hidden', this.bossName, h('div.boss-track', this.bossFill), this.bossStagBox, this.bossPhase, this.bossFx);
+    this.bossTitle = h('div.boss-title');
+    this.bossPct = h('div.boss-pct');
+    this.bossTrail = h('div.boss-trail');
+    this.bossMarks = h('div.boss-marks');
+    this.bossCast = h('div.boss-cast');
+    this.bossBox = h(
+      'div.boss-bar.big.hidden',
+      h('div.boss-head', this.bossName, this.bossTitle),
+      h('div.boss-track', this.bossTrail, this.bossFill, this.bossMarks, this.bossPct),
+      h('div.boss-under', this.bossStagBox, this.bossCast),
+      this.bossPhase,
+      this.bossFx,
+    );
     this.banner = h('div.banner-main');
     this.bannerSub = h('div.banner-sub');
     const bannerBox = h('div.banner', this.banner, this.bannerSub);
@@ -220,6 +238,12 @@ export class Hud {
     if (b) {
       this.bossName.textContent = (b.enraged ? t('enraged') + ' ' : '') + L(b.def.name);
       this.bossName.style.color = hex(b.def.color);
+      this.bossTitle.textContent = L(b.def.title);
+      this.bossTrailK = 1;
+      // phase thresholds as notches on the bar
+      clear(this.bossMarks);
+      for (const ph of b.def.phases.slice(1)) this.bossMarks.append(h('i' + (ph.enrage ? '.enr' : ''), { style: `left:${(ph.hp * 100).toFixed(1)}%` }));
+      this.last.bossCast = '';
       this.last.bossHp = -1;
       this.last.bossPhase = -1;
       this.last.bossStag = -2;
@@ -333,7 +357,19 @@ export class Hud {
       if (!e.active || e.boss !== boss) this.setBoss(run.bosses.find((x) => x.e.active && x.e.boss === x && !x.isClone) ?? null);
       else {
         const k = Math.max(0, e.hp / e.maxHp);
-        this.set('bossHp', Math.round(k * 500), () => (this.bossFill.style.transform = `scaleX(${k})`));
+        this.set('bossHp', Math.round(k * 500), () => {
+          this.bossFill.style.transform = `scaleX(${k})`;
+          this.bossPct.textContent = `${Math.ceil(k * 100)}%`;
+        });
+        // the white trail catches up with the health after a hit
+        this.bossTrailK = Math.max(k, this.bossTrailK - realDt * 0.35 * Math.max(0.2, (this.bossTrailK - k) * 6));
+        this.set('bossTrail', Math.round(this.bossTrailK * 500), () => (this.bossTrail.style.transform = `scaleX(${this.bossTrailK})`));
+        const cast = boss.labelT > 0 ? boss.label : '';
+        this.set('bossCast', cast, () => {
+          this.bossCast.textContent = cast;
+          this.bossCast.classList.toggle('on', !!cast);
+        });
+        this.set('bossEnr', boss.phaseDef.enrage ? 1 : 0, () => this.bossBox.classList.toggle('enraged', !!boss.phaseDef.enrage));
         this.set('bossInv', e.invuln ? 1 : 0, () => this.bossBox.classList.toggle('invuln', e.invuln));
         const broken = e.brokenT > 0;
         const sk = e.stagMax > 0 ? Math.min(1, e.stag / e.stagMax) : 0;

@@ -52,6 +52,8 @@ export class EnemyManager {
 
   /** Spawns an enemy with time/difficulty scaling applied. */
   spawn(def: EnemyDef, x: number, z: number, opts: { elite?: EliteId | null; hpMul?: number; noScale?: boolean } = {}): Enemy | null {
+    // boss fights are one on one: nothing else spawns inside the arena
+    if (!this.run.arena.allows(def)) return null;
     if (this.free.length === 0) {
       if (this.list.length >= 4096) return null;
       this.grow();

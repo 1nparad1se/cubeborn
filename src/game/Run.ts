@@ -29,6 +29,7 @@ import { MapFeatures } from './MapFeatures';
 import { RARITIES, type Rarity } from '../data/types';
 import { ActionSystem, makeControls } from './action/ActionSystem';
 import { Loot, type GearSave } from './arpg/Loot';
+import { BossArena } from './bosses/BossArena';
 
 export type RunState = 'playing' | 'chest' | 'dead' | 'victory';
 
@@ -105,6 +106,8 @@ export class Run {
   readonly ctl = makeControls();
   readonly loot: Loot;
   readonly bosses: BossController[] = [];
+  /** Boss fights happen one on one inside a pillar ring (spawns and the wave clock pause). */
+  readonly arena = new BossArena(this);
   readonly settings: { damageNumbers: boolean; dayLength?: number };
   readonly dayNight: DayNight;
   readonly tr: (key: string) => string;
@@ -256,6 +259,7 @@ export class Run {
       this.features.update(dt);
     }
     this.enemies.update(dt);
+    this.arena.update(dt);
     this.projectiles.update(dt);
     this.allies.update(dt);
     this.hazards.update(dt);

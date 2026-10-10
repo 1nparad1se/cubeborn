@@ -29,7 +29,7 @@ import { generateTerrain } from './game/mapgen/generators';
 import type { BossController } from './game/bosses/Boss';
 import { WAVE_TYPE_COLOR, MODIFIERS, type RunMode, type Wave } from './game/Waves';
 
-export const VERSION = 'v3.4.0';
+export const VERSION = 'v3.5.0';
 
 /** Discrete camera zoom steps for the mouse wheel (camera distance multipliers). */
 const ZOOM_STEPS = [0.75, 0.88, 1, 1.15, 1.35];
@@ -434,7 +434,7 @@ export class App implements MenuApi {
     run.events.on('bossSpawn', (b: BossController) => {
       if (b.isClone) return;
       this.hud.setBoss(b);
-      this.hud.showBanner(t('boss_appears', { name: L(b.def.name) }), '#ff4a5a', 3);
+      this.hud.showBanner(L(b.def.name), '#ff4a5a', 3.4, L(b.def.title) + ' · ' + t('boss_arena_hint'));
       if (b.isFinal) audio.playMusic('boss');
     });
     run.events.on('bossPhase', (b: BossController) => {
@@ -726,7 +726,8 @@ export class App implements MenuApi {
     run.enemies.forEachInRadius(run.player.x, run.player.z, 12, () => {
       near++;
     }, false);
-    rig.autoTarget = 1 + Math.min(0.22, near / 160) + (run.bosses.some((b) => b.e.alive) ? 0.12 : 0);
+    // boss arena: pull back so the giant and its telegraphs fit on screen
+    rig.autoTarget = run.arena.active ? 1.34 : 1 + Math.min(0.22, near / 160) + (run.bosses.some((b) => b.e.alive) ? 0.12 : 0);
   }
 
   private loop = (now: number) => {

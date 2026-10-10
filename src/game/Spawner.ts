@@ -2,7 +2,6 @@ import { BALANCE } from '../config/balance';
 import { TAU } from '../core/math';
 import { ELITE_IDS, ENEMIES, ENEMY_BY_ID, type EliteId } from '../data/enemies';
 import { BOSS_BY_ID } from '../data/bosses';
-import { MAPS } from '../data/maps';
 import type { MapEvent, SpawnSegment } from '../data/types';
 import { BossController } from './bosses/Boss';
 import { CAMPAIGN_WAVES, waveDensity, waveScale, type Wave } from './Waves';
@@ -47,16 +46,12 @@ export class Spawner {
     const run = this.run;
     const def = BOSS_BY_ID[id];
     if (!def) return false;
-    const cur = waveScale(Math.max(1, run.waves.wave.n));
-    const ref = waveScale(15);
     const pos = this.findSpawnPos(true, 13, 15) ?? { x: run.player.x + 12, z: run.player.z };
-    const b = BossController.spawn(run, id, pos.x, pos.z, false, Math.max(0.5, (cur.hp / ref.hp) * hpMul), false, Math.max(0.7, cur.damage / ref.damage));
+    const b = BossController.spawn(run, id, pos.x, pos.z, false, 0.7 * hpMul, false, 0.85);
     if (!b) return false;
     b.nightBoss = true;
     run.stats.bossesSeen++;
     run.events.emit('bossSpawn', b);
-    run.fx.sound('bossRoar');
-    run.fx.shake(0.5);
     return true;
   }
 
@@ -140,11 +135,8 @@ export class Spawner {
     if (w.boss) {
       const final = !!w.final;
       if (final) this.finalSpawned = true;
+      // the boss comes alone: its arena clears the field (BossArena)
       this.spawnBoss(w.boss, final, w.n, !!w.enraged);
-      // escorts
-      const escorts = w.type === 'final' ? 3 : w.enraged ? 2 : 1;
-      const tough = sorted[sorted.length - 1]?.[0];
-      if (tough) for (let i = 0; i < escorts; i++) this.spawnOne(tough, this.randomElite());
     }
   }
 
@@ -210,6 +202,13 @@ export class Spawner {
   update(dt: number) {
     const run = this.run;
     if (run.waves.update() || !this.pool.length) this.onWaveStart(run.waves.wave);
+    if (run.arena.active) {
+      // the boss fight: no spawns, map events wait, hazard rain stops
+      this.eventOffset += dt;
+      this.rain = null;
+      this.acc = 0;
+      return;
+    }
     const sc = run.waveScale;
     const dens = waveDensity(run.waves.wave.n);
     const curse = run.player.stats.curse;
@@ -297,28 +296,29 @@ export class Spawner {
     e.kx = e.kz = 0;
   }
 
-  /** Boss health and damage follow the wave curve relative to the wave the boss was tuned for. */
+  /** Wave bosses: health and damage follow the monster level (Boss.spawn); a returning boss is enraged. */
   private spawnBoss(id: string, final: boolean, wave: number, enraged: boolean) {
     const run = this.run;
     const def = BOSS_BY_ID[id];
     if (!def) return;
-    const isFinalType = MAPS.some((m) => m.boss === id);
-    const ref = waveScale(isFinalType ? CAMPAIGN_WAVES : 15);
-    const cur = waveScale(wave);
-    let hpMul = Math.max(0.6, cur.hp / ref.hp);
-    let dmgMul = Math.max(0.7, cur.damage / ref.damage);
+    void wave;
+    let hpMul = 1;
+    let dmgMul = 1;
     if (enraged) {
-      hpMul *= 1.25;
-      dmgMul *= 1.15;
+      hpMul *= 1.2;
+      dmgMul *= 1.1;
     }
-    const pos = this.findSpawnPos(true, 13, 15) ?? { x: run.player.x + 12, z: run.player.z };
-    const b = BossController.spawn(run, id, pos.x, pos.z, final, hpMul, false, dmgMul);
+    // Endless past the campaign: the late-wave growth keeps bosses a match for the run
+    if (run.waves.mode === 'endless' && wave > CAMPAIGN_WAVES) {
+      const k = waveScale(wave).hp / waveScale(CAMPAIGN_WAVES).hp;
+      hpMul *= Math.sqrt(k);
+      dmgMul *= Math.pow(waveScale(wave).damage / waveScale(CAMPAIGN_WAVES).damage, 0.5);
+    }
+    const b = BossController.spawn(run, id, run.player.x + 10, run.player.z, final, hpMul, false, dmgMul);
     if (b) {
       b.enraged = enraged;
       run.stats.bossesSeen++;
       run.events.emit('bossSpawn', b);
-      run.fx.sound('bossRoar');
-      run.fx.shake(0.5);
     }
   }
 

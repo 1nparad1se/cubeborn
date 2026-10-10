@@ -1692,3 +1692,113 @@
   text-align: center; pointer-events: none; letter-spacing: -1px;
 }
 .sk-hold-note { color: #ffc440; font-size: 12px; margin: 2px 0 4px; }
+
+/* ---------------------------------------------------------------- big boss bar (arena fights) */
+.boss-bar.big {
+  width: min(860px, 72vw);
+}
+.boss-bar.big .boss-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.boss-bar.big .boss-name {
+  font: 400 20px/1.2 var(--font-px);
+  margin: 0;
+  letter-spacing: 1px;
+}
+.boss-bar.big .boss-title {
+  font: 400 12px var(--font-hud);
+  color: #d8c8b0;
+  text-shadow: 1px 1px 0 #000;
+  opacity: 0.85;
+}
+.boss-bar.big .boss-track {
+  height: 20px;
+}
+.boss-trail {
+  position: absolute;
+  inset: 0;
+  transform-origin: left;
+  background: #fff2e0;
+  opacity: 0.75;
+}
+.boss-bar.big .boss-fill {
+  z-index: 1;
+}
+.boss-marks {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  pointer-events: none;
+}
+.boss-marks i {
+  position: absolute;
+  top: -4px;
+  bottom: -4px;
+  width: 3px;
+  margin-left: -1px;
+  background: #0a0b0d;
+  box-shadow: 0 0 0 1px rgba(255, 210, 120, 0.55);
+}
+.boss-marks i.enr::after {
+  /* enrage marker: a little flame diamond above the notch */
+  content: '';
+  position: absolute;
+  top: -9px;
+  left: -4px;
+  width: 9px;
+  height: 9px;
+  transform: rotate(45deg);
+  background: #ff6a2a;
+  box-shadow: 0 0 0 1px #000;
+}
+.boss-pct {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 4;
+  font: 400 12px var(--font-hud);
+  color: #fff;
+  text-shadow: 1px 1px 0 #000, -1px -1px 0 #000;
+}
+.boss-under {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 18px;
+}
+.boss-under .boss-stag {
+  width: 48%;
+  margin-top: 8px;
+}
+.boss-cast {
+  position: absolute;
+  left: 0;
+  top: 6px;
+  font: 400 13px var(--font-hud);
+  color: #ffd8a0;
+  text-shadow: 1px 1px 0 #000, -1px -1px 0 #000;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.boss-cast.on {
+  opacity: 1;
+}
+.boss-cast.on::before {
+  content: '! ';
+  color: #ff5a3a;
+}
+.boss-bar.big.enraged .boss-fill {
+  background: linear-gradient(#ff9a4a 0 30%, #e8401a 30% 75%, #a81808 75%);
+  animation: boss-enr 0.8s ease-in-out infinite alternate;
+}
+@keyframes boss-enr {
+  to {
+    filter: brightness(1.35);
+  }
+}
