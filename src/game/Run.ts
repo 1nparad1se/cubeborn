@@ -70,6 +70,9 @@ export interface RunEvents extends Record<string, unknown> {
   zone: number;
 }
 
+/** Seed of the persistent open world (changing it reshapes the world for every player). */
+export const WORLD_SEED = 20261010;
+
 export interface RunOptions {
   map: MapDef;
   diff: DifficultyDef;
@@ -159,7 +162,8 @@ export class Run {
     this.map = o.map;
     this.diff = o.diff;
     this.hero = o.hero;
-    this.seed = o.seed ?? ((Math.random() * 1e9) | 0);
+    // the open world is one fixed map (same terrain, town, camps every session); wave runs stay random
+    this.seed = o.seed ?? (o.mode === 'world' ? WORLD_SEED : (Math.random() * 1e9) | 0);
     this.rng = new Rng(this.seed);
     this.fx = o.fx;
     this.settings = o.settings;
