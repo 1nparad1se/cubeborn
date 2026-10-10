@@ -7,6 +7,7 @@ import type { EnemyDef } from '../data/types';
 import { Enemy } from './Enemy';
 import type { Run } from './Run';
 import { TAU } from '../core/math';
+import { WORLD } from '../config/world';
 
 const GRID_CELL = 2;
 
@@ -51,7 +52,7 @@ export class EnemyManager {
   }
 
   /** Spawns an enemy with time/difficulty scaling applied. */
-  spawn(def: EnemyDef, x: number, z: number, opts: { elite?: EliteId | null; hpMul?: number; noScale?: boolean } = {}): Enemy | null {
+  spawn(def: EnemyDef, x: number, z: number, opts: { elite?: EliteId | null; hpMul?: number; noScale?: boolean; level?: number } = {}): Enemy | null {
     // boss fights are one on one: nothing else spawns inside the arena
     if (!this.run.arena.allows(def)) return null;
     if (this.free.length === 0) {
@@ -68,9 +69,14 @@ export class EnemyManager {
     const tier = r.map.tier;
     const curse = r.player.stats.curse;
     // zone level vs hero level replaces the old per-map tier and difficulty multipliers
-    const zs = PROG.enemyScale(r.zoneLevel, r.player.level);
-    const hpMul = opts.noScale ? 1 : zs.hp * r.diff.hp * sc.hp * (1 + (curse - 1) * 0.5);
-    const dmgMul = opts.noScale ? 1 : zs.dmg * r.diff.damage * sc.damage;
+    const lv = opts.level ?? r.zoneLevel;
+    const zs = PROG.enemyScale(lv, r.player.level);
+    const wk = r.world && !opts.noScale ? WORLD : null;
+    const hpMul = opts.noScale ? 1 : zs.hp * r.diff.hp * sc.hp * (1 + (curse - 1) * 0.5) * (wk ? wk.hpMul : 1);
+    const dmgMul = opts.noScale ? 1 : zs.dmg * r.diff.damage * sc.damage * (wk ? wk.dmgMul : 1);
+    e.level = lv;
+    e.homeX = x;
+    e.homeZ = z;
     void tier;
     e.maxHp = e.hp = Math.max(1, def.hp * hpMul * (opts.hpMul ?? 1) * r.debug.enemyHp);
     e.damage = def.damage * dmgMul * r.debug.enemyDmg;
@@ -266,7 +272,7 @@ export class EnemyManager {
           e.atkCd = Math.max(e.atkCd, 0.4);
           e.vx *= 0.9;
           e.vz *= 0.9;
-        } else this.think(e, dt);
+        } else if (!run.world || !run.world.steer(e, dt)) this.think(e, dt);
       } else {
         e.vx = 0;
         e.vz = 0;
@@ -303,14 +309,23 @@ export class EnemyManager {
           return ++checks > 8;
         });
       }
-      this.moveWithTerrain(e, mx, mz);
+      if (run.world && !e.boss) {
+        // mobs never step into the safe town
+        const ox = e.x;
+        const oz = e.z;
+        this.moveWithTerrain(e, mx, mz);
+        if (run.world.blocksMob(e.x, e.z)) {
+          e.x = ox;
+          e.z = oz;
+        }
+      } else this.moveWithTerrain(e, mx, mz);
 
       const dxp = p.x - e.x;
       const dzp = p.z - e.z;
       const d2 = dxp * dxp + dzp * dzp;
       // contact damage
       const touches = e.boss || e.role === 'flyer' || e.role === 'special' || e.role === 'bomber' || (e.role === 'assassin' && e.state === 2);
-      if (touches && e.damage > 0 && !frozen && !e.asleep && e.touchCd <= 0) {
+      if (touches && e.engaged && e.damage > 0 && !frozen && !e.asleep && e.touchCd <= 0) {
         const rr = e.radius + p.radius;
         if (d2 < rr * rr && (rr < 0.95 || run.terrain.los(e.x, e.z, p.x, p.z))) {
           e.touchCd = BALANCE.contactInterval;
@@ -319,7 +334,7 @@ export class EnemyManager {
         }
       }
       // keep far enemies near the action instead of leaving them behind
-      if (!e.boss && !e.elite && e.def.behavior !== 'prop' && d2 > BALANCE.despawnRadius * BALANCE.despawnRadius) {
+      if (!run.world && !e.boss && !e.elite && e.def.behavior !== 'prop' && d2 > BALANCE.despawnRadius * BALANCE.despawnRadius) {
         if (e.def.id === 'treasure_sprite') {
           this.release(e);
           continue;

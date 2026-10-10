@@ -6,6 +6,8 @@ import { ATLAS_VARIANTS, GROUND_ROWS, ROW_RIM, ROW_SOIL, ROW_STONE, SPRITE, SPRI
 import { TILE_COUNT, roofVoxels, tileOf, treeVoxels, type Vox } from './VoxelFlora';
 import { unitCube } from './VoxelGeometry';
 
+type Slot = { x: number; z: number; build: () => void; objs: THREE.Mesh[] | null };
+
 const CHUNK = 16;
 /** Ground chunks are larger: they are cheap merged quads. */
 const GCHUNK = 32;
@@ -123,13 +125,41 @@ export class WorldRenderer {
   /** Block and decor meshes with their chunk centers, for distance culling. */
   private chunks: { mesh: THREE.Object3D; x: number; z: number }[] = [];
   private level: Float32Array;
+  /**
+   * Big worlds stream their chunks: geometry is built when the camera comes near and freed when it
+   * leaves (small maps build everything up front).
+   */
+  private readonly lazy: boolean;
+  private slots: Slot[] = [];
+  private cur: THREE.Mesh[] | null = null;
+  /** Chunks built / freed so far (debug info). */
+  stats = { built: 0, freed: 0, live: 0 };
 
-  constructor(terrain: Terrain, map: MapDef, _blockTex: THREE.Texture, quality: string) {
+  constructor(terrain: Terrain, map: MapDef, _blockTex: THREE.Texture, quality: string, lazy = terrain.size > 420) {
+    this.lazy = lazy;
     this.level = this.computeLevels(terrain);
     this.buildGround(terrain, map, quality);
     this.buildBlocks(terrain, map, quality);
     this.buildDecor(terrain, quality);
     this.buildFoliage(terrain, map, quality);
+  }
+
+  /** Runs a chunk builder now (small maps) or when the camera comes near (big worlds). */
+  private defer(x: number, z: number, build: () => void) {
+    if (this.lazy) this.slots.push({ x, z, build, objs: null });
+    else build();
+  }
+
+  /** Adds a chunk mesh: owned by the streaming slot being built, or kept for the map's lifetime. */
+  private place(mesh: THREE.Mesh, x: number, z: number) {
+    this.group.add(mesh);
+    if (this.cur) {
+      this.cur.push(mesh);
+      return;
+    }
+    this.disposables.push(mesh.geometry);
+    if (mesh instanceof THREE.InstancedMesh) this.disposables.push(mesh);
+    this.chunks.push({ mesh, x, z });
   }
 
   /** Surface height per cell: raised plateaus, the y=0 floor, sunken liquids. */
@@ -391,7 +421,7 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
     const lv = (x: number, z: number) => (x < 0 || z < 0 || x >= n || z >= n ? SKIRT : level[z * n + x]);
     const castShadows = quality !== 'low';
     for (let cz = 0; cz < per; cz++)
-      for (let cx = 0; cx < per; cx++) {
+      for (let cx = 0; cx < per; cx++) this.defer((cx + 0.5) * GCHUNK, (cz + 0.5) * GCHUNK, () => {
         const parts = [0, 1].map(() => ({ pos: [] as number[], nor: [] as number[], top: [] as number[], idx: [] as number[] }));
         const quad = (p: number[], nx: number, ny: number, nz: number, h: number) => {
           const part = parts[h > 0.01 ? 1 : 0];
@@ -446,11 +476,9 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
           const mesh = new THREE.Mesh(geo, mat);
           mesh.receiveShadow = true;
           mesh.castShadow = k === 1 && castShadows;
-          this.group.add(mesh);
-          this.disposables.push(geo);
-          this.chunks.push({ mesh, x: x0 + GCHUNK / 2, z: z0 + GCHUNK / 2 });
+          this.place(mesh, x0 + GCHUNK / 2, z0 + GCHUNK / 2);
         });
-      }
+      });
   }
 
   private buildBlocks(t: Terrain, map: MapDef, quality: string) {
@@ -516,21 +544,25 @@ diffuseColor.rgb *= mix(0.72, 1.0, smoothstep(0.0, 1.0, vWPos.y));`);
     // Blocks are drawn by material: stone as rounded masonry (lone stones as boulders), wood
     // as stacked horizontal logs, everything else as plain blocks.
     // Every block is a Minecraft-style textured cube; trees and roofs add their own blocks.
-    const vox: Vox[][] = Array.from({ length: chunks * chunks }, () => []);
     const bucketOf = (x: number, z: number) => Math.min(chunks - 1, Math.max(0, Math.floor(z / CHUNK))) * chunks + Math.min(chunks - 1, Math.max(0, Math.floor(x / CHUNK)));
-    for (const tr of t.trees) {
-      const list: Vox[] = [];
-      treeVoxels(tr, map, list);
-      // trees on plateaus stand on the raised ground
-      const lift = t.elev[tr.z * n + tr.x];
-      if (lift) for (const v of list) v.y += lift;
-      vox[bucketOf(tr.x, tr.z)].push(...list);
-    }
-    for (const rf of t.roofs) {
-      const list: Vox[] = [];
-      roofVoxels(rf, map, list);
-      vox[bucketOf(rf.x + rf.w / 2, rf.z + rf.d / 2)].push(...list);
-    }
+    // tree and roof voxels are made when their chunk is built (big worlds hold ~1M of them)
+    const treeB: (typeof t.trees)[] = Array.from({ length: chunks * chunks }, () => []);
+    const roofB: (typeof t.roofs)[] = Array.from({ length: chunks * chunks }, () => []);
+    for (const tr of t.trees) treeB[bucketOf(tr.x, tr.z)].push(tr);
+    for (const rf of t.roofs) roofB[bucketOf(rf.x + rf.w / 2, rf.z + rf.d / 2)].push(rf);
+    const voxOf = (i: number): Vox[] => {
+      const out: Vox[] = [];
+      for (const tr of treeB[i]) {
+        const list: Vox[] = [];
+        treeVoxels(tr, map, list);
+        // trees on plateaus stand on the raised ground
+        const lift = t.elev[tr.z * n + tr.x];
+        if (lift) for (const v of list) v.y += lift;
+        for (const v of list) out.push(v);
+      }
+      for (const rf of roofB[i]) roofVoxels(rf, map, out);
+      return out;
+    };
     const toVox = (b: Block): Vox => {
       const s = b.s ?? 1;
       const colors = pal[b.mat] ?? [0x888888];
@@ -553,12 +585,19 @@ diffuseColor.rgb *= mix(0.72, 1.0, smoothstep(0.0, 1.0, vWPos.y));`);
       mesh.castShadow = shadows;
       mesh.receiveShadow = true;
       mesh.computeBoundingSphere();
-      this.group.add(mesh);
-      this.disposables.push(mesh, geo);
-      if (cx >= 0) this.chunks.push({ mesh, x: (cx + 0.5) * CHUNK, z: (cz + 0.5) * CHUNK });
+      if (cx >= 0) this.place(mesh, (cx + 0.5) * CHUNK, (cz + 0.5) * CHUNK);
+      else {
+        this.group.add(mesh);
+        this.disposables.push(mesh, geo);
+      }
     };
     const shadows = quality !== 'low';
-    buckets.forEach((list, i) => fill(list, vox[i], mat, shadows, i % chunks, Math.floor(i / chunks)));
+    buckets.forEach((list, i) => {
+      if (!list.length && !treeB[i].length && !roofB[i].length) return;
+      const cx = i % chunks;
+      const cz = Math.floor(i / chunks);
+      this.defer((cx + 0.5) * CHUNK, (cz + 0.5) * CHUNK, () => fill(list, voxOf(i), mat, shadows, cx, cz));
+    });
     fill(glowBlocks, [], glowMat, false);
   }
 
@@ -699,10 +738,11 @@ diffuseColor.rgb *= 0.78 + 0.22 * vH;`,
     const DC = 32;
     const per = Math.ceil(n / DC);
     const buckets: F[][] = Array.from({ length: per * per }, () => []);
-    const put = (f: F) => buckets[Math.min(per - 1, Math.max(0, Math.floor(f.z / DC))) * per + Math.min(per - 1, Math.max(0, Math.floor(f.x / DC)))].push(f);
+    const bucketPut = (f: F) => buckets[Math.min(per - 1, Math.max(0, Math.floor(f.z / DC))) * per + Math.min(per - 1, Math.max(0, Math.floor(f.x / DC)))].push(f);
     const col = new THREE.Color();
-    for (let z = 0; z < n; z++)
-      for (let x = 0; x < n; x++) {
+    const scan = (put: (f: F) => void, x0: number, z0: number) => {
+    for (let z = z0; z < Math.min(n, z0 + DC); z++)
+      for (let x = x0; x < Math.min(n, x0 + DC); x++) {
         const i = z * n + x;
         const rule = rules[t.tile[i]];
         if (!rule) continue;
@@ -737,6 +777,7 @@ diffuseColor.rgb *= 0.78 + 0.22 * vH;`,
           }
         }
       }
+    };
     // swaying decor from the generator (flower rings around camps and clearings)
     for (const d of t.decor) {
       if (!d.sway || d.glow) continue;
@@ -748,11 +789,13 @@ diffuseColor.rgb *= 0.78 + 0.22 * vH;`,
         const h = hsl.h * 360;
         sp = h < 20 || h > 330 ? (hsl.l > 0.6 ? SPRITE.tulip : SPRITE.poppy) : h < 70 ? SPRITE.dandelion : h < 170 ? SPRITE.grass : h < 250 ? SPRITE.cornflower : SPRITE.allium;
       } else if (hsl.l > 0.8) sp = SPRITE.daisy;
-      put({ x: d.x, y: d.y, z: d.z, s: 0.5, sp, c: SPRITE_COLORED.has(sp) ? 0xffffff : d.color, a: hash2(Math.floor(d.x * 7), Math.floor(d.z * 7), 3) });
+      bucketPut({ x: d.x, y: d.y, z: d.z, s: 0.5, sp, c: SPRITE_COLORED.has(sp) ? 0xffffff : d.color, a: hash2(Math.floor(d.x * 7), Math.floor(d.z * 7), 3) });
     }
     const m4 = new THREE.Matrix4();
     const rot = new THREE.Matrix4();
-    buckets.forEach((list, bi) => {
+    buckets.forEach((decorList, bi) => this.defer(((bi % per) + 0.5) * DC, (Math.floor(bi / per) + 0.5) * DC, () => {
+      const list = decorList.slice();
+      scan((f) => list.push(f), (bi % per) * DC, Math.floor(bi / per) * DC);
       if (!list.length) return;
       const geo = cross.clone();
       const mesh = new THREE.InstancedMesh(geo, mat, list.length);
@@ -768,16 +811,48 @@ diffuseColor.rgb *= 0.78 + 0.22 * vH;`,
       geo.setAttribute('aSprite', new THREE.InstancedBufferAttribute(spr, 1));
       mesh.receiveShadow = true;
       mesh.computeBoundingSphere();
-      this.group.add(mesh);
-      this.disposables.push(geo, mesh);
-      this.chunks.push({ mesh, x: ((bi % per) + 0.5) * DC, z: (Math.floor(bi / per) + 0.5) * DC });
-    });
+      this.place(mesh, ((bi % per) + 0.5) * DC, (Math.floor(bi / per) + 0.5) * DC);
+    }));
   }
 
   /** Hides block/decor chunks farther than radius from the camera target. */
-  cull(x: number, z: number, radius: number) {
+  cull(x: number, z: number, radius: number, budgetMs = 6) {
     const r2 = (radius + 24) ** 2;
     for (const c of this.chunks) c.mesh.visible = (c.x - x) ** 2 + (c.z - z) ** 2 < r2;
+    if (!this.lazy) return;
+    // streaming: build the nearest missing chunks within a time budget, free the far ones
+    const far2 = (radius + 90) ** 2;
+    const want: { s: Slot; d: number }[] = [];
+    for (const s of this.slots) {
+      const d = (s.x - x) ** 2 + (s.z - z) ** 2;
+      if (s.objs) {
+        if (d > far2) this.free(s);
+        continue;
+      }
+      if (d < r2) want.push({ s, d });
+    }
+    want.sort((a, b) => a.d - b.d);
+    const t0 = performance.now();
+    for (const w of want) {
+      this.cur = [];
+      w.s.build();
+      w.s.objs = this.cur;
+      this.cur = null;
+      this.stats.built++;
+      this.stats.live++;
+      if (budgetMs > 0 && performance.now() - t0 > budgetMs) break;
+    }
+  }
+
+  private free(s: Slot) {
+    for (const m of s.objs ?? []) {
+      this.group.remove(m);
+      m.geometry.dispose();
+      if (m instanceof THREE.InstancedMesh) m.dispose();
+    }
+    s.objs = null;
+    this.stats.freed++;
+    this.stats.live--;
   }
 
   update(time: number, surge: number) {
@@ -786,6 +861,7 @@ diffuseColor.rgb *= 0.78 + 0.22 * vH;`,
   }
 
   dispose() {
+    for (const s of this.slots) if (s.objs) this.free(s);
     for (const d of this.disposables) d.dispose();
     this.group.clear();
   }

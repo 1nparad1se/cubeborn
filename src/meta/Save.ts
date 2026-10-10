@@ -129,7 +129,7 @@ export interface SaveData {
   seenIntro: boolean;
   /** Gold actually paid for permanent upgrades (what a refund returns). */
   permSpent: number;
-  last: { hero: string; map: string; diff: string; mode: 'campaign' | 'endless' };
+  last: { hero: string; map: string; diff: string; mode: 'campaign' | 'endless' | 'world' };
   /** Action-RPG equipment: one shared bag, equipped sets per hero. */
   gear: { bag: Item[]; equipped: Record<string, Partial<Record<EquipPos, Item>>>; shop?: Item[] };
   /** Created characters (v6) and the one picked at the campfire. Old `gear` goes to the first one created. */

@@ -32,6 +32,7 @@ export class Combat {
     if (e.boss && e.brokenT <= 0) dmg *= e.boss.dmgTakenMul();
     if (info.el) dmg *= this.combo(e, info, crit, dmg, dirX, dirZ);
     e.hp -= dmg;
+    if (run.world) run.world.provoke(e);
     e.flash = 0.1;
     run.stats.addDamage(info.weaponId, dmg);
 
@@ -219,13 +220,28 @@ export class Combat {
   applyRaw(e: Enemy, dmg: number, color: number, source: string) {
     if (!e.alive || e.invuln || e.shieldT > 0) return;
     e.hp -= dmg;
+    if (this.run.world) this.run.world.provoke(e);
     this.run.stats.addDamage(source, dmg);
     if (this.run.settings.damageNumbers) this.run.fx.number(e.x, e.z, dmg, false, color);
     if (e.hp <= 0) this.killEnemy(e);
   }
 
-  /** Kills an enemy: rewards, death fx, split/explode effects, perks. */
+  /** Kills an enemy: rewards (at the enemy's own level in the open world), death fx, split/explode effects, perks. */
   killEnemy(e: Enemy, silent = false) {
+    if (!e.alive) return;
+    const run = this.run;
+    if (!run.world) return this.killInner(e, silent);
+    run.world.onKill(e);
+    const prev = run.levelCtx;
+    if (e.level > 0) run.levelCtx = e.level;
+    try {
+      this.killInner(e, silent);
+    } finally {
+      run.levelCtx = prev;
+    }
+  }
+
+  private killInner(e: Enemy, silent: boolean) {
     if (!e.alive) return;
     const run = this.run;
     const def = e.def;

@@ -30,6 +30,9 @@ import { RARITIES, type Rarity } from '../data/types';
 import { ActionSystem, makeControls } from './action/ActionSystem';
 import { Loot, type GearSave } from './arpg/Loot';
 import { BossArena } from './bosses/BossArena';
+import { World } from './world/World';
+import { worldPlan } from './world/WorldGen';
+import { WORLD } from '../config/world';
 
 export type RunState = 'playing' | 'chest' | 'dead' | 'victory';
 
@@ -61,6 +64,10 @@ export interface RunEvents extends Record<string, unknown> {
   banner: string;
   dayPeriod: DayPeriod;
   pickup: string;
+  /** Open world: a good moment to write the character to the save (town, timer, respawn). */
+  worldSave: void;
+  /** Open world: the hero entered another area (-1 = the town). */
+  zone: number;
 }
 
 export interface RunOptions {
@@ -116,8 +123,14 @@ export class Run {
   readonly waves: WaveDirector;
   /** Monster level right now: grows through the map's range with the waves (enemy strength, item level, experience). */
   get zoneLevel(): number {
+    if (this.levelCtx > 0) return this.levelCtx;
+    if (this.world) return this.world.levelAt(this.player.x, this.player.z);
     return PROG.mobLevel(this.map.id, this.waves?.wave?.n ?? 1);
   }
+  /** Level override while a kill's rewards are handed out or a boss is made (the monster's own level). */
+  levelCtx = 0;
+  /** Open world (mode 'world'): resident monsters, town, lairs. */
+  readonly world: World | null = null;
   readonly features: MapFeatures;
   /** Multipliers for enemies spawned in the current wave. */
   waveScale: WaveScale;
@@ -157,10 +170,16 @@ export class Run {
     this.dayNight = new DayNight(this, o.settings.dayLength ?? 0);
     this.vfx = new Vfx(this);
     this.waveScale = this.waves.scale();
-    this.terrain = generateTerrain(o.map, this.seed);
+    let layout = null;
+    if (this.mode === 'world') {
+      // one big location: the map's own generator at world size, carved into town, areas, camps and lairs
+      const plan = worldPlan(o.map, this.seed, PROG.mapRange[o.map.id] ?? [1, 10]);
+      layout = plan.layout;
+      this.terrain = generateTerrain({ ...o.map, size: WORLD.size }, this.seed, { world: plan.hooks });
+    } else this.terrain = generateTerrain(o.map, this.seed);
     this.nav = new NavField(this.terrain);
-    const c = Math.floor(o.map.size / 2) + 0.5;
-    this.player = new Player(this, c, c);
+    const c = Math.floor(this.terrain.size / 2) + 0.5;
+    this.player = new Player(this, c, layout ? c + 2 : c);
     const ch = o.char ?? null;
     if (ch) {
       this.player.level = ch.level;
@@ -181,6 +200,7 @@ export class Run {
     this.combat = new Combat(this);
     this.spawner = new Spawner(this);
     this.features = new MapFeatures(this);
+    if (layout) this.world = new World(this, layout);
     this.nav.update(0, this.player.x, this.player.z, true);
     this.reviveBlast.damage = 200;
     this.reviveBlast.knockback = 4;
@@ -254,7 +274,8 @@ export class Run {
       }
     }
     this.vfx.update(dt);
-    if (!p.dead) {
+    if (this.world) this.world.update(dt);
+    else if (!p.dead) {
       this.spawner.update(dt);
       this.features.update(dt);
     }
@@ -331,6 +352,7 @@ export class Run {
 
   // ---------------------------------------------------------------- ending
   onPlayerDeath() {
+    if (this.world) return this.world.onPlayerDeath();
     if (this.endTimer >= 0) return;
     this.fx.sound('death');
     this.fx.burst(this.player.x, 1, this.player.z, this.hero.color, 50, 6, 0.2, 1.2, 'debris');

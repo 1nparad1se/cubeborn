@@ -128,8 +128,9 @@ export class Menus {
       return;
     }
     this.syncHero();
-    if (!p.data.seenIntro) {
-      this.api.startRun(this.selHero, MAPS[0].id, 'normal');
+    // the open world is the main way to play; the old wave modes stay in developer mode
+    if (!preset || !dev.enabled) {
+      this.api.startRun(this.selHero, MAPS[0].id, 'normal', 'world');
       return;
     }
     this.open('maps');
@@ -366,7 +367,7 @@ export class Menus {
           }),
           this.btn(t('menu_collection'), () => this.open('collection')),
           this.btn(`${t('menu_achievements')} ${p.data.achievements.length}/${newAch}`, () => this.open('achievements')),
-          this.btn(t('menu_endless'), () => this.play('endless')),
+          dev.enabled ? this.btn(t('menu_endless'), () => this.play('endless')) : null,
           this.btn(t('menu_settings'), () => this.open('settings')),
         ),
       ),
@@ -503,7 +504,8 @@ export class Menus {
   private mapScreen(): HTMLElement {
     const p = this.api.profile;
     if (!p.isMapUnlocked(this.selMap)) this.selMap = MAPS[0].id;
-    this.selMode = this.presetMode ?? p.data.last.mode ?? 'campaign';
+    this.selMode = this.presetMode ?? (dev.enabled ? p.data.last.mode : null) ?? 'world';
+    if (!dev.enabled) this.selMode = 'world';
     const list = h('div.map-list');
     const detail = h('div.detail.map-detail');
     const preview = new MapPreview();
@@ -568,7 +570,7 @@ export class Menus {
       const modeInfo = h('div.mode-info');
       const renderModes = () => {
         clear(modes);
-        for (const md of ['campaign', 'endless'] as RunMode[])
+        for (const md of (dev.enabled ? ['world', 'campaign', 'endless'] : ['world']) as RunMode[])
           modes.append(
             h('button' + (this.selMode === md ? '.sel' : ''), {
               onclick: () => {
@@ -579,7 +581,9 @@ export class Menus {
             }, t('mode_' + md)),
           );
         clear(modeInfo);
-        if (this.selMode === 'campaign') {
+        if (this.selMode === 'world') {
+          modeInfo.append(h('p.small', m.id === MAPS[0].id ? t('mode_world') + ': ' + tr('один большой мир — город, зоны охоты, элиты и логова боссов.', 'one big world — a town, hunting areas, elites and boss lairs.') : t('tp_note')));
+        } else if (this.selMode === 'campaign') {
           const plan = WaveDirector.campaignPlan();
           const strip = h('div.wave-strip.big');
           plan.forEach((type, i) => strip.append(h('i' + (type === 'boss' || type === 'final' ? '.boss' : ''), { style: `--wc:${WAVE_TYPE_COLOR[type]}`, title: `${i + 1}: ${t('wave_' + type)}` })));
@@ -631,6 +635,10 @@ export class Menus {
         unlocked ? h('div', h('div.label', t('mode')), modes, modeInfo, h('div.label', t('difficulty')), diffs, diffInfo) : h('div.locked-note', '🔒 ' + t('map_unlock', { boss: prevBoss ? L(prevBoss.name) : '?' })),
         unlocked
           ? this.btn(t('btn_start'), () => {
+              if (this.selMode === 'world' && this.selMap !== MAPS[0].id) {
+                this.api.sfx('denied');
+                return;
+              }
               p.data.last = { hero: this.selHero, map: this.selMap, diff: this.selDiff, mode: this.selMode };
               p.save();
               this.api.startRun(this.selHero, this.selMap, this.selDiff, this.selMode);

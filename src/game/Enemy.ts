@@ -99,6 +99,25 @@ export class Enemy {
   /** Rooted (cannot move, can still attack) and knock-up height/time. */
   rootT = 0;
   launchT = 0;
+  /** Monster level (0 = the zone level of the run; open-world mobs carry their own). */
+  level = 0;
+  /** Display name override (named elites); empty = the definition's name. */
+  name = '';
+  /** Open world: owning camp and member slot (-1 = a stray nobody owns), home point and temper. */
+  camp = -1;
+  member = -1;
+  homeX = 0;
+  homeZ = 0;
+  /** Attacks the hero on sight (false: passive, fights back only when hurt). */
+  aggressive = true;
+  /** In a fight with the hero (strays and wave-mode mobs always are). */
+  engaged = true;
+  /** Gave up the chase: walking home, healing, ignoring the hero. */
+  returning = false;
+  retT = 0;
+  wanderT = 0;
+  wx = 0;
+  wz = 0;
 
   constructor(index: number) {
     this.index = index;
@@ -152,6 +171,13 @@ export class Enemy {
     this.hitDz = 0;
     this.stag = this.stagMax = this.brokenT = this.stagIdle = 0;
     this.rootT = this.launchT = 0;
+    this.level = 0;
+    this.name = '';
+    this.camp = this.member = -1;
+    this.aggressive = true;
+    this.engaged = true;
+    this.returning = false;
+    this.retT = this.wanderT = 0;
   }
 
   get alive(): boolean {

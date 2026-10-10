@@ -451,7 +451,7 @@ export class ArpgHud {
     const show = !!e && e.alive && e.active && !e.boss;
     this.set('hv', show ? e!.uid : 0, () => this.hoverBox.classList.toggle('hidden', !show));
     if (!show || !e) return;
-    const name = L(e.def.name) + (e.elite ? ' ★' : '');
+    const name = ((e as { name?: string }).name || L(e.def.name)) + (e.elite ? ' ★' : '');
     this.set('hvn', name, () => {
       this.hName.textContent = name;
       this.hName.style.color = e.elite ? '#ffd23d' : '#f1f2f4';

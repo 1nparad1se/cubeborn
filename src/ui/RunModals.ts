@@ -80,7 +80,7 @@ export class RunModals {
       body.append(settingsPanel(this.api, showSettings, true), backBtn());
     };
     showMain();
-    this.open(h('div.modal-back', h('div.modal.pause', h('h2', t('paused')), h('div.sub', `${L(run.map.name)} · ${t('mode_' + run.mode)} · ${L(run.diff.name)} · ${t(run.mode === 'endless' ? 'hud_wave_endless' : 'hud_wave', { n: run.waves.wave.n, total: 30 })} · ${fmtTime(run.time)}`), body)));
+    this.open(h('div.modal-back', h('div.modal.pause', h('h2', t('paused')), h('div.sub', `${L(run.map.name)} · ${t('mode_' + run.mode)} · ${run.world ? L(run.world.place().area?.name) || t('world_town') : L(run.diff.name) + ' · ' + t(run.mode === 'endless' ? 'hud_wave_endless' : 'hud_wave', { n: run.waves.wave.n, total: 30 })} · ${fmtTime(run.time)}`), body)));
   }
 
   // ------------------------------------------------------------------ results

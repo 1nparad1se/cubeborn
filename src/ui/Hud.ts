@@ -64,6 +64,10 @@ export class Hud {
   /** Endless best wave on this map, for the record line. */
   bestWave = 0;
   onPause: () => void = () => {};
+  /** Open world: the hero clicked the prompt of a town station. */
+  onStation: (kind: string) => void = () => {};
+  private stationBtn: HTMLElement;
+  private stationKind = '';
   readonly arpg = new ArpgHud();
   private bossFx: HTMLElement;
   /** Stagger bar under the boss health: fills gold, flashes while the boss is broken. */
@@ -157,6 +161,12 @@ export class Hud {
     this.vignette = h('div.vignette');
     this.fps = h('div.fps.hidden');
     this.hint = h('div.hint.hidden');
+    this.stationBtn = h('button.world-station-btn.hidden', {
+      onclick: (ev: Event) => {
+        ev.stopPropagation();
+        if (this.stationKind) this.onStation(this.stationKind);
+      },
+    });
     const pause = h('button.hb-key', { 'aria-label': 'pause', title: 'Esc', onclick: () => this.onPause() }, h('i.ic-pause', h('span'), h('span')), h('span.key', 'Esc'));
     const mapKey = h('button.hb-key', { 'aria-label': 'map', title: 'M', onclick: () => this.toggleMap() }, h('i.ic-map'), h('span.key', 'M'));
     this.mapBox = h('div.map-box', this.minimap.root, h('span.key.map-key', 'M'));
@@ -169,6 +179,7 @@ export class Hud {
       h('div.hud-top', this.time, this.bossBox, this.arpg.hoverBox),
       h('div.hud-tr', this.mapBox, this.dnBox, this.wavePanel),
       bannerBox,
+      this.stationBtn,
       this.hint,
       this.arpg.root,
       h(
@@ -200,6 +211,7 @@ export class Hud {
     this.arpg.reset(run);
     this.minimap.setBig(false);
     clear(this.waveStrip);
+    this.wavePanel.classList.toggle('world', !!run?.world);
     if (run && run.waves.mode === 'campaign') {
       // the whole run at a glance: one pip per wave, bosses marked
       WaveDirector.campaignPlan().forEach((type, i) => {
@@ -284,8 +296,30 @@ export class Hud {
     this.set('kills', run.stats.kills, () => (this.kills.textContent = fmtNum(run.stats.kills)));
     this.set('gold', Math.round(run.stats.gold), () => (this.gold.textContent = fmtNum(run.stats.gold)));
 
-    // waves
-    if (this.opts.waves) {
+    // open world: location, area and its monster level instead of the wave panel
+    const world = run.world;
+    if (world) {
+      const pl = world.place();
+      const key = (pl.area ? pl.area.id : -1) + ':' + pl.level;
+      this.set('wave', key, () => {
+        this.waveTitle.textContent = L(pl.loc);
+        this.waveType.textContent = pl.area ? L(pl.area.name) : t('world_town');
+        this.waveNext.textContent = pl.area ? ' · ' + t('world_area_lv', { lo: pl.area.lo, hi: pl.area.hi }) : '';
+        const col = pl.area ? (pl.level - run.player.level >= 3 ? '#ff7a5a' : '#ffd23d') : '#8affb0';
+        this.waveType.style.color = col;
+        this.wavePanel.style.setProperty('--wc', col);
+      });
+      const st = run.player.dead ? null : world.nearStation();
+      const sk = st ? st.kind : '';
+      this.set('station', sk, () => {
+        this.stationKind = sk;
+        this.stationBtn.classList.toggle('hidden', !st);
+        if (st) {
+          clear(this.stationBtn);
+          this.stationBtn.append(h('b', t('st_' + sk)), h('span', t('st_open')));
+        }
+      });
+    } else if (this.opts.waves) {
       const wd = run.waves;
       const w = wd.wave;
       const endless = wd.mode === 'endless';

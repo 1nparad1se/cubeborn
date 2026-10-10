@@ -29,8 +29,14 @@ import { BOSS_BY_ID, RELIC_BY_ID } from './data/bosses';
 import { generateTerrain } from './game/mapgen/generators';
 import type { BossController } from './game/bosses/Boss';
 import { WAVE_TYPE_COLOR, MODIFIERS, type RunMode, type Wave } from './game/Waves';
+import { WORLD } from './config/world';
+import type { CharSave } from './meta/Characters';
+import { forgeScreen, inventoryScreen } from './ui/ProgressScreens';
+import { armoryScreen } from './ui/ArmoryScreen';
+import { fmtNum } from './ui/format';
+import './ui/world.css';
 
-export const VERSION = 'v3.5.0';
+export const VERSION = 'v4.0.0';
 
 /** Discrete camera zoom steps for the mouse wheel (camera distance multipliers). */
 const ZOOM_STEPS = [0.75, 0.88, 1, 1.15, 1.35];
@@ -115,6 +121,7 @@ export class App implements MenuApi {
     };
     this.hud = new Hud(root);
     this.hud.onPause = () => this.togglePause();
+    this.hud.onStation = (kind) => this.openStation(kind);
     this.hud.arpg.onInventory = () => this.toggleInventory();
     this.hud.arpg.onLearn = (i) => this.run?.action.learn(i);
     this.input.onLearn = (i) => this.run?.action.learn(i);
@@ -276,6 +283,10 @@ export class App implements MenuApi {
   }
 
   private handleEscape() {
+    if (this.stationEl) {
+      this.stationClose?.();
+      return;
+    }
     const confirm = this.root.querySelector('.modal-back.confirm');
     if (confirm) {
       confirm.remove();
@@ -380,7 +391,27 @@ export class App implements MenuApi {
   private runChar: string | null = null;
 
   startRun(heroId: string, mapId: string, diffId: string, mode: RunMode = 'campaign') {
+    if (mode !== 'world') return this.startRunNow(heroId, mapId, diffId, mode);
+    // building a big world takes a moment: show a loading screen first
+    this.menus.setVisible(false);
+    const el = h('div.world-loading', h('div.wl-box', h('div.logo-cubes', h('i'), h('i'), h('i')), h('h2', t('world_loading')), h('div.wl-sub', t('world_loading_sub', { name: L(MAP_BY_ID[mapId].name), size: WORLD.size }))));
+    this.root.appendChild(el);
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        try {
+          this.startRunNow(heroId, mapId, diffId, mode);
+        } finally {
+          el.classList.add('out');
+          setTimeout(() => el.remove(), 400);
+        }
+      }),
+    );
+  }
+
+  private startRunNow(heroId: string, mapId: string, diffId: string, mode: RunMode) {
     this.runArgs = [heroId, mapId, diffId, mode];
+    this.worldGold = 0;
+    this.charTime = 0;
     this.target = null;
     this.menus.setVisible(false);
     this.modals.close();
@@ -417,7 +448,8 @@ export class App implements MenuApi {
     this.mode = 'run';
     this.bindRunEvents(run);
     audio.playMusic(run.map.generator);
-    this.hud.showBanner(L(run.map.name), '#ffffff', 2.2, mode === 'endless' ? t('mode_endless') : t('campaign_banner', { n: 30 }));
+    this.hud.showBanner(L(run.map.name), '#ffffff', 2.2, mode === 'world' ? t('mode_world') : mode === 'endless' ? t('mode_endless') : t('campaign_banner', { n: 30 }));
+    this.jumpSeq = run.world?.jumpSeq ?? 0;
     if (!p.data.seenIntro) {
       this.hintActive = true;
       const kb = p.data.settings.keybinds;
@@ -466,6 +498,12 @@ export class App implements MenuApi {
     run.loot.onPickup = (it) => {
       if (it.rarity !== 'common') this.toast(t('inv_got', { name: itemName(it, getLang()) }), ITEM_COLOR[it.rarity]);
     };
+    run.events.on('worldSave', () => this.worldSave(run));
+    run.events.on('zone', (id: number) => {
+      const a = id >= 0 ? run.world?.layout.areas[id] : null;
+      if (a) this.hud.showBanner(L(a.name), '#ffd23d', 2.2, t('world_area_lv', { lo: a.lo, hi: a.hi }));
+      else this.hud.showBanner(t('world_town'), '#8affb0', 2.2, t('world_town_lv'));
+    });
     run.events.on('gameover', () => this.finishRun(false));
     run.events.on('victory', () => this.finishRun(true));
   }
@@ -517,16 +555,8 @@ export class App implements MenuApi {
     const gs = run.loot.serialize();
     const ch = this.runChar ? p.data.chars.find((c) => c.id === this.runChar) : null;
     if (ch) {
-      // the character keeps everything it earned: level, experience, skills, items
-      ch.level = run.player.level;
-      ch.xp = run.player.level >= PROG.maxLevel ? 0 : run.player.xp;
-      ch.skills = [...run.action.levels];
-      ch.tri = run.action.tri.map((t) => [t[0], t[1]]);
-      ch.points = run.action.points;
-      ch.equipped = gs.equipped;
-      ch.bag = gs.bag;
+      this.writeChar(run, ch);
       ch.runs++;
-      ch.playTime += Math.round(run.time);
     } else {
       // the run carried the first slice of the stash as its bag; the rest stays in storage
       p.data.gear.bag = [...gs.bag, ...p.data.gear.bag.slice(BAG_SIZE)];
@@ -536,7 +566,9 @@ export class App implements MenuApi {
     const s = run.summary();
     const diff = run.diff;
     const goldEarned = Run.goldReward(s, diff.reward);
-    p.data.gold += goldEarned;
+    // the open world already paid out part of it at its periodic saves
+    p.data.gold += goldEarned - (sandbox ? 0 : this.worldGold);
+    this.worldGold = goldEarned;
     const rec = runRecord(run, goldEarned);
     for (const [k, v] of Object.entries(rec.add)) if (v) p.addStat(k, v);
     for (const [k, v] of Object.entries(rec.max)) p.maxStat(k, v);
@@ -571,6 +603,11 @@ export class App implements MenuApi {
       p.testBase = null;
     }
     if (silent) return;
+    if (run.world) {
+      // leaving the open world goes straight back to the menu (everything is saved)
+      this.exitToMenu();
+      return;
+    }
     // live unlock toasts would cover the results, which list the same achievements
     this.toasts.querySelectorAll('.ach-toast').forEach((el) => el.remove());
     this.mode = 'results';
@@ -593,7 +630,89 @@ export class App implements MenuApi {
     );
   }
 
+  /** Gold already credited by the open world's periodic saves, and the run time already counted as play time. */
+  private worldGold = 0;
+  private charTime = 0;
+  private jumpSeq = 0;
+
+  /** The character keeps everything it earned: level, experience, skills, items. */
+  private writeChar(run: Run, ch: CharSave) {
+    const gs = run.loot.serialize();
+    ch.level = run.player.level;
+    ch.xp = run.player.level >= PROG.maxLevel ? 0 : run.player.xp;
+    ch.skills = [...run.action.levels];
+    ch.tri = run.action.tri.map((t) => [t[0], t[1]]);
+    ch.points = run.action.points;
+    ch.equipped = gs.equipped;
+    ch.bag = gs.bag;
+    ch.playTime += Math.round(run.time - this.charTime);
+    this.charTime = Math.round(run.time);
+  }
+
+  /** Open world: writes the character and the gold earned so far (on return to town, every minute, on respawn). */
+  private worldSave(run: Run) {
+    if (!run.world || this.finished || run.debug.tainted || this.profile.testBase || run !== this.run) return;
+    const p = this.profile;
+    const ch = this.runChar ? p.data.chars.find((c) => c.id === this.runChar) : null;
+    if (ch) this.writeChar(run, ch);
+    const total = Run.goldReward(run.summary(), run.diff.reward);
+    p.data.gold += total - this.worldGold;
+    this.worldGold = total;
+    for (const id of run.stats.seen) if (!BOSS_BY_ID[id]) p.discover('enemies', id);
+    p.save();
+  }
+
+  // ------------------------------------------------------------------ open-world town stations
+  private stationEl: HTMLElement | null = null;
+
+  /** Forge, shop and stash open the menu screens over the paused world; they edit the saved character. */
+  private openStation(kind: string) {
+    const run = this.run;
+    if (!run?.world || this.stationEl || this.paused || this.modals.isOpen || this.invOpen || run.player.dead) return;
+    this.worldSave(run);
+    const p = this.profile;
+    const sfx = (x: string) => this.sfx(x);
+    const gold = h('div.gold-chip', h('i.ic-coin'), h('span', fmtNum(p.data.gold)));
+    const onGold = () => ((gold.lastChild as HTMLElement).textContent = fmtNum(p.data.gold));
+    let body: HTMLElement;
+    if (kind === 'forge') body = forgeScreen(p, sfx, onGold);
+    else if (kind === 'shop') body = armoryScreen(p, sfx, run.hero.id, () => {}, onGold);
+    else if (kind === 'stash') body = inventoryScreen(p, sfx);
+    else body = this.teleportPanel(run);
+    const close = () => {
+      if (!this.stationEl) return;
+      this.stationEl.remove();
+      this.stationEl = null;
+      // read the character back: items bought, enhanced, moved
+      const ch = this.runChar ? p.data.chars.find((c) => c.id === this.runChar) : null;
+      if (ch && this.run === run) run.loot.reload({ equipped: ch.equipped, bag: ch.bag });
+      this.input.setEnabled(true);
+      this.sfx('uiBack');
+    };
+    this.stationClose = close;
+    this.stationEl = h('div.world-station', h('div.world-station-box', h('div.world-station-head', h('h2', t('st_' + kind)), gold, h('button.btn.small', { onclick: close }, t('st_close'))), h('div.world-station-body', body)));
+    this.root.appendChild(this.stationEl);
+    this.input.setEnabled(false);
+    this.sfx('ui');
+  }
+  private stationClose: (() => void) | null = null;
+
+  /** Teleport stone: the other locations of the world (stage 2 builds them). */
+  private teleportPanel(run: Run): HTMLElement {
+    return h(
+      'div.tp-list',
+      ...MAPS.map((m) => {
+        const [lo, hi] = PROG.mapRange[m.id] ?? [1, 10];
+        const here = m.id === run.map.id;
+        return h('div.tp-row' + (here ? '.here' : '.soon'), h('b', L(m.name)), h('span', `${lo}–${hi}`), h('em', here ? t('tp_here') : t('tp_soon')));
+      }),
+      h('p.small', t('tp_note')),
+    );
+  }
+
   private exitToMenu() {
+    this.stationEl?.remove();
+    this.stationEl = null;
     this.skills.close();
     this.renderer.endRun();
     this.run = null;
@@ -757,13 +876,18 @@ export class App implements MenuApi {
       const [sx, sz] = this.input.update();
       const [ix, iz] = this.renderer.rig.screenToWorld(sx, sz);
       const devHold = dev.enabled && dev.paused;
-      const active = !this.paused && !this.modals.isOpen && run.state === 'playing' && !devHold;
+      const active = !this.paused && !this.modals.isOpen && !this.stationEl && run.state === 'playing' && !devHold;
       this.readMouse(run, active);
       const sdt = dev.enabled ? dt * dev.timeScale : dt;
       if (active || (run.ending && !devHold)) {
         // fixed-ish sub-steps keep collisions stable on slow frames (and at developer time scales)
         const steps = Math.max(1, Math.ceil(sdt / (1 / 40)));
         for (let i = 0; i < steps; i++) run.update(sdt / steps, ix, iz);
+        if (run.world && run.world.jumpSeq !== this.jumpSeq) {
+          // respawn / teleport: the camera cuts instead of panning across the map
+          this.jumpSeq = run.world.jumpSeq;
+          this.renderer.snapTo(run.player.x, run.player.z);
+        }
         this.achCheckT -= sdt;
         if (this.achCheckT <= 0) {
           this.achCheckT = 1;

@@ -298,6 +298,8 @@ export class DayNight {
   /** A pack of empowered night hunters. */
   elitePack() {
     const run = this.run;
+    // the open world has its own named elites and bosses
+    if (run.world) return;
     const E = DAY_NIGHT.events;
     const ids = new Set<string>();
     for (const [id] of DAY_NIGHT.nightSpawns[run.map.id] ?? []) ids.add(id);
@@ -316,6 +318,7 @@ export class DayNight {
   /** A rare boss from another land prowls the night. */
   nightBoss() {
     const run = this.run;
+    if (run.world) return;
     if (run.bosses.length > 0) return;
     const own = new Set([run.map.midBoss, run.map.boss]);
     const pool = BOSSES.filter((b) => !own.has(b.id));

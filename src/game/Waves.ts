@@ -3,7 +3,8 @@ import { BOSSES } from '../data/bosses';
 import type { Run } from './Run';
 
 export type WaveType = 'normal' | 'horde' | 'fast' | 'elite' | 'danger' | 'boss' | 'final';
-export type RunMode = 'campaign' | 'endless';
+/** campaign / endless: the old wave modes (developer mode only); world: the open world. */
+export type RunMode = 'campaign' | 'endless' | 'world';
 
 /** Endless-mode modifiers. Each one is active for a few waves. */
 export type ModifierId = 'blood_moon' | 'swarm' | 'berserk' | 'iron_skin' | 'darkness' | 'elite_hunt';

@@ -56,6 +56,12 @@ export const PROG = {
     return base * (over > 0 ? Math.max(0.1, 1 - over * 0.15) : 1);
   },
 
+  /**
+   * Open world: share of the current level's experience lost on death (0 = no penalty, the default;
+   * the hero never drops a level).
+   */
+  deathXpLoss: 0,
+
   // ------------------------------------------------------------------ drops
   /** Chance a killed enemy drops an item, by category (an enemy def `drop` overrides it). */
   dropChance: { normal: 0.012, fast: 0.012, ranged: 0.016, tank: 0.04, elite: 0.22, miniboss: 1, boss: 1 } as Record<string, number>,

@@ -425,6 +425,12 @@ export class Renderer {
     this.torchTerrain = terrain;
   }
 
+  /** Cuts the camera to a point (open-world respawn / teleport) and builds the streamed world around it at once. */
+  snapTo(x: number, z: number) {
+    this.rig.snap(x, z);
+    this.world?.cull(x, z, 70, 0);
+  }
+
   /** Starts drawing a run; returns the FxSink the game logic should use. */
   startRun(run: Run, hooks: FxHooks): FxSink {
     this.menuMode = false;
@@ -438,6 +444,8 @@ export class Renderer {
     this.ambient = new AmbientFx(this.scene, run.map.generator, this.quality, this.particleMul);
     this.overlay.clear();
     this.rig.snap(run.player.x, run.player.z);
+    // streamed (big) worlds: build everything around the start before the first frame
+    this.world?.cull(run.player.x, run.player.z, 70, 0);
     return this.makeFx(hooks);
   }
 

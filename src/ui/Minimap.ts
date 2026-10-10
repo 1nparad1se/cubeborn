@@ -1,11 +1,13 @@
 import type { Run } from '../game/Run';
 import { CELL } from '../game/Terrain';
 import { h } from './dom';
+import { WORLD } from '../config/world';
+import { L } from '../i18n';
 
 const SHRINE_COLOR: Record<string, string> = { heal: '#6aff9a', fury: '#ff6a6a', magnet: '#8ad8ff', gold: '#ffd23d' };
 const RARITY_COLOR = ['#f2f2f2', '#6aff8a', '#5ab4ff', '#c77dff', '#ffb02e'];
 /** Pixels per map cell in the baked terrain image (outlines stay one pixel thin). */
-const PX = 3;
+const PX_SMALL = 3;
 /** World units visible across the corner minimap. */
 const LOCAL_SPAN = 64;
 
@@ -24,6 +26,8 @@ export class Minimap {
   private acc = 1;
   private pulse = 0;
   private yaw = Math.PI / 4;
+  /** Pixels per cell of the baked image (big worlds use fewer to keep the image small). */
+  private px = PX_SMALL;
   big = false;
 
   constructor() {
@@ -39,6 +43,8 @@ export class Minimap {
     if (!run) return;
     const t = run.terrain;
     const n = t.size;
+    const PX = n > 500 ? 2 : PX_SMALL;
+    this.px = PX;
     const W = n * PX;
     const img = document.createElement('canvas');
     img.width = W;
@@ -120,6 +126,94 @@ export class Minimap {
     this.acc = 1;
   }
 
+  /** Open world: area rings and names (big map), the town, boss lairs and named elites. */
+  private drawWorld(run: Run, toScreen: (x: number, z: number) => [number, number], inView: (x: number, y: number, m?: number) => boolean, outline: (draw: () => void, fill: string) => void, u: number, scale: number, cw: number, ch: number) {
+    const w = run.world!;
+    const ctx = this.ctx;
+    const c = w.layout.c + 0.5;
+    const [tx, ty] = toScreen(c, c);
+    if (this.big) {
+      // ring borders and area names
+      ctx.strokeStyle = 'rgba(255,230,160,0.35)';
+      ctx.lineWidth = 1.2 * u;
+      ctx.setLineDash([4 * u, 4 * u]);
+      for (let r = 0; r <= WORLD.rings; r++) {
+        ctx.beginPath();
+        ctx.arc(tx, ty, (WORLD.ringStart + r * WORLD.ringW) * scale, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.setLineDash([]);
+      ctx.font = `600 ${Math.round(10 * u)}px Rubik, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      for (const a of w.layout.areas) {
+        const ang = ((a.sector + 0.5) / WORLD.sectors) * Math.PI * 2 - Math.PI - Math.PI / WORLD.sectors;
+        const d = WORLD.ringStart + (a.ring + 0.5) * WORLD.ringW;
+        const [sx, sy] = toScreen(c + Math.cos(ang) * d, c + Math.sin(ang) * d);
+        if (!inView(sx, sy)) continue;
+        const label = `${L(a.name)} ${a.lo}-${a.hi}`;
+        ctx.lineWidth = 3 * u;
+        ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+        ctx.strokeText(label, sx, sy);
+        ctx.fillStyle = '#f4ead0';
+        ctx.fillText(label, sx, sy);
+      }
+    }
+    // the town: a walled circle with a house
+    if (inView(tx, ty, 20)) {
+      const s = Math.max(6 * u, WORLD.townR * scale);
+      ctx.lineWidth = 2 * u;
+      ctx.strokeStyle = '#8affb0';
+      ctx.beginPath();
+      ctx.arc(tx, ty, s, 0, Math.PI * 2);
+      ctx.stroke();
+      const hs = 4.5 * u;
+      outline(() => {
+        ctx.beginPath();
+        ctx.moveTo(tx - hs, ty + hs);
+        ctx.lineTo(tx - hs, ty - hs * 0.2);
+        ctx.lineTo(tx, ty - hs);
+        ctx.lineTo(tx + hs, ty - hs * 0.2);
+        ctx.lineTo(tx + hs, ty + hs);
+        ctx.closePath();
+      }, '#8affb0');
+    }
+    // boss lairs: a red skull-ish square (dim while the boss is away)
+    for (const l of w.lairs) {
+      const [sx, sy] = toScreen(l.def.x, l.def.z);
+      if (!inView(sx, sy, 10)) continue;
+      const s = 5 * u;
+      const up = !l.boss && run.time >= l.deadUntil;
+      outline(() => {
+        ctx.beginPath();
+        ctx.arc(sx, sy, s, 0, Math.PI * 2);
+      }, up ? '#ff3a5a' : '#6a3a44');
+      ctx.fillStyle = '#000';
+      ctx.fillRect(sx - s * 0.45, sy - s * 0.3, s * 0.3, s * 0.3);
+      ctx.fillRect(sx + s * 0.15, sy - s * 0.3, s * 0.3, s * 0.3);
+    }
+    // named elites: orange stars while they are home
+    for (const cp of w.camps) {
+      if (cp.def.kind !== 'elite') continue;
+      const [sx, sy] = toScreen(cp.hx, cp.hz);
+      if (!inView(sx, sy, 6)) continue;
+      const up = run.time >= cp.members[0].deadUntil;
+      const s = 4 * u;
+      outline(() => {
+        ctx.beginPath();
+        for (let k = 0; k < 10; k++) {
+          const a = (k / 10) * Math.PI * 2 - Math.PI / 2;
+          const r = k % 2 ? s * 0.45 : s;
+          if (k) ctx.lineTo(sx + Math.cos(a) * r, sy + Math.sin(a) * r);
+          else ctx.moveTo(sx + Math.cos(a) * r, sy + Math.sin(a) * r);
+        }
+        ctx.closePath();
+      }, up ? '#ffa030' : '#5a4a3a');
+    }
+    void cw;
+    void ch;
+  }
+
   update(dt: number) {
     const run = this.run;
     if (!run || !this.base) return;
@@ -152,8 +246,8 @@ export class Minimap {
     ctx.save();
     ctx.translate(cw / 2, ch / 2);
     ctx.rotate(this.yaw);
-    ctx.scale(scale / PX, scale / PX);
-    ctx.translate(-cx * PX, -cz * PX);
+    ctx.scale(scale / this.px, scale / this.px);
+    ctx.translate(-cx * this.px, -cz * this.px);
     ctx.imageSmoothingEnabled = !this.big;
     ctx.drawImage(this.base, 0, 0);
     ctx.restore();
@@ -225,6 +319,7 @@ export class Minimap {
         ctx.fillText('?', sx, sy);
       }
     }
+    if (run.world) this.drawWorld(run, toScreen, inView, outline, u, scale, cw, ch);
     // chests
     for (const pk of run.pickups.list) {
       if (!pk.active || pk.kind !== 'chest') continue;

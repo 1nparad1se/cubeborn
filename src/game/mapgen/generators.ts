@@ -454,15 +454,27 @@ const ruins: Gen = (g) => {
 const GENERATORS: Record<string, Gen> = { forest, city, catacombs, volcano, tundra, ruins };
 
 /** Builds the terrain for a map. Each run uses a new seed so layouts vary. */
-export function generateTerrain(map: MapDef, seed: number, opts: { zones?: boolean } = {}): Terrain {
+export interface WorldHooks {
+  /** After the base generator: lays out the world, returns the mask of ground kept flat and open. */
+  pre(g: GenCtx): Uint8Array;
+  /** After elevation and sealing: builds the town, lairs and camp props. */
+  post(g: GenCtx): void;
+}
+
+export function generateTerrain(map: MapDef, seed: number, opts: { zones?: boolean; world?: WorldHooks } = {}): Terrain {
   const t = new Terrain(map.size);
   const g: GenCtx = { t, rng: new Rng(seed), seed: seed % 100000, c: Math.floor(map.size / 2), k: (map.size * map.size) / (160 * 160) };
   // register palette tiles first so ids are stable
   for (const name of Object.keys(map.palette.tiles)) t.tileId(name);
   const gen = GENERATORS[map.generator] ?? forest;
   gen(g);
+  const worldMask = opts.world?.pre(g) ?? null;
   let cleared: Uint8Array | null = null;
   if (opts.zones !== false) cleared = addZones(g, map.generator);
+  if (worldMask) {
+    if (!cleared) cleared = worldMask;
+    else for (let i = 0; i < worldMask.length; i++) if (worldMask[i]) cleared[i] = 1;
+  }
   elevate(g, map.generator, cleared);
   if (opts.zones !== false) {
     sealUnreachable(g);
@@ -470,6 +482,7 @@ export function generateTerrain(map: MapDef, seed: number, opts: { zones?: boole
     const keep = t.markers.filter((m) => t.walkableAt(m.x, m.z) || m.kind === 'rune');
     replaceAll(t.markers, keep);
   }
+  opts.world?.post(g);
   t.cullHidden();
   return t;
 }

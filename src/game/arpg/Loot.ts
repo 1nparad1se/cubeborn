@@ -51,6 +51,17 @@ export class Loot {
     this.refresh(false);
   }
 
+  /** Replaces the equipment and bag (the open world's town screens edit the saved character). */
+  reload(saved: GearSave) {
+    for (const p of EQUIP_POS) {
+      const it = saved.equipped?.[p];
+      this.equipped[p] = it && slotOf(p) === it.slot ? structuredClone(it) : null;
+    }
+    this.bag.length = 0;
+    for (const it of saved.bag ?? []) if (this.bag.length < BAG_SIZE && it?.slot) this.bag.push(structuredClone(it));
+    this.refresh();
+  }
+
   serialize(): GearSave {
     const equipped: Partial<Record<EquipPos, Item>> = {};
     for (const p of EQUIP_POS) if (this.equipped[p]) equipped[p] = this.equipped[p]!;
