@@ -448,7 +448,7 @@ export class ArpgHud {
 
   private updateHover(run: Run) {
     const e = this.hover;
-    const show = !!e && e.alive && !e.boss;
+    const show = !!e && e.alive && e.active && !e.boss;
     this.set('hv', show ? e!.uid : 0, () => this.hoverBox.classList.toggle('hidden', !show));
     if (!show || !e) return;
     const name = L(e.def.name) + (e.elite ? ' ★' : '');
@@ -456,9 +456,16 @@ export class ArpgHud {
       this.hName.textContent = name;
       this.hName.style.color = e.elite ? '#ffd23d' : '#f1f2f4';
     });
-    const lvl = Math.max(1, run.zoneLevel + (e.elite ? 2 : 0) + (e.boss ? 3 : 0));
+    const own = (e as { level?: number }).level;
+    const lvl = Math.max(1, own ?? run.zoneLevel + (e.elite ? 2 : 0) + (e.boss ? 3 : 0));
     const role = (e.elite ? t('role_elite') + ' · ' : '') + t('role_' + e.role);
-    this.set('hvm', role + lvl, () => (this.hMeta.textContent = `${t('arpg_lv_short', { n: lvl })} · ${role}`));
+    // level colour by the gap to the hero (grey far below, green below, white even, yellow above, red far above)
+    const gap = lvl - run.player.level;
+    const lc = gap <= -6 ? '#9a9a9a' : gap <= -3 ? '#6bd46b' : gap < 3 ? '#f1f2f4' : gap < 6 ? '#ffd23d' : '#ff5a4a';
+    this.set('hvm', role + lvl + lc, () => {
+      clear(this.hMeta);
+      this.hMeta.append(h('b', { style: `color:${lc}` }, t('arpg_lv_short', { n: lvl })), ` · ${role}`);
+    });
     const k = Math.max(0, e.hp / e.maxHp);
     this.set('hvk', Math.round(k * 300), () => (this.hFill.style.transform = `scaleX(${k})`));
     this.set('hvh', Math.ceil(e.hp), () => (this.hHp.textContent = `${fmtNum(Math.ceil(Math.max(0, e.hp)))} / ${fmtNum(Math.round(e.maxHp))}`));

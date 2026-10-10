@@ -1,3 +1,4 @@
+import { installCursors, setCursor } from './ui/cursor';
 import { PROG } from './config/progression';
 import { BAG_SIZE } from './game/arpg/Loot';
 import { iconImg } from './ui/icons';
@@ -94,6 +95,7 @@ export class App implements MenuApi {
   private achCheckT = 1;
 
   constructor(root: HTMLElement) {
+    installCursors();
     this.root = root;
     root.classList.add('app');
     const s = this.profile.data.settings;
@@ -379,6 +381,7 @@ export class App implements MenuApi {
 
   startRun(heroId: string, mapId: string, diffId: string, mode: RunMode = 'campaign') {
     this.runArgs = [heroId, mapId, diffId, mode];
+    this.target = null;
     this.menus.setVisible(false);
     this.modals.close();
     this.skills?.close();
@@ -656,6 +659,8 @@ export class App implements MenuApi {
 
   /** Mouse/keyboard to action-RPG controls: cursor ground point, click-to-move, attack, skills. */
   private lmbMode: 'move' | 'attack' = 'move';
+  /** Enemy picked with a click (its info frame stays visible). */
+  private target: Enemy | null = null;
   private readMouse(run: Run, active: boolean) {
     const inp = this.input;
     const c = run.ctl;
@@ -685,7 +690,11 @@ export class App implements MenuApi {
         });
       }
     }
-    this.hud.setHover(hover);
+    // clicking an enemy selects it as the target: its frame (name, level, health) stays up
+    if (hover && inp.lmbPressed) this.target = hover;
+    if (this.target && (!this.target.alive || !this.target.active)) this.target = null;
+    this.hud.setHover(hover ?? this.target);
+    setCursor(hover ? 'attack' : 'default');
     if (!active) {
       inp.lmbPressed = false;
       inp.casts.length = 0;
