@@ -13,7 +13,7 @@ import type { WorldHooks } from '../mapgen/generators';
  */
 
 export type CampKind = 'pack' | 'camp' | 'lone' | 'patrol' | 'elite';
-export type StationKind = 'forge' | 'shop' | 'stash' | 'teleport';
+export type StationKind = 'forge' | 'shop' | 'stash' | 'teleport' | 'inn' | 'talk' | 'dungeon' | 'alchemy';
 
 export interface Area {
   id: number;
@@ -36,6 +36,8 @@ export interface CampDef {
   aggressive: boolean;
   respawn: [number, number];
   /** Patrol: the far end of its route. */
+  /** Faction camp site index (continent world). */
+  site?: number;
   wx?: number;
   wz?: number;
   /** Named elite: its affix and name (member 0 is the elite, the rest its escort). */
@@ -55,6 +57,14 @@ export interface Station {
   kind: StationKind;
   x: number;
   z: number;
+  /** Continent: who or what stands here (NPC name, waystone or dungeon name). */
+  name?: Loc;
+  /** Continent: the waystone / dungeon id, or the NPC index. */
+  ref?: string;
+  /** Continent: the settlement it belongs to. */
+  town?: string;
+  /** Interaction radius (default 3.2). */
+  r?: number;
 }
 
 export interface WorldLayout {
@@ -64,6 +74,8 @@ export interface WorldLayout {
   camps: CampDef[];
   lairs: Lair[];
   stations: Station[];
+  /** Continent world (the persistent open world): everything beyond the old single-location layout. */
+  cont?: import('./continent/places').ContinentLayout;
 }
 
 // ------------------------------------------------------------------ names

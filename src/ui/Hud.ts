@@ -310,13 +310,13 @@ export class Hud {
         this.wavePanel.style.setProperty('--wc', col);
       });
       const st = run.player.dead ? null : world.nearStation();
-      const sk = st ? st.kind : '';
+      const sk = st ? st.kind + ':' + (st.ref ?? '') : '';
       this.set('station', sk, () => {
-        this.stationKind = sk;
+        this.stationKind = st ? st.kind : '';
         this.stationBtn.classList.toggle('hidden', !st);
         if (st) {
           clear(this.stationBtn);
-          this.stationBtn.append(h('b', t('st_' + sk)), h('span', t('st_open')));
+          this.stationBtn.append(h('b', st.name ? L(st.name) : t('st_' + st.kind)), h('span', st.name ? t('st_' + st.kind) : t('st_open')));
         }
       });
     } else if (this.opts.waves) {

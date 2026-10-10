@@ -65,6 +65,34 @@ export const ENEMIES: EnemyDef[] = [
   def({ id: 'shield_crystal', name: { ru: 'Кристалл-щит', en: 'Ward Crystal' }, category: 'special', behavior: 'prop', hp: 120, damage: 0, speed: 0, xp: 5, size: 1.2, radius: 0.7, kbResist: 1 }),
   def({ id: 'treasure_sprite', name: { ru: 'Кладовик', en: 'Treasure Sprite' }, category: 'special', behavior: 'chase', hp: 60, damage: 0, speed: 3.6, xp: 10, size: 0.9, kbResist: 0.5, p: { flee: 1 } }),
   def({ id: 'crate', name: { ru: 'Ящик', en: 'Crate' }, category: 'prop', behavior: 'prop', hp: 8, damage: 0, speed: 0, xp: 0, size: 1, radius: 0.5, kbResist: 1 }),
+  // ---------------------------------------------------------------- Open world factions
+  // Orc warbands
+  def({ id: 'orc_grunt', name: { ru: 'Орк-рубака', en: 'Orc Hacker' }, category: 'normal', behavior: 'chase', hp: 15, damage: 9, speed: 2.3, xp: 1, size: 1.05 }),
+  def({ id: 'orc_archer', name: { ru: 'Орк-лучник', en: 'Orc Bowman' }, category: 'ranged', behavior: 'ranged', hp: 15, damage: 8, speed: 2.2, xp: 3, p: { range: 8, fireCd: 2.4, bulletSpeed: 7.5, bullets: 1 } }),
+  def({ id: 'orc_brute', name: { ru: 'Орк-громила', en: 'Orc Crusher' }, category: 'tank', behavior: 'chase', hp: 90, damage: 14, speed: 1.6, xp: 7, size: 1.4, radius: 0.75, kbResist: 0.8 }),
+  def({ id: 'orc_shaman', name: { ru: 'Орк-шаман', en: 'Orc Bonecaller' }, category: 'summoner', behavior: 'summoner', hp: 50, damage: 7, speed: 1.7, xp: 9, size: 1.15, radius: 0.55, kbResist: 0.4, p: { summon: 'orc_grunt', count: 2, cd: 7, range: 9 } }),
+  def({ id: 'orc_warboar', name: { ru: 'Боевой кабан орков', en: 'Orc Warboar' }, category: 'fast', behavior: 'chase', hp: 14, damage: 9, speed: 4.6, xp: 2, size: 1.1, radius: 0.55 }),
+  // Bandits
+  def({ id: 'bandit_thug', name: { ru: 'Разбойник', en: 'Bandit Thug' }, category: 'normal', behavior: 'chase', hp: 12, damage: 8, speed: 2.4, xp: 1 }),
+  def({ id: 'bandit_archer', name: { ru: 'Разбойник-лучник', en: 'Bandit Archer' }, category: 'ranged', behavior: 'ranged', hp: 13, damage: 8, speed: 2.3, xp: 3, p: { range: 8, fireCd: 2.3, bulletSpeed: 8, bullets: 1 } }),
+  def({ id: 'bandit_brute', name: { ru: 'Разбойник-молотобоец', en: 'Bandit Bruiser' }, category: 'tank', behavior: 'chase', hp: 80, damage: 13, speed: 1.6, xp: 7, size: 1.3, radius: 0.7, kbResist: 0.75 }),
+  def({ id: 'bandit_cutthroat', name: { ru: 'Головорез', en: 'Cutthroat' }, category: 'fast', behavior: 'charger', hp: 12, damage: 9, speed: 3.4, xp: 2, size: 0.95, p: { chargeCd: 2.6, chargeSpeed: 11, trigger: 5, windup: 0.35 } }),
+  // Northern clans
+  def({ id: 'clan_raider', name: { ru: 'Северный налётчик', en: 'Clan Raider' }, category: 'normal', behavior: 'chase', hp: 17, damage: 10, speed: 2.3, xp: 1, kbResist: 0.2 }),
+  def({ id: 'clan_hunter', name: { ru: 'Северный охотник', en: 'Clan Hunter' }, category: 'ranged', behavior: 'ranged', hp: 15, damage: 9, speed: 2.3, xp: 3, p: { range: 8, fireCd: 2.5, bulletSpeed: 8, bullets: 1 } }),
+  def({ id: 'clan_berserker', name: { ru: 'Северный берсерк', en: 'Clan Ragewarrior' }, category: 'special', behavior: 'charger', hp: 44, damage: 16, speed: 2.4, xp: 6, size: 1.2, radius: 0.6, kbResist: 0.5, p: { chargeCd: 3.5, chargeSpeed: 12, trigger: 8, windup: 0.6 } }),
+  def({ id: 'clan_seer', name: { ru: 'Северная провидица', en: 'Clan Seer' }, category: 'summoner', behavior: 'summoner', hp: 50, damage: 8, speed: 1.7, xp: 9, size: 1.1, radius: 0.55, kbResist: 0.4, p: { summon: 'snow_wolf', count: 2, cd: 7, range: 9 } }),
+  // Desert
+  def({ id: 'raider_blade', name: { ru: 'Пустынный клинок', en: 'Dune Blade' }, category: 'normal', behavior: 'chase', hp: 14, damage: 9, speed: 2.5, xp: 1 }),
+  def({ id: 'raider_archer', name: { ru: 'Пустынный лучник', en: 'Dune Archer' }, category: 'ranged', behavior: 'ranged', hp: 13, damage: 9, speed: 2.4, xp: 3, p: { range: 8.5, fireCd: 2.3, bulletSpeed: 8, bullets: 1 } }),
+  def({ id: 'sand_scorpion', name: { ru: 'Песчаный скорпион', en: 'Sand Scorpion' }, category: 'fast', behavior: 'chase', hp: 12, damage: 9, speed: 4.6, xp: 2, radius: 0.5 }),
+  def({ id: 'dune_stalker', name: { ru: 'Барханный призрак', en: 'Dune Stalker' }, category: 'special', behavior: 'teleporter', hp: 22, damage: 11, speed: 2.7, xp: 4, flying: true, p: { tpCd: 4, tpDist: 3.5 } }),
+  def({ id: 'sun_mummy', name: { ru: 'Солнечная мумия', en: 'Sunwrapped Dead' }, category: 'normal', behavior: 'chase', hp: 18, damage: 9, speed: 2.0, xp: 1, kbResist: 0.2 }),
+  // Heartland beasts
+  def({ id: 'forest_wolf', name: { ru: 'Лесной волк', en: 'Forest Wolf' }, category: 'fast', behavior: 'chase', hp: 11, damage: 8, speed: 4.7, xp: 2, radius: 0.5 }),
+  def({ id: 'wild_boar', name: { ru: 'Дикий кабан', en: 'Wild Boar' }, category: 'special', behavior: 'charger', hp: 34, damage: 13, speed: 2.2, xp: 5, size: 1.15, radius: 0.6, kbResist: 0.5, p: { chargeCd: 4, chargeSpeed: 12, trigger: 8, windup: 0.6 } }),
+  def({ id: 'giant_spider', name: { ru: 'Гигантский паук', en: 'Giant Spider' }, category: 'normal', behavior: 'chase', hp: 14, damage: 8, speed: 2.8, xp: 1, size: 1.1, radius: 0.55 }),
+  def({ id: 'forest_bear', name: { ru: 'Лесной медведь', en: 'Forest Bear' }, category: 'tank', behavior: 'chase', hp: 95, damage: 15, speed: 1.8, xp: 8, size: 1.5, radius: 0.85, kbResist: 0.8 }),
 ];
 
 export const ENEMY_BY_ID: Record<string, EnemyDef> = Object.fromEntries(ENEMIES.map((e) => [e.id, e]));

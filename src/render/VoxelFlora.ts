@@ -58,7 +58,7 @@ export function treeVoxels(tr: TreeInst, map: MapDef, out: Vox[]) {
   const grid = (v: Vox) => [Math.round((v.x - cx) / v.sx), Math.round(v.y / v.sy), Math.round((v.z - cz) / v.sz)];
   const filled = new Set<number>();
   for (const v of list) if (v.sx === 0.5) filled.add(key(...(grid(v) as [number, number, number])));
-  const snowy = tr.kind === 'pine' && !!map.palette.blocks.snow;
+  const snowy = tr.kind === 'pine' && (tr.leaf === 'pineSnow' || (!!map.palette.blocks.snow && !map.palette.blocks.pineSnow));
   for (const v of list) {
     if (v.sx === 0.5) {
       const [x, y, z] = grid(v);
@@ -137,6 +137,61 @@ function treeVoxelsRaw(tr: TreeInst, map: MapDef, out: Vox[]) {
           leaf(ox + dx, oy + dy, oz + dz, base);
         }
   };
+  if (tr.kind === 'cactus') {
+    // column cactus with one or two arms
+    const T = 3 + (tr.h % 3);
+    for (let y = 0; y < T; y++) wood(0, y, 0, leafC, TILE.leaves);
+    if (r(21) < 0.7) {
+      wood(1, 2, 0, leafC, TILE.leaves);
+      wood(2, 2, 0, leafC, TILE.leaves);
+      wood(2, 3, 0, leafC, TILE.leaves);
+    }
+    if (r(22) < 0.5) {
+      wood(-1, 3, 0, leafC, TILE.leaves);
+      wood(-2, 3, 0, leafC, TILE.leaves);
+      wood(-2, 4, 0, leafC, TILE.leaves);
+    }
+    return;
+  }
+  if (tr.kind === 'palm') {
+    // leaning trunk and drooping fronds
+    const T = 9 + (tr.h % 4);
+    const lean = r(23) < 0.5 ? 1 : -1;
+    let tx = 0;
+    for (let y = 0; y < T; y++) {
+      if (y > 3 && y % 3 === 0) tx += lean;
+      wood(tx, y, 0, trunkC, TILE.planks);
+    }
+    leaf(tx, T, 0, leafC);
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]] as const)
+      for (let k = 1; k <= 3; k++) leaf(tx + dx * k, T - (k === 3 ? 1 : 0), dz * k, leafC);
+    return;
+  }
+  if (tr.kind === 'acacia') {
+    // savanna tree: crooked trunk and a flat wide crown
+    const T = 5 + (tr.h % 3);
+    const bx = r(24) < 0.5 ? 1 : -1;
+    for (let y = 0; y < T; y++) wood(y > 2 ? bx : 0, y, 0, trunkC);
+    layer(T, 3, leafC, bx, 0, 0.8);
+    layer(T + 1, 2, leafC, bx, 0, 0.6);
+    return;
+  }
+  if (tr.kind === 'dead') {
+    const T = 4 + (tr.h % 3);
+    for (let y = 0; y < T; y++) wood(0, y, 0, trunkC);
+    wood(1, T - 2, 0, trunkC);
+    wood(2, T - 1, 0, trunkC);
+    wood(-1, T - 1, 0, trunkC);
+    wood(0, T - 1, 1, trunkC);
+    return;
+  }
+  if (tr.kind === 'willow') {
+    const T = 5 + (tr.h % 2);
+    for (let y = 0; y < T; y++) wood(0, y, 0, trunkC);
+    blob(0, T, 0, 3, 1.5, leafC);
+    for (const [dx, dz] of [[3, 0], [-3, 0], [0, 3], [0, -3], [2, 2], [-2, -2]] as const) for (let y = T - 3; y < T; y++) leaf(dx, y, dz, leafC);
+    return;
+  }
   if (tr.kind === 'pine') {
     // spruce: straight trunk with alternating wide and narrow needle layers up to a point
     const T = 7 + tr.h;

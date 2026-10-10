@@ -30,6 +30,7 @@ import { RARITIES, type Rarity } from '../data/types';
 import { ActionSystem, makeControls } from './action/ActionSystem';
 import { Loot, type GearSave } from './arpg/Loot';
 import { BossArena } from './bosses/BossArena';
+import { continentWorld } from './world/continent/world';
 import { World } from './world/World';
 import { worldPlan } from './world/WorldGen';
 import { WORLD } from '../config/world';
@@ -68,6 +69,9 @@ export interface RunEvents extends Record<string, unknown> {
   worldSave: void;
   /** Open world: the hero entered another area (-1 = the town). */
   zone: number;
+  waystone: string;
+  dungeonFound: string;
+  homeSet: string;
 }
 
 /** Seed of the persistent open world (changing it reshapes the world for every player). */
@@ -175,7 +179,12 @@ export class Run {
     this.vfx = new Vfx(this);
     this.waveScale = this.waves.scale();
     let layout = null;
-    if (this.mode === 'world') {
+    if (this.mode === 'world' && o.map.generator === 'continent') {
+      // the persistent continent: the same world every session, generated once per page
+      const cw = continentWorld();
+      layout = cw.layout;
+      this.terrain = cw.terrain;
+    } else if (this.mode === 'world') {
       // one big location: the map's own generator at world size, carved into town, areas, camps and lairs
       const plan = worldPlan(o.map, this.seed, PROG.mapRange[o.map.id] ?? [1, 10]);
       layout = plan.layout;
@@ -184,6 +193,18 @@ export class Run {
     this.nav = new NavField(this.terrain);
     const c = Math.floor(this.terrain.size / 2) + 0.5;
     this.player = new Player(this, c, layout ? c + 2 : c);
+    if (layout?.cont) {
+      const wp = o.char?.world;
+      const start = layout.cont.towns.find((t) => t.def.id === (wp?.home ?? 'quietford')) ?? layout.cont.towns[0];
+      const ok = (x: number, z: number) => this.terrain.walkableAt(x, z);
+      if (wp?.x !== undefined && wp.z !== undefined && ok(wp.x, wp.z)) {
+        this.player.x = wp.x;
+        this.player.z = wp.z;
+      } else {
+        this.player.x = start.spawn.x;
+        this.player.z = start.spawn.z;
+      }
+    }
     const ch = o.char ?? null;
     if (ch) {
       this.player.level = ch.level;
@@ -204,7 +225,7 @@ export class Run {
     this.combat = new Combat(this);
     this.spawner = new Spawner(this);
     this.features = new MapFeatures(this);
-    if (layout) this.world = new World(this, layout);
+    if (layout) this.world = new World(this, layout, o.char?.world ?? null);
     this.nav.update(0, this.player.x, this.player.z, true);
     this.reviveBlast.damage = 200;
     this.reviveBlast.knockback = 4;

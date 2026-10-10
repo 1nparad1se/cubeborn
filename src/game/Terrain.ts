@@ -34,7 +34,7 @@ export interface TreeInst {
   x: number;
   z: number;
   h: number;
-  kind: 'oak' | 'pine' | 'mushroom';
+  kind: 'oak' | 'pine' | 'mushroom' | 'acacia' | 'palm' | 'cactus' | 'dead' | 'willow';
   leaf: string;
   trunk: string;
   v: number;

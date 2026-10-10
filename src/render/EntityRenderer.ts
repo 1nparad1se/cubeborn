@@ -174,6 +174,7 @@ export class EntityRenderer {
     this.drawHero(dt, time);
     this.drawEnemies(time, visible);
     this.drawAllies(visible);
+    this.drawNpcs(visible);
     this.drawProjectiles(time, visible);
     this.drawPickups(time, visible);
     this.drawLoot(time, visible);
@@ -563,6 +564,22 @@ export class EntityRenderer {
       if (mb.skinned) mb.frames[0].pushFast(a.x, 0, a.z, a.yaw, a.scale * fade, a.scale * fade, 1, 1.05, 1.15, packAnim(a.anim * 1.2 * Math.PI, 1, fl));
       else mb.frames[Math.floor(a.anim * 1.2) & 1].pushFast(a.x, 0, a.z, a.yaw, a.scale * fade, a.scale * fade, 1, 1.05, 1.15, fl);
       this.shadows.push(a.x, 0.02, a.z, 0, 0.9, 1, 0.9);
+    }
+  }
+
+  // ---------------------------------------------------------------- continent NPCs
+  private drawNpcs(visible: (x: number, z: number) => boolean) {
+    const w = this.run.world;
+    if (!w?.cont) return;
+    for (const n of w.visibleNpcs) {
+      if (!visible(n.x, n.z)) continue;
+      const mb = this.batchesFor(n.def.model, getModel(n.def.model), 2);
+      if (!mb) continue;
+      const moving = n.vx !== 0 || n.vz !== 0;
+      const s = n.def.model === 'npc_child' ? 0.8 : 1;
+      if (mb.skinned) mb.frames[0].pushFast(n.x, 0, n.z, n.yaw, s, s, 1, 1.05, 1.15, packAnim(n.anim * 1.6 * Math.PI, moving ? 1 : 0, 0));
+      else mb.frames[moving ? Math.floor(n.anim * 1.6) & 1 : 0].pushFast(n.x, 0, n.z, n.yaw, s, s, 1, 1.05, 1.15, 0);
+      this.shadows.push(n.x, 0.02, n.z, 0, 0.8, 1, 0.8);
     }
   }
 

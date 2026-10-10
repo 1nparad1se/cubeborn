@@ -20,16 +20,17 @@ import { Hud } from './ui/Hud';
 import { Menus, type MenuApi } from './ui/Menus';
 import { SkillsScreen } from './ui/SkillsScreen';
 import { RunModals } from './ui/RunModals';
-import { h } from './ui/dom';
+import { clear, h } from './ui/dom';
 import { t, L, setLang, getLang } from './i18n';
 import { HERO_BY_ID } from './data/heroes';
 import { MAP_BY_ID, MAPS } from './data/maps';
+import { CONTINENT_MAP } from './data/continentMap';
+import { tr } from './ui/ClassPreview';
 import { DIFFICULTIES, DIFFICULTY_BY_ID } from './data/difficulty';
 import { BOSS_BY_ID, RELIC_BY_ID } from './data/bosses';
 import { generateTerrain } from './game/mapgen/generators';
 import type { BossController } from './game/bosses/Boss';
 import { WAVE_TYPE_COLOR, MODIFIERS, type RunMode, type Wave } from './game/Waves';
-import { WORLD } from './config/world';
 import type { CharSave } from './meta/Characters';
 import { forgeScreen, inventoryScreen } from './ui/ProgressScreens';
 import { armoryScreen } from './ui/ArmoryScreen';
@@ -115,6 +116,17 @@ export class App implements MenuApi {
     this.input.onPause = () => this.handleEscape();
     this.input.onZoom = (dir) => this.stepZoom(dir);
     this.input.onMap = () => this.hud.toggleMap();
+    // continent: a teleport scroll works anywhere
+    window.addEventListener('keydown', (e) => {
+      if (e.code !== 'KeyT' || this.mode !== 'run' || e.repeat) return;
+      const w = this.run?.world;
+      if (!w?.cont) return;
+      if (w.scrolls <= 0) {
+        this.toast(tr('Нет свитков телепорта: их продают у камней телепорта.', 'No teleport scrolls: buy them at a waystone.'), '#ffb07a');
+        return;
+      }
+      this.openStation('scroll');
+    });
     this.input.onInventory = () => this.toggleInventory();
     this.input.onJump = () => {
       if (this.run && this.mode !== 'menu' && !this.paused && !this.modals.isOpen) this.run.player.requestJump();
@@ -394,7 +406,7 @@ export class App implements MenuApi {
     if (mode !== 'world') return this.startRunNow(heroId, mapId, diffId, mode);
     // building a big world takes a moment: show a loading screen first
     this.menus.setVisible(false);
-    const el = h('div.world-loading', h('div.wl-box', h('div.logo-cubes', h('i'), h('i'), h('i')), h('h2', t('world_loading')), h('div.wl-sub', t('world_loading_sub', { name: L(MAP_BY_ID[mapId].name), size: WORLD.size }))));
+    const el = h('div.world-loading', h('div.wl-box', h('div.logo-cubes', h('i'), h('i'), h('i')), h('h2', t('world_loading')), h('div.wl-sub', t('world_loading_sub', { name: L(CONTINENT_MAP.name), size: CONTINENT_MAP.size }))));
     this.root.appendChild(el);
     requestAnimationFrame(() =>
       requestAnimationFrame(() => {
@@ -420,7 +432,8 @@ export class App implements MenuApi {
     const p = this.profile;
     const fx = new ProxyFx();
     const run = new Run({
-      map: MAP_BY_ID[mapId],
+      // the open world is the continent, whatever map the menu had selected
+      map: mode === 'world' ? CONTINENT_MAP : MAP_BY_ID[mapId],
       diff: DIFFICULTY_BY_ID[diffId],
       hero: HERO_BY_ID[heroId],
       permanent: p.permanentMods(),
@@ -501,8 +514,24 @@ export class App implements MenuApi {
     run.events.on('worldSave', () => this.worldSave(run));
     run.events.on('zone', (id: number) => {
       const a = id >= 0 ? run.world?.layout.areas[id] : null;
+      const town = run.world?.townAt(run.player.x, run.player.z) ?? null;
       if (a) this.hud.showBanner(L(a.name), '#ffd23d', 2.2, t('world_area_lv', { lo: a.lo, hi: a.hi }));
+      else if (town) this.hud.showBanner(L(town.def.name), '#8affb0', 2.2, L(town.def.about));
       else this.hud.showBanner(t('world_town'), '#8affb0', 2.2, t('world_town_lv'));
+    });
+    run.events.on('waystone', (id: string) => {
+      const w = run.world?.cont?.waystones.find((x) => x.id === id);
+      if (w) this.hud.showBanner(L(w.name), '#6af0ff', 2.6, tr('Камень телепорта найден', 'Waystone discovered'));
+      audio.play('levelup');
+      this.worldSave(run);
+    });
+    run.events.on('dungeonFound', (id: string) => {
+      const d = run.world?.cont?.dungeons.find((x) => x.def.id === id);
+      if (d) this.toast(tr('Найден вход: ', 'Entrance found: ') + L(d.def.name), '#c79aff');
+    });
+    run.events.on('homeSet', (id: string) => {
+      const tw = run.world?.cont?.towns.find((x) => x.def.id === id);
+      if (tw) this.toast(tr('Точка возрождения: ', 'Respawn point: ') + L(tw.def.name), '#8affb0');
     });
     run.events.on('gameover', () => this.finishRun(false));
     run.events.on('victory', () => this.finishRun(true));
@@ -645,6 +674,8 @@ export class App implements MenuApi {
     ch.points = run.action.points;
     ch.equipped = gs.equipped;
     ch.bag = gs.bag;
+    const wp = run.world?.progress();
+    if (wp) ch.world = wp;
     ch.playTime += Math.round(run.time - this.charTime);
     this.charTime = Math.round(run.time);
   }
@@ -675,9 +706,17 @@ export class App implements MenuApi {
     const gold = h('div.gold-chip', h('i.ic-coin'), h('span', fmtNum(p.data.gold)));
     const onGold = () => ((gold.lastChild as HTMLElement).textContent = fmtNum(p.data.gold));
     let body: HTMLElement;
+    const st = kind === 'scroll' ? null : run.world.nearStation();
+    let title = t('st_' + kind);
+    if (st?.name) title = L(st.name);
+    let closeRef: () => void = () => {};
     if (kind === 'forge') body = forgeScreen(p, sfx, onGold);
-    else if (kind === 'shop') body = armoryScreen(p, sfx, run.hero.id, () => {}, onGold);
+    else if (kind === 'shop' || kind === 'alchemy') body = armoryScreen(p, sfx, run.hero.id, () => {}, onGold);
     else if (kind === 'stash') body = inventoryScreen(p, sfx);
+    else if (kind === 'inn') body = this.innPanel(run, st, onGold);
+    else if (kind === 'talk') body = this.talkPanel(run, st);
+    else if (kind === 'dungeon') body = this.dungeonPanel(run, st);
+    else if (run.world.cont) body = this.travelPanel(run, kind === 'scroll', onGold, () => closeRef());
     else body = this.teleportPanel(run);
     const close = () => {
       if (!this.stationEl) return;
@@ -689,13 +728,111 @@ export class App implements MenuApi {
       this.input.setEnabled(true);
       this.sfx('uiBack');
     };
+    closeRef = close;
     this.stationClose = close;
-    this.stationEl = h('div.world-station', h('div.world-station-box', h('div.world-station-head', h('h2', t('st_' + kind)), gold, h('button.btn.small', { onclick: close }, t('st_close'))), h('div.world-station-body', body)));
+    this.stationEl = h('div.world-station', h('div.world-station-box', h('div.world-station-head', h('h2', title), gold, h('button.btn.small', { onclick: close }, t('st_close'))), h('div.world-station-body', body)));
     this.root.appendChild(this.stationEl);
     this.input.setEnabled(false);
     this.sfx('ui');
   }
   private stationClose: (() => void) | null = null;
+
+  /** Continent waystone (or a teleport scroll): travel to any discovered waystone for gold. */
+  private travelPanel(run: Run, scroll: boolean, onGold: () => void, close: () => void): HTMLElement {
+    const w = run.world!;
+    const p = this.profile;
+    const list = h('div.tp-list');
+    const render = () => {
+      clear(list);
+      const rows = w.travelList().sort((a, b) => L(a.w.name).localeCompare(L(b.w.name)));
+      for (const r of rows) {
+        const price = scroll ? 0 : r.cost;
+        const lv = w.levelAt(r.w.x, r.w.z);
+        const btn = h('button.btn.small', {
+          disabled: r.here || p.data.gold < price,
+          onclick: () => {
+            if (p.data.gold < price) return;
+            if (scroll) {
+              if (w.scrolls <= 0) return;
+              w.scrolls--;
+            }
+            p.data.gold -= price;
+            if (!w.travelTo(r.w.id)) {
+              p.data.gold += price;
+              if (scroll) w.scrolls++;
+              this.sfx('denied');
+              return;
+            }
+            this.worldSave(run);
+            this.sfx('portal');
+            close();
+          },
+        }, r.here ? t('tp_here') : price ? `${fmtNum(price)} ◉` : tr('Перенестись', 'Travel'));
+        list.append(h('div.tp-row' + (r.here ? '.here' : ''), h('b', L(r.w.name)), h('span', tr('ур. ', 'lv ') + lv), btn));
+      }
+      const total = w.cont!.waystones.length;
+      list.append(h('p.small', tr(`Открыто камней: ${rows.length} из ${total}. Новые камни открываются, когда подходишь к ним.`, `Waystones found: ${rows.length} of ${total}. New ones open when you walk up to them.`)));
+      if (!scroll) {
+        const buy = h('button.btn.small', {
+          disabled: p.data.gold < 60,
+          onclick: () => {
+            if (p.data.gold < 60) return;
+            p.data.gold -= 60;
+            w.scrolls++;
+            onGold();
+            this.worldSave(run);
+            this.sfx('buy');
+            render();
+          },
+        }, tr('Купить свиток телепорта — 60 ◉', 'Buy a teleport scroll — 60 ◉'));
+        list.append(h('div.kv', h('span', tr(`Свитков: ${w.scrolls} (клавиша T — перенестись откуда угодно)`, `Scrolls: ${w.scrolls} (key T — travel from anywhere)`)), buy));
+      }
+    };
+    render();
+    return list;
+  }
+
+  /** Inn: rest (full health), make this town home, save. */
+  private innPanel(run: Run, st: import('./game/world/WorldGen').Station | null, onGold: () => void): HTMLElement {
+    const w = run.world!;
+    const town = st?.town ? w.cont?.towns.find((x) => x.def.id === st.town) : null;
+    const note = h('p.small', town ? L(town.def.about) : '');
+    const rest = h('button.btn', {
+      onclick: () => {
+        const pl = run.player;
+        pl.hp = pl.stats.maxHp;
+        if (town && town.def.safe) w.home = town.def.id;
+        this.worldSave(run);
+        onGold();
+        this.sfx('levelup');
+        note.textContent = town ? tr(`Ты отдохнул. ${L(town.def.name)} теперь твоя точка возрождения.`, `You rested. ${L(town.def.name)} is now your respawn point.`) : tr('Ты отдохнул.', 'You rested.');
+      },
+    }, tr('Отдохнуть и остановиться здесь', 'Rest and stay here'));
+    return h('div.tp-list', note, rest);
+  }
+
+  /** Masters, elders and priests: a few words about the place. */
+  private talkPanel(run: Run, st: import('./game/world/WorldGen').Station | null): HTMLElement {
+    const w = run.world!;
+    const npc = st?.ref ? w.cont?.npcs[Number(st.ref)] : null;
+    const town = npc ? w.cont?.towns.find((x) => x.def.id === npc.town) : null;
+    const lv = w.levelAt(run.player.x, run.player.z);
+    const lines: string[] = [];
+    if (town) lines.push(L(town.def.about));
+    const near = w.cont!.sites
+      .map((s) => ({ s, d: Math.hypot(s.x - run.player.x, s.z - run.player.z) }))
+      .sort((a, b) => a.d - b.d)[0];
+    if (near) lines.push(tr(`Неподалёку: ${L(near.s.def.name)} (ур. ${near.s.def.lo}–${near.s.def.hi}). ${L(near.s.def.about)}`, `Nearby: ${L(near.s.def.name)} (lv ${near.s.def.lo}–${near.s.def.hi}). ${L(near.s.def.about)}`));
+    lines.push(tr(`Звери здесь около ${lv} уровня. Держись дорог: там светлее и спокойнее.`, `Beasts around here are about level ${lv}. Keep to the roads: they are lit and calmer.`));
+    return h('div.tp-list', ...lines.map((x) => h('p', x)));
+  }
+
+  /** Dungeon mouth: sealed for now. */
+  private dungeonPanel(run: Run, st: import('./game/world/WorldGen').Station | null): HTMLElement {
+    const d = run.world?.cont?.dungeons.find((x) => x.def.id === st?.ref);
+    if (!d) return h('div');
+    return h('div.tp-list', h('p', L(d.def.about)), h('div.kv', h('span', tr('Уровень', 'Level')), h('span', `${d.def.lo}–${d.def.hi}`)), h('p.small', tr('Вход запечатан древней силой. Подземелья откроются в следующем обновлении.', 'The way in is sealed by an ancient power. Dungeons open in a later update.')));
+  }
 
   /** Teleport stone: the other locations of the world (stage 2 builds them). */
   private teleportPanel(run: Run): HTMLElement {

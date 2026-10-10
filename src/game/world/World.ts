@@ -7,6 +7,41 @@ import { BossController } from '../bosses/Boss';
 import type { Enemy } from '../Enemy';
 import type { Run } from '../Run';
 import { levelAtDist, ringOf, sectorOf, type Area, type CampDef, type Lair, type Station, type WorldLayout } from './WorldGen';
+import type { ContinentLayout, NpcDef, TownRt, WaystoneRt } from './continent/places';
+
+/** A villager, merchant or guard of the continent walking around its post. */
+export interface NpcRt {
+  def: NpcDef;
+  x: number;
+  z: number;
+  yaw: number;
+  anim: number;
+  vx: number;
+  vz: number;
+  wx: number;
+  wz: number;
+  t: number;
+}
+
+/** Persistent continent progress of a character. */
+export interface WorldProgress {
+  /** Discovered waystones (ids). */
+  known: string[];
+  /** Settlement the hero wakes up in after death. */
+  home: string;
+  /** Last position (resumes the session there). */
+  x?: number;
+  z?: number;
+  /** Explored map cells (FOG × FOG bits, base64). */
+  fog?: string;
+  /** Dungeon entrances found. */
+  dungeons?: string[];
+  /** Teleport scrolls carried. */
+  scrolls?: number;
+}
+
+/** Fog-of-war resolution: one bit per FOG_CELL² blocks. */
+export const FOG_CELL = 16;
 
 interface Member {
   id: string;
@@ -55,7 +90,46 @@ export class World {
   /** Counters for tools and the debug panel. */
   readonly stats = { spawned: 0, respawned: 0, killed: 0, leashed: 0, snapped: 0, deaths: 0, bossKills: 0 };
 
-  constructor(private run: Run, readonly layout: WorldLayout) {
+  /** Continent only: NPCs, waystones, home town, explored map. */
+  readonly cont: ContinentLayout | null;
+  readonly npcs: NpcRt[] = [];
+  private npcActive: number[] = [];
+  readonly known = new Set<string>();
+  readonly foundDungeons = new Set<string>();
+  home = '';
+  scrolls = 0;
+  readonly fogN: number;
+  readonly fog: Uint8Array;
+  private discT = 0;
+
+  constructor(private run: Run, readonly layout: WorldLayout, prog?: WorldProgress | null) {
+    this.cont = layout.cont ?? null;
+    this.fogN = Math.ceil(layout.size / FOG_CELL);
+    this.fog = new Uint8Array(this.fogN * this.fogN);
+    if (this.cont) {
+      const cont = this.cont;
+      for (const n of cont.npcs) this.npcs.push({ def: n, x: n.x, z: n.z, yaw: n.yaw, anim: 0, vx: 0, vz: 0, wx: n.x, wz: n.z, t: 0 });
+      for (const w of cont.waystones) if (w.open) this.known.add(w.id);
+      const start = cont.towns.find((t) => t.def.id === 'quietford') ?? cont.towns[0];
+      this.home = start.def.id;
+      if (prog) {
+        for (const id of prog.known ?? []) if (cont.waystones.some((w) => w.id === id)) this.known.add(id);
+        for (const id of prog.dungeons ?? []) this.foundDungeons.add(id);
+        if (prog.home && cont.towns.some((t) => t.def.id === prog.home)) this.home = prog.home;
+        this.scrolls = prog.scrolls ?? 0;
+        if (prog.fog) {
+          try {
+            const bin = atob(prog.fog);
+            for (let i = 0; i < bin.length && i * 8 < this.fog.length; i++) {
+              const b = bin.charCodeAt(i);
+              for (let k = 0; k < 8; k++) if (b & (1 << k)) this.fog[i * 8 + k] = 1;
+            }
+          } catch {
+            /* a broken fog string only loses the explored map */
+          }
+        }
+      }
+    }
     this.camps = layout.camps.map((def) => ({ def, members: def.ids.map((id) => ({ id, e: null, uid: 0, deadUntil: 0 })), active: false, hx: def.x, hz: def.z, pt: 0 }));
     this.camps.forEach((c, i) => {
       const k = this.bucketKey(Math.floor(c.def.x / BUCKET), Math.floor(c.def.z / BUCKET));
@@ -78,21 +152,58 @@ export class World {
   }
 
   get town(): { x: number; z: number } {
+    if (this.cont) {
+      const t = this.homeTown;
+      return { x: t.spawn.x, z: t.spawn.z };
+    }
     return { x: this.layout.c + 0.5, z: this.layout.c + 2.5 };
   }
 
+  get homeTown(): TownRt {
+    const c = this.cont!;
+    return c.towns.find((t) => t.def.id === this.home) ?? c.towns[0];
+  }
+
+  /** Continent: the settlement a point is in (with a small margin), safe or not. */
+  townAt(x: number, z: number, m = 4): TownRt | null {
+    if (!this.cont) return null;
+    for (const t of this.cont.towns) if (x >= t.x0 - m && x <= t.x1 + m && z >= t.z0 - m && z <= t.z1 + m) return t;
+    return null;
+  }
+
   inSafe(x: number, z: number): boolean {
+    if (this.cont) {
+      const t = this.townAt(x, z);
+      return !!t && t.def.safe;
+    }
     const c = this.layout.c + 0.5;
     return (x - c) ** 2 + (z - c) ** 2 < WORLD.safeR * WORLD.safeR;
   }
 
   distToTown(x: number, z: number): number {
+    if (this.cont) {
+      let best = Infinity;
+      for (const t of this.cont.towns) if (t.def.safe) best = Math.min(best, Math.hypot(x - (t.x0 + t.x1) / 2, z - (t.z0 + t.z1) / 2));
+      return best;
+    }
     return Math.hypot(x - this.layout.c - 0.5, z - this.layout.c - 0.5);
+  }
+
+  private gridAt(g: Uint8Array, x: number, z: number): number {
+    const c = this.cont!;
+    const n = Math.ceil(c.size / c.grid);
+    const gx = Math.max(0, Math.min(n - 1, Math.floor(x / c.grid)));
+    const gz = Math.max(0, Math.min(n - 1, Math.floor(z / c.grid)));
+    return g[gz * n + gx];
   }
 
   /** Hunting area under a point (null in the town). */
   areaAt(x: number, z: number): Area | null {
     if (this.inSafe(x, z)) return null;
+    if (this.cont) {
+      const a = this.gridAt(this.cont.areaGrid, x, z);
+      return a === 255 ? null : (this.layout.areas[a] ?? null);
+    }
     const c = this.layout.c + 0.5;
     const d = Math.hypot(x - c, z - c);
     return this.layout.areas[ringOf(d) * WORLD.sectors + sectorOf(x - c, z - c)] ?? null;
@@ -100,6 +211,7 @@ export class World {
 
   /** Monster level of the ground under a point. */
   levelAt(x: number, z: number): number {
+    if (this.cont) return Math.max(1, this.gridAt(this.cont.levelGrid, x, z));
     const [lo, hi] = PROG.mapRange[this.run.map.id] ?? [1, 10];
     return levelAtDist(this.distToTown(x, z), lo, hi);
   }
@@ -108,14 +220,164 @@ export class World {
   place(): { loc: Loc; area: Area | null; town: boolean; level: number } {
     const p = this.run.player;
     const area = this.areaAt(p.x, p.z);
-    return { loc: this.run.map.name, area, town: !area, level: this.levelAt(p.x, p.z) };
+    const town = this.cont ? this.townAt(p.x, p.z) : null;
+    return { loc: town ? town.def.name : this.run.map.name, area, town: !area, level: this.levelAt(p.x, p.z) };
   }
 
-  /** The town station the hero stands at, if any. */
+  /** The station (town service, NPC, waystone, dungeon) the hero stands at, if any. */
   nearStation(): Station | null {
     const p = this.run.player;
-    for (const s of this.layout.stations) if (Math.hypot(p.x - (s.x + 0.5), p.z - (s.z + 1)) < 3.2) return s;
+    let best: Station | null = null;
+    let bd = Infinity;
+    for (const s of this.layout.stations) {
+      const d = Math.hypot(p.x - (s.x + 0.5), p.z - (s.z + 1));
+      if (d < (s.r ?? 3.2) && d < bd) {
+        bd = d;
+        best = s;
+      }
+    }
+    return best;
+  }
+
+  /** Continent: waystones the hero can travel to, with their gold cost from here. */
+  travelList(): { w: WaystoneRt; cost: number; here: boolean }[] {
+    const c = this.cont;
+    if (!c) return [];
+    const p = this.run.player;
+    return c.waystones
+      .filter((w) => this.known.has(w.id))
+      .map((w) => {
+        const d = Math.hypot(w.x - p.x, w.z - p.z);
+        return { w, here: d < 12, cost: Math.round(10 + d * 0.08 + this.levelAt(w.x, w.z) * 6) };
+      });
+  }
+
+  /** Teleports the hero next to a known waystone (on free ground, never into a wall). */
+  travelTo(id: string): boolean {
+    const w = this.cont?.waystones.find((x) => x.id === id);
+    if (!w || !this.known.has(id)) return false;
+    const spot = this.freeSpot(w.x, w.z + 3);
+    if (!spot) return false;
+    this.moveHero(spot.x, spot.z);
+    return true;
+  }
+
+  /** Nearest walkable spot to a point (spiral search). */
+  freeSpot(x: number, z: number): { x: number; z: number } | null {
+    const t = this.run.terrain;
+    const ok = (cx: number, cz: number) => {
+      for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) if (t.blocksWalker(cx + dx, cz + dz)) return false;
+      return true;
+    };
+    const x0 = Math.floor(x);
+    const z0 = Math.floor(z);
+    for (let r = 0; r < 24; r++)
+      for (let dz = -r; dz <= r; dz++)
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dz)) !== r) continue;
+          if (ok(x0 + dx, z0 + dz)) return { x: x0 + dx + 0.5, z: z0 + dz + 0.5 };
+        }
     return null;
+  }
+
+  /** Persistent progress for the character save. */
+  progress(): WorldProgress | null {
+    if (!this.cont) return null;
+    const p = this.run.player;
+    let bin = '';
+    for (let i = 0; i < this.fog.length; i += 8) {
+      let b = 0;
+      for (let k = 0; k < 8; k++) if (this.fog[i + k]) b |= 1 << k;
+      bin += String.fromCharCode(b);
+    }
+    const safeSpot = p.dead ? null : this.freeSpot(p.x, p.z);
+    return { known: [...this.known], home: this.home, x: safeSpot?.x, z: safeSpot?.z, fog: btoa(bin), dungeons: [...this.foundDungeons], scrolls: this.scrolls };
+  }
+
+  /** Continent: reveals the map, finds waystones and dungeon mouths, binds the hero to towns. */
+  private discover() {
+    const c = this.cont!;
+    const p = this.run.player;
+    const R = 3;
+    const fx = Math.floor(p.x / FOG_CELL);
+    const fz = Math.floor(p.z / FOG_CELL);
+    for (let dz = -R; dz <= R; dz++)
+      for (let dx = -R; dx <= R; dx++) {
+        if (dx * dx + dz * dz > R * R + 1) continue;
+        const x = fx + dx;
+        const z = fz + dz;
+        if (x >= 0 && z >= 0 && x < this.fogN && z < this.fogN) this.fog[z * this.fogN + x] = 1;
+      }
+    for (const w of c.waystones) {
+      if (this.known.has(w.id) || Math.hypot(w.x - p.x, w.z - p.z) > 9) continue;
+      this.known.add(w.id);
+      this.run.events.emit('waystone', w.id);
+    }
+    for (const d of c.dungeons) {
+      if (this.foundDungeons.has(d.def.id) || Math.hypot(d.x - p.x, d.z - p.z) > 14) continue;
+      this.foundDungeons.add(d.def.id);
+      this.run.events.emit('dungeonFound', d.def.id);
+    }
+    // entering a safe settlement with a waystone makes it home
+    const t = this.townAt(p.x, p.z, 0);
+    if (t && t.def.safe && t.def.waystone && this.home !== t.def.id && this.known.has(c.waystones.find((w) => w.town === t.def.id)?.id ?? '')) {
+      this.home = t.def.id;
+      this.run.events.emit('homeSet', t.def.id);
+    }
+  }
+
+  /** NPCs near the hero amble around their posts. */
+  private npcStep(dt: number) {
+    const p = this.run.player;
+    const t = this.run.terrain;
+    for (const i of this.npcActive) {
+      const n = this.npcs[i];
+      const d = n.def;
+      n.t -= dt;
+      if (d.wander > 0 && n.t <= 0) {
+        n.t = 3 + Math.random() * 6;
+        const a = Math.random() * Math.PI * 2;
+        const r = Math.random() * d.wander;
+        const wx = d.x + Math.cos(a) * r;
+        const wz = d.z + Math.sin(a) * r;
+        if (t.walkableAt(wx, wz)) {
+          n.wx = wx;
+          n.wz = wz;
+        }
+      }
+      const dx = n.wx - n.x;
+      const dz = n.wz - n.z;
+      const dist = Math.hypot(dx, dz);
+      const talk = Math.hypot(p.x - n.x, p.z - n.z) < 3.5;
+      if (dist > 0.3 && !talk) {
+        n.vx = (dx / dist) * 1.4;
+        n.vz = (dz / dist) * 1.4;
+        const nx = n.x + n.vx * dt;
+        const nz = n.z + n.vz * dt;
+        if (t.walkableAt(nx, nz)) {
+          n.x = nx;
+          n.z = nz;
+        } else n.wx = n.x, n.wz = n.z;
+        n.yaw = Math.atan2(n.vx, n.vz);
+        n.anim += dt;
+      } else {
+        n.vx = n.vz = 0;
+        if (talk) n.yaw = Math.atan2(p.x - n.x, p.z - n.z);
+      }
+    }
+  }
+
+  private npcActivate() {
+    const p = this.run.player;
+    this.npcActive.length = 0;
+    this.npcs.forEach((n, i) => {
+      if ((n.x - p.x) ** 2 + (n.z - p.z) ** 2 < 70 * 70) this.npcActive.push(i);
+    });
+  }
+
+  /** NPCs worth drawing (near the hero). */
+  get visibleNpcs(): NpcRt[] {
+    return this.npcActive.map((i) => this.npcs[i]);
   }
 
   // ------------------------------------------------------------------ update
@@ -132,6 +394,15 @@ export class World {
       this.activate();
     }
     for (const i of this.active) this.patrol(this.camps[i], dt);
+    if (this.cont) {
+      this.discT -= dt;
+      if (this.discT <= 0) {
+        this.discT = 0.5;
+        this.npcActivate();
+        if (!p.dead) this.discover();
+      }
+      this.npcStep(dt);
+    }
     if (!p.dead) {
       const safe = this.inSafe(p.x, p.z);
       if (safe) p.heal(p.stats.maxHp * WORLD.townRegen * dt, true);
@@ -366,6 +637,17 @@ export class World {
       const o = m.e;
       if (!o || o === e || !o.alive || o.engaged || o.returning) continue;
       if (Math.hypot(o.x - e.x, o.z - e.z) < WORLD.assistR) o.engaged = true;
+    }
+    // faction camps raise the alarm: every post of the same camp within earshot joins
+    if (c.def.site === undefined) return;
+    for (const i of this.active) {
+      const oc = this.camps[i];
+      if (oc === c || oc.def.site !== c.def.site) continue;
+      if (Math.hypot(oc.hx - e.x, oc.hz - e.z) > 34) continue;
+      for (const m of oc.members) {
+        const o = m.e;
+        if (o && o.alive && !o.engaged && !o.returning) o.engaged = true;
+      }
     }
   }
 

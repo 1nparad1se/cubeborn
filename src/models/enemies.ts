@@ -1,5 +1,5 @@
 import type { VoxelModel } from '../data/types';
-import { biped, Mob, PX, quadMob } from './builders';
+import { biped, Mob, PX, quadMob, shadeHex } from './builders';
 import type { BoxPaint, FaceSpec, SkinnedModel } from '../render/creatureSkins';
 
 /**
@@ -478,6 +478,380 @@ function cinderHound(): VoxelModel {
   return m.build(PX, { gait: { leg: 0.8, roll: 0.03, bob: 0.06 } });
 }
 
+// ================================================================ Open world factions
+// Shared weapon props, held in the right hand (-x) or left hand (+x) of a default biped
+// (legs 12, torso 12, hands at y 12..16, arms at x = ±armX).
+
+const BONE = 0xe8e0c8;
+const STEEL = 0xb8bcc4;
+
+function handAxe(m: Mob, x: number, tag: string, head = STEEL, len = 13) {
+  m.box(x, 10, 3, 1.4, len, 1.4, 0x6a4a2a, tag, wood());
+  m.box(x, 10 + len - 5, 4.6, 1, 5, 3.6, head, tag, { mat: 'metal' });
+}
+
+function handBlade(m: Mob, x: number, tag: string, blade = STEEL, len = 10, curved = false) {
+  m.box(x, 12, 3, 1, 3, 1, 0x4a3018, tag, { mat: 'leather' });
+  m.box(x, 14.5, 3, 1, 1, 3, 0xc8a050, tag, { mat: 'gold' });
+  m.box(x, 15, 3, 1, len, 1.6, blade, tag, { mat: 'metal' });
+  if (curved) m.box(x, 15 + len - 3, 4.2, 1, 3, 1.4, blade, tag, { mat: 'metal' });
+}
+
+function handBow(m: Mob, x: number, tag: string, c = 0x6a4a2a, curved = false) {
+  m.box(x, 8, 4, 1, 16, 1, c, tag, wood());
+  m.box(x, 6, curved ? 5.5 : 4.8, 1, 3, 1, c, tag, wood());
+  m.box(x, 23, curved ? 5.5 : 4.8, 1, 3, 1, c, tag, wood());
+  m.box(x, 9, 3, 0.4, 14, 0.4, 0xe8e0d0, tag, { mat: 'plain' });
+}
+
+function quiver(m: Mob, top: number, c = 0x5a3a24, fletch = 0xd8d0c0) {
+  m.box(1.5, top - 10, -3, 3, 9, 2, c, 'body', { mat: 'leather' });
+  m.box(1.5, top - 1, -3, 2, 2, 1, fletch, 'body', { mat: 'plain' });
+}
+
+function roundShield(m: Mob, x: number, face: number, rim: number, boss = STEEL) {
+  m.box(x, 11, 1, 1, 9, 9, face, 'armL', { mat: 'wood', front: 'planks', side: 'planks', accent: shadeOf(face) });
+  m.box(x + Math.sign(x) * 0.5, 10.5, 1, 1, 10, 1, rim, 'armL', { mat: 'metal' });
+  m.box(x + Math.sign(x) * 0.8, 14.5, 1, 1, 2, 2, boss, 'armL', { mat: 'metal' });
+}
+
+// ---------------------------------------------------------------- orcs
+
+const ORC_SKIN = 0x6f8a52;
+
+function orcHead(m: Mob, r: ReturnType<typeof biped>, hair = 0x1a1a14) {
+  const fz = r.headZ + r.head[2] / 2;
+  m.pair(2.5, r.headY + 0.5, fz + 0.5, 1, 3, 1, BONE, 'head', { mat: 'bone' });
+  m.box(0, r.headY + 3, fz + 0.5, 2, 2, 1, shadeHex(ORC_SKIN, 0.8), 'head', { mat: 'skin' });
+  m.pair(r.head[0] / 2 + 0.5, r.headY + 4, r.headZ, 1, 2, 3, ORC_SKIN, 'head', { mat: 'skin' });
+  m.box(0, r.headTop, -1, 2, 3, 4, hair, 'head', { mat: 'fur' });
+}
+
+function orcBase(o: { shirt: number; arm?: number; brute?: boolean; robe?: number }): { m: Mob; r: ReturnType<typeof biped> } {
+  const m = new Mob();
+  const big = o.brute;
+  const r = biped(m, {
+    head: big ? [9, 8, 8] : [8, 8, 8], body: big ? [12, 12, 6] : [9, 12, 5], arm: big ? [5, 13, 5] : [4, 12, 4], leg: big ? [5, 11, 5] : [4, 11, 4],
+    skin: ORC_SKIN, shirt: o.shirt, pants: 0x4a3420, shoes: 0x2a1e14, sleeve: o.arm ?? ORC_SKIN, robe: o.robe,
+    face: { style: 'illager', eye: 0xff3a1a, alt: 0x24301a, glow: true }, hair: { color: 0x2a3a1e, rows: 1 },
+    bodyPaint: { mat: 'leather', bands: [[2, 0x9a2a1a, 'cloth'], [1, 0x3a2414, 'leather']], front: 'stripe', accent: 0x9a2a1a },
+    armPaint: { mat: 'skin', bands: [[4, ORC_SKIN, 'skin'], [1, 0x5a3a20, 'leather']] },
+    hunch: big ? 1 : 0, neck: big ? 2 : 0,
+  });
+  orcHead(m, r);
+  // spiked red shoulder pad + bone trophies on the belt
+  m.box(r.armX, r.bodyTop - 2, 0, r.arm[0] + 2, 3, r.arm[2] + 2, 0x9a2a1a, 'armL', { mat: 'leather' });
+  m.box(r.armX + 1, r.bodyTop + 1, 0, 1, 2, 1, BONE, 'armL', { mat: 'bone' });
+  m.box(-2.5, r.legH - 1, r.bodyD / 2 + 0.5, 2, 3, 1, BONE, 'body', { mat: 'bone' });
+  m.box(2, r.legH - 1.5, r.bodyD / 2 + 0.5, 1, 3, 1, BONE, 'body', { mat: 'bone' });
+  return { m, r };
+}
+
+function orcGrunt(): VoxelModel {
+  const { m, r } = orcBase({ shirt: 0x6a4428 });
+  handAxe(m, -r.armX, 'armR', 0x9aa0a8, 12);
+  m.box(-r.armX, 16, 5.8, 1, 4, 1.4, 0x9aa0a8, 'armR', { mat: 'metal' });
+  return m.build(PX, { gait: { leg: 0.6, arm: 0.5, roll: 0.09 } });
+}
+
+function orcArcher(): VoxelModel {
+  const { m, r } = orcBase({ shirt: 0x5a4a30 });
+  handBow(m, r.armX, 'armL', 0x5a3a20);
+  m.box(r.armX, 15, 4.6, 1, 2, 1, BONE, 'armL', { mat: 'bone' });
+  quiver(m, r.bodyTop + 2, 0x6a3a20, 0x9a2a1a);
+  m.box(0, r.headY + 6, 0, 9, 1, 9, 0x9a2a1a, 'head', { mat: 'cloth' });
+  return m.build(PX, { gait: { leg: 0.6, arm: 0.35, roll: 0.08 } });
+}
+
+function orcBrute(): VoxelModel {
+  const { m, r } = orcBase({ shirt: 0x7a2a1a, brute: true });
+  // iron jaw-plate and a spiked club
+  m.box(0, r.bodyTop - 4, r.bodyD / 2 + 0.5, 8, 4, 1, 0x6a6a72, 'body', { mat: 'metal' });
+  m.box(-r.armX, 9, 3.5, 2, 9, 2, 0x5a3a20, 'armR', wood());
+  m.box(-r.armX, 18, 4, 4, 8, 4, 0x7a5430, 'armR', { mat: 'wood', bands: [[1, 0x4a4a52, 'metal']] });
+  m.pair(-r.armX + 2.5, 22, 4, 1, 1, 1, BONE, 'armR', { mat: 'bone' });
+  m.box(-r.armX, 26, 4, 1, 1.5, 1, BONE, 'armR', { mat: 'bone' });
+  m.box(-r.armX, 22, 6.5, 1, 1, 1, BONE, 'armR', { mat: 'bone' });
+  m.box(0, r.headTop, 0, 10, 2, 9, 0x5a5a62, 'head', { mat: 'metal' });
+  m.pair(4, r.headTop + 1, 0, 1, 4, 1, BONE, 'head', { mat: 'bone' });
+  return m.build(PX, { gait: { leg: 0.45, arm: 0.35, roll: 0.08, bob: 0.04 } });
+}
+
+function orcShaman(): VoxelModel {
+  const { m, r } = orcBase({ shirt: 0x4a2a1e, robe: 3 });
+  m.box(0, r.bodyTop - 2, 0, 11, 3, 7, 0x6a5040, 'body', { mat: 'fur' });
+  // bone mask headdress with feathers
+  m.box(0, r.headTop, 0, 9, 2, 9, BONE, 'head', { mat: 'bone' });
+  m.box(0, r.headTop + 2, -1, 2, 4, 1, 0x9a2a1a, 'head', { mat: 'cloth' });
+  m.pair(2.5, r.headTop + 2, -1, 1, 3, 1, 0x1a1a14, 'head', { mat: 'cloth' });
+  // staff topped by a skull with burning eyes
+  m.box(-r.armX, -1, 3, 1.4, 22, 1.4, 0x4a3420, 'armR', wood());
+  m.box(-r.armX, 21, 3, 4, 4, 4, BONE, 'armR', { mat: 'bone', face: { style: 'skull', eye: 0xff2a1a } });
+  m.box(-r.armX, 25, 3, 2, 2, 2, 0xff3a1a, 'armR', { mat: 'glow' });
+  return m.build(PX, { gait: { leg: 0.35, arm: 0.3, roll: 0.05 } });
+}
+
+function boar(o: { fur: number; dark: number; tusk: number; armor?: boolean; scale: number }): VoxelModel {
+  const m = new Mob();
+  const r = quadMob(m, {
+    body: [10, 9, 14], legH: 4, legW: 3, head: [8, 7, 6], snout: [5, 4, 3], snoutColor: 0xc89a8a, fur: o.fur, legColor: o.dark,
+    face: { style: 'beast', eye: o.armor ? 0xff3a1a : 0x1a1410 }, ears: [2, 3, 1], earColor: o.dark, tail: [1, 3, 1],
+    mane: [6, 3, 10], maneColor: o.dark, headDy: -1,
+  });
+  const fz = r.headZ + 3;
+  m.pair(3, r.headY, fz + 2, 1, 4, 1, o.tusk, 'head', { mat: 'bone' });
+  m.box(0, r.bodyTop + 1, 2, 2, 2, 9, o.dark, 'body', { mat: 'fur' });
+  if (o.armor) {
+    m.box(0, r.bodyTop - 3, -1, 11, 4, 8, 0x9a2a1a, 'body', { mat: 'leather', front: 'stripe', accent: 0x3a2414 });
+    m.box(0, r.headY + 4, r.headZ + 1, 9, 3, 5, 0x5a5a62, 'head', { mat: 'metal' });
+    m.pair(2, r.headY + 7, r.headZ + 1, 1, 2, 1, BONE, 'head', { mat: 'bone' });
+    m.box(0, r.bodyTop + 1, -2, 2, 3, 1, BONE, 'body', { mat: 'bone' });
+  }
+  return m.build(o.scale, { gait: { leg: 0.7, roll: 0.03, bob: 0.05 } });
+}
+
+// ---------------------------------------------------------------- bandits
+
+const HUMAN = 0xd8a47c;
+
+function banditBase(o: { hood: number; shirt: number; bandana: number; big?: boolean; slim?: boolean; hoodless?: boolean }) {
+  const m = new Mob();
+  const r = biped(m, {
+    head: [8, 8, 8], body: o.big ? [11, 12, 6] : o.slim ? [7, 11, 4] : [8, 12, 4], arm: o.big ? [5, 12, 5] : o.slim ? [3, 12, 3] : [4, 12, 4],
+    leg: o.slim ? [3, 12, 3] : [4, 12, 4],
+    skin: HUMAN, shirt: o.shirt, pants: 0x4a4038, shoes: 0x2a1e16, sleeve: 0x6a4a30,
+    face: { style: 'illager', eye: 0x2a1a10, alt: 0x3a2618 },
+    hair: o.hoodless ? { color: 0x3a2414, rows: 2 } : { color: o.hood, rows: 3, mat: 'cloth', back: true },
+    bodyPaint: { mat: 'leather', front: 'vest', accent: 0x3a2818, bands: [[1, 0x2a1a10, 'leather']], side: 'rag' },
+    armPaint: { mat: 'leather', side: 'rag' },
+    legPaint: { mat: 'cloth', side: 'rag' },
+  });
+  const fz = r.headZ + 4;
+  m.box(0, r.headY, fz + 0.3, 8.4, 3.5, 0.8, o.bandana, 'head', { mat: 'cloth' });
+  if (o.hoodless) m.box(0, r.headTop - 1, 0, 8.6, 2, 8.6, o.bandana, 'head', { mat: 'cloth' });
+  else {
+    m.box(0, r.headTop, -1, 6, 2, 6, o.hood, 'head', { mat: 'cloth' });
+    m.box(0, r.headTop - 4, -4.5, 8, 5, 1, o.hood, 'head', { mat: 'cloth' });
+  }
+  // patched belt with a pouch
+  m.box(0, r.legH - 0.5, 0, r.bodyW + 0.4, 1.5, r.bodyD + 0.4, 0x2a1a10, 'body', { mat: 'leather' });
+  m.box(2.5, r.legH - 2, r.bodyD / 2 + 0.5, 2, 2, 1, 0x7a5a30, 'body', { mat: 'leather' });
+  return { m, r };
+}
+
+function banditThug(): VoxelModel {
+  const { m, r } = banditBase({ hood: 0x5a4a32, shirt: 0x7a5a38, bandana: 0xa83a2a });
+  m.box(-r.armX, 8, 3, 2, 10, 2, 0x6a4a2a, 'armR', wood());
+  m.box(-r.armX, 17, 3, 3, 4, 3, 0x7a5430, 'armR', { mat: 'wood', bands: [[1, 0x4a4a52, 'metal']] });
+  m.box(r.armX, 12, 3, 1, 3, 1, 0x4a3018, 'armL', { mat: 'leather' });
+  m.box(r.armX, 15, 3, 1, 4, 1, STEEL, 'armL', { mat: 'metal' });
+  return m.build(PX, { gait: { leg: 0.6, arm: 0.5, roll: 0.07 } });
+}
+
+function banditArcher(): VoxelModel {
+  const { m, r } = banditBase({ hood: 0x3a5a32, shirt: 0x6a5a3a, bandana: 0x8a2a24 });
+  handBow(m, r.armX, 'armL', 0x6a4a2a);
+  quiver(m, r.bodyTop + 2);
+  return m.build(PX, { gait: { leg: 0.6, arm: 0.35, roll: 0.07 } });
+}
+
+function banditBrute(): VoxelModel {
+  const { m, r } = banditBase({ hood: 0x4a3a2a, shirt: 0x5a3a24, bandana: 0xa83a2a, big: true, hoodless: true });
+  m.box(0, r.bodyTop - 3, 0, r.bodyW + 1, 3, r.bodyD + 1, 0x8a6a4a, 'body', { mat: 'fur' });
+  m.box(-r.armX, 6, 3.5, 1.6, 16, 1.6, 0x5a3a20, 'armR', wood());
+  m.box(-r.armX, 20, 3.5, 4, 5, 6, 0x6a6a72, 'armR', { mat: 'metal', bands: [[1, 0x4a4a52, 'metal']] });
+  return m.build(PX, { gait: { leg: 0.45, arm: 0.35, roll: 0.08, bob: 0.04 } });
+}
+
+function banditCutthroat(): VoxelModel {
+  const { m, r } = banditBase({ hood: 0x2a2a2e, shirt: 0x3a3438, bandana: 0x6a1a1a, slim: true });
+  for (const [x, tag] of [[-r.armX, 'armR'], [r.armX, 'armL']] as const) {
+    m.box(x, 12, 3, 1, 2, 1, 0x3a2414, tag, { mat: 'leather' });
+    m.box(x, 13.5, 3, 1, 1, 2, 0x8a8a92, tag, { mat: 'metal' });
+    m.box(x, 14, 3, 1, 6, 1.4, 0xd8dce4, tag, { mat: 'metal' });
+  }
+  m.box(0, r.legH + 3, 0, r.bodyW + 0.6, 1, r.bodyD + 0.6, 0x6a1a1a, 'body', { mat: 'cloth' });
+  return m.build(PX * 0.98, { gait: { leg: 0.8, arm: 0.6, roll: 0.1, bob: 0.06 } });
+}
+
+// ---------------------------------------------------------------- northern clans
+
+const NORD_SKIN = 0xe8bc98;
+const PAINT = 0x2a5ad8;
+
+function clanBase(o: { fur: number; shirt: number; beard: number; horns?: boolean; big?: boolean; robe?: number; hood?: number }) {
+  const m = new Mob();
+  const r = biped(m, {
+    body: o.big ? [10, 12, 5] : [8, 12, 4], arm: o.big ? [5, 12, 5] : [4, 12, 4],
+    skin: NORD_SKIN, shirt: o.shirt, pants: 0x4a4a52, shoes: 0x3a2a1a, robe: o.robe, robePaint: { accent: PAINT },
+    face: { style: 'illager', eye: 0x1a3a8a, alt: 0xb87a3a },
+    hair: o.hood !== undefined ? { color: o.hood, rows: 3, mat: 'fur', back: true } : { color: 0x8a8e96, rows: 3, mat: 'metal', back: true },
+    bodyPaint: { mat: 'cloth', front: 'trim', accent: PAINT, bands: [[1, 0x3a2a1a, 'leather']] },
+    legPaint: { mat: 'cloth', bands: [[2, 0x3a2a1a, 'leather'], [3, 0x8a7a68, 'fur']] },
+  });
+  const fz = r.headZ + 4;
+  // blue war paint across the eyes, braided beard
+  m.box(0, r.headY + 4, fz + 0.05, 8.2, 1, 0.4, PAINT, 'head', { mat: 'plain' });
+  m.box(0, r.headY - 2, fz + 0.4, 6, 4, 1, o.beard, 'head', { mat: 'fur' });
+  m.box(0, r.headY - 4, fz + 0.4, 2, 2, 1, o.beard, 'head', { mat: 'fur' });
+  if (o.hood === undefined) {
+    m.box(0, r.headTop, 0, 9, 1, 9, 0x6a6e76, 'head', { mat: 'metal' });
+    m.box(0, r.headY + 2, fz + 0.4, 1, 4, 1, 0x6a6e76, 'head', { mat: 'metal' });
+    if (o.horns) {
+      m.pair(5, r.headTop - 1, 0, 2, 2, 2, BONE, 'head', { mat: 'bone' });
+      m.pair(6, r.headTop + 1, 0, 1, 3, 1, BONE, 'head', { mat: 'bone' });
+    }
+  }
+  // fur mantle over the shoulders and a cloak down the back
+  m.box(0, r.bodyTop - 3, -0.5, r.bodyW + 6, 4, r.bodyD + 3, o.fur, 'body', { mat: 'fur' });
+  m.box(0, 4, -r.bodyD / 2 - 0.8, r.bodyW + 2, r.bodyTop - 6, 1.2, shadeHex(o.fur, 0.85), 'body', { mat: 'fur' });
+  return { m, r };
+}
+
+function clanRaider(): VoxelModel {
+  const { m, r } = clanBase({ fur: 0x9a8a72, shirt: 0x4a5a7a, beard: 0xc87a3a });
+  handAxe(m, -r.armX, 'armR', STEEL, 12);
+  roundShield(m, r.armX + 2.5, 0x2a4a9a, 0x6a6e76);
+  m.box(r.armX + 3, 12, 1, 1, 2, 9, 0xe8e0d0, 'armL', { mat: 'plain' });
+  return m.build(PX, { gait: { leg: 0.55, arm: 0.4, roll: 0.07 } });
+}
+
+function clanHunter(): VoxelModel {
+  const { m, r } = clanBase({ fur: 0xb8b0a0, shirt: 0x5a6a5a, beard: 0xd8b070, hood: 0xd8d4c8 });
+  m.pair(2.5, r.headTop, -1, 2, 2, 2, 0xd8d4c8, 'head', { mat: 'fur' });
+  // javelins: one in hand, a bundle on the back
+  m.box(-r.armX, 6, 3, 1, 20, 1, 0x7a5a3a, 'armR', wood());
+  m.box(-r.armX, 26, 3, 1, 3, 1.4, STEEL, 'armR', { mat: 'metal' });
+  m.box(2, r.legH + 2, -4, 3, 16, 2, 0x7a5a3a, 'body', wood());
+  m.box(2, r.legH + 18, -4, 3, 2, 2, STEEL, 'body', { mat: 'metal' });
+  return m.build(PX, { gait: { leg: 0.6, arm: 0.4, roll: 0.07 } });
+}
+
+function clanBerserker(): VoxelModel {
+  const { m, r } = clanBase({ fur: 0x5a4a3a, shirt: 0x8a5a44, beard: 0xd84a1a, horns: true, big: true });
+  // bare painted chest, huge two-handed axe
+  m.box(0, r.legH + 2, r.bodyD / 2 + 0.2, 6, 6, 0.4, PAINT, 'body', { mat: 'plain' });
+  m.box(-r.armX, 4, 3.5, 1.6, 24, 1.6, 0x5a3a20, 'armR', wood());
+  m.box(-r.armX, 21, 6, 1, 7, 4, STEEL, 'armR', { mat: 'metal' });
+  m.box(-r.armX, 21, 1, 1, 7, 4, STEEL, 'armR', { mat: 'metal' });
+  return m.build(PX, { gait: { leg: 0.7, arm: 0.5, roll: 0.1, bob: 0.05 } });
+}
+
+function clanSeer(): VoxelModel {
+  const { m, r } = clanBase({ fur: 0xe8eef6, shirt: 0x3a4a6a, beard: 0xe8e8e8, robe: 2, hood: 0x2a3a5a });
+  m.pair(3, r.headTop, 0, 2, 3, 2, 0xe8eef6, 'head', { mat: 'fur' }); // wolf-pelt ears
+  m.box(-r.armX, -1, 3, 1.4, 22, 1.4, 0xd8d0c0, 'armR', { mat: 'bone' });
+  m.box(-r.armX, 21, 3, 3, 4, 3, 0x6ac8ff, 'armR', { mat: 'crystal', glow: 0.8 });
+  m.box(0, r.bodyTop - 7, r.bodyD / 2 + 0.6, 2, 2, 1, 0x6ac8ff, 'body', { mat: 'glow' });
+  return m.build(PX, { gait: { leg: 0.35, arm: 0.3, roll: 0.05 } });
+}
+
+// ---------------------------------------------------------------- desert
+
+const SAND = 0xd8c08a;
+
+function raiderBase(o: { wrap: number; vest: number; sash: number }) {
+  const m = new Mob();
+  const r = biped(m, {
+    skin: 0xa8784e, headColor: o.wrap, shirt: o.vest, pants: 0xc8b07a, shoes: 0x6a4a2a, sleeve: o.wrap,
+    face: { style: 'illager', eye: 0x1a120a, alt: 0x6a4a2a }, headPaint: { mat: 'cloth' },
+    bodyPaint: { mat: 'cloth', front: 'vest', accent: shadeHex(o.vest, 0.7), bands: [[2, o.sash, 'cloth']] },
+    armPaint: { mat: 'cloth', bands: [[4, 0xa8784e, 'skin']] },
+  });
+  const fz = r.headZ + 4;
+  // turban and face veil
+  m.box(0, r.headTop - 1, 0, 9, 3, 9, o.wrap, 'head', { mat: 'cloth', bands: [[1, o.sash, 'cloth']] });
+  m.box(0, r.headTop + 2, -0.5, 6, 2, 6, o.wrap, 'head', { mat: 'cloth' });
+  m.box(0, r.headY, fz + 0.3, 8.4, 3.5, 0.8, o.sash, 'head', { mat: 'cloth' });
+  m.box(0, r.legH - 1, 0, 9, 3, 5, o.sash, 'body', { mat: 'cloth', side: 'rag' });
+  return { m, r };
+}
+
+function raiderBlade(): VoxelModel {
+  const { m, r } = raiderBase({ wrap: SAND, vest: 0x8a5a34, sash: 0x2a6a8a });
+  handBlade(m, -r.armX, 'armR', 0xd8dce4, 10, true);
+  return m.build(PX, { gait: { leg: 0.65, arm: 0.5, roll: 0.07 } });
+}
+
+function raiderArcher(): VoxelModel {
+  const { m, r } = raiderBase({ wrap: 0xc8a870, vest: 0x6a4a2a, sash: 0xb8402a });
+  handBow(m, r.armX, 'armL', 0x3a2a1a, true);
+  quiver(m, r.bodyTop + 2, 0x8a5a30, 0xb8402a);
+  return m.build(PX, { gait: { leg: 0.6, arm: 0.35, roll: 0.07 } });
+}
+
+function sandScorpion(): VoxelModel {
+  const m = new Mob();
+  const sh = 0xc89a4a;
+  const dk = 0x8a6230;
+  m.box(0, 3, -1, 10, 5, 12, sh, 'body', { mat: 'chitin', top: 'shell', accent: dk });
+  m.box(0, 3, 6, 7, 4, 4, dk, 'head', { mat: 'chitin', face: { style: 'spider', eye: 0x1a1a1a } });
+  for (let i = 0; i < 3; i++) {
+    const z = -4 + i * 3.5;
+    const tag = i % 2 ? 'legL' : 'legR';
+    m.pair(7, 4, z, 5, 1.5, 1.5, dk, tag, { mat: 'chitin' });
+    m.pair(9, 0, z, 1.5, 5, 1.5, dk, tag, { mat: 'chitin' });
+  }
+  // claws
+  m.pair(5, 3, 10, 2, 2, 5, sh, 'armL', { mat: 'chitin' });
+  m.pair(6, 2.5, 14, 4, 3, 4, sh, 'armL', { mat: 'chitin', front: 'claws', accent: dk });
+  m.pair(7.5, 3, 17, 1, 2, 3, dk, 'armL', { mat: 'chitin' });
+  // segmented tail arching over the back to a stinger
+  m.box(0, 6, -8, 4, 3, 4, sh, 'tail', { mat: 'chitin' });
+  m.box(0, 8, -10, 3.5, 4, 3, sh, 'tail', { mat: 'chitin' });
+  m.box(0, 12, -10, 3, 4, 3, sh, 'tail', { mat: 'chitin' });
+  m.box(0, 16, -8, 3, 3, 3, sh, 'tail', { mat: 'chitin' });
+  m.box(0, 16, -5.5, 2, 2, 3, 0x4a2a1a, 'tail', { mat: 'chitin' });
+  m.box(0, 15, -3.5, 1, 2, 1, 0xff9a2a, 'tail', { mat: 'glow' });
+  return m.build(PX, { gait: { leg: 0.6, arm: 0.2, tail: 0.25, roll: 0.02, bob: 0.03 } });
+}
+
+function sunMummy(): VoxelModel {
+  const m = new Mob();
+  const wrap = 0xd8ccaa;
+  const r = biped(m, {
+    skin: wrap, shirt: wrap, pants: 0xc8bc98, shoes: 0xa89a78,
+    face: { style: 'zombie', eye: 0xffc81a }, headPaint: { mat: 'cloth', bands: [[1, 0xb8aa88], [2, wrap], [1, 0xb8aa88]] },
+    bodyPaint: { mat: 'cloth', front: 'rag', back: 'rag', side: 'rag', bands: [[1, 0xb8aa88], [3, wrap], [1, 0xb8aa88], [3, wrap], [1, 0xb8aa88]] },
+    armPaint: { mat: 'cloth', side: 'rag', bands: [[2, 0xb8aa88], [3, wrap]] }, legPaint: { mat: 'cloth', side: 'rag' },
+    armsForward: true,
+  });
+  // gold collar, headband and scarab
+  m.box(0, r.bodyTop - 3, 0, 10, 3, 6, 0xe0b030, 'body', { mat: 'gold', front: 'gem', accent: 0x2a8ad8 });
+  m.box(0, r.headY + 6, 0, 8.6, 1.5, 8.6, 0xe0b030, 'head', { mat: 'gold' });
+  m.box(0, r.headY + 6.5, 4.4, 2, 2, 0.6, 0x2a8ad8, 'head', { mat: 'crystal' });
+  m.box(0, r.legH - 1, 0, 9, 2, 5, 0xe0b030, 'body', { mat: 'gold' });
+  m.box(3, 4, 2.2, 3, 2, 1, wrap, 'legR', { mat: 'cloth' }); // trailing strip
+  return m.build(PX, { gait: { arm: 0.2, leg: 0.45, roll: 0.09 } });
+}
+
+// ---------------------------------------------------------------- heartland beasts
+
+function giantSpider(): VoxelModel {
+  const m = new Mob();
+  m.box(0, 4, -5, 11, 9, 11, 0x2a2228, 'body', { mat: 'fur', top: 'spots', accent: 0xb83a2a });
+  m.box(0, 4, 3, 7, 5, 6, 0x3a3038, 'body', { mat: 'fur' });
+  m.box(0, 3, 7.5, 6, 5, 4, 0x2a2228, 'head', { mat: 'fur', face: { style: 'spider', eye: 0xff3a2a } });
+  m.pair(1.5, 2, 10, 1, 2, 1, 0x8a1a1a, 'head', { mat: 'chitin' });
+  for (let i = 0; i < 4; i++) {
+    const z = -1 + i * 2.6;
+    const tag = i % 2 ? 'legL' : 'legR';
+    m.pair(7, 7, z, 7, 1.5, 1.5, 0x3a3038, tag, { mat: 'fur' });
+    m.pair(10.5, 0, z, 1.5, 8, 1.5, 0x2a2228, tag, { mat: 'fur' });
+  }
+  return m.build(PX, { gait: { leg: 0.5, roll: 0.03, bob: 0.03 } });
+}
+
+function forestBear(): VoxelModel {
+  const m = new Mob();
+  const r = quadMob(m, {
+    body: [12, 11, 17], legH: 6, legW: 4, head: [9, 8, 7], snout: [5, 4, 3], snoutColor: 0x9a7a5a, fur: 0x6a4428, belly: 0x5a3a20,
+    legColor: 0x5a3820, face: { style: 'beast', eye: 0x1a1410 }, ears: [2, 2, 1], tail: [2, 2, 2], mane: [13, 9, 7], maneColor: 0x5e3c22,
+  });
+  m.box(0, r.bodyTop, 4, 8, 2, 6, 0x5e3c22, 'body', { mat: 'fur' }); // shoulder hump
+  return m.build(PX, { gait: { leg: 0.45, roll: 0.05, bob: 0.04 } });
+}
+
 export const ENEMY_MODELS: Record<string, VoxelModel> = {
   // ---------------------------------------------------------------- Blightwood
   rot_zombie: rotZombie(),
@@ -529,6 +903,29 @@ export const ENEMY_MODELS: Record<string, VoxelModel> = {
   phantom: ghost({ robe: 0xb8a8e8, head: 0xd8d0ff, face: { style: 'ghost', eye: 0x7a3dff }, crown: 0xe8c050 }),
   rune_drone: runeDrone(),
   arcane_bomber: arcaneBomber(),
+  // ---------------------------------------------------------------- Open world factions
+  orc_grunt: orcGrunt(),
+  orc_archer: orcArcher(),
+  orc_brute: orcBrute(),
+  orc_shaman: orcShaman(),
+  orc_warboar: boar({ fur: 0x5a4434, dark: 0x3a2a20, tusk: BONE, armor: true, scale: PX }),
+  bandit_thug: banditThug(),
+  bandit_archer: banditArcher(),
+  bandit_brute: banditBrute(),
+  bandit_cutthroat: banditCutthroat(),
+  clan_raider: clanRaider(),
+  clan_hunter: clanHunter(),
+  clan_berserker: clanBerserker(),
+  clan_seer: clanSeer(),
+  raider_blade: raiderBlade(),
+  raider_archer: raiderArcher(),
+  sand_scorpion: sandScorpion(),
+  dune_stalker: ghost({ robe: 0xc8a868, head: 0xd8b878, face: { style: 'hood', eye: 0xffa01a, alt: 0x2a1a0c }, flame: 0xffc04a }),
+  sun_mummy: sunMummy(),
+  forest_wolf: wolf(0x7a7a80, 0x9a9aa0, 0xe8c040, 0x6a6a70, 0x8a8a90),
+  wild_boar: boar({ fur: 0x7a5034, dark: 0x4a3020, tusk: 0xf0e8d0, scale: PX }),
+  giant_spider: giantSpider(),
+  forest_bear: forestBear(),
   // ---------------------------------------------------------------- special
   shield_crystal: wardCrystal(),
   treasure_sprite: treasureSprite(),

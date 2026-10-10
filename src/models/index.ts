@@ -3,10 +3,11 @@ import { ENEMY_MODELS } from './enemies';
 import { HERO_MODELS, ALLY_MODELS } from './heroes';
 import { BOSS_MODELS } from './bosses';
 import { PROJECTILE_MODELS, PICKUP_MODELS } from './items';
+import { NPC_MODELS } from './npcs';
 
-export { ENEMY_MODELS, HERO_MODELS, ALLY_MODELS, BOSS_MODELS, PROJECTILE_MODELS, PICKUP_MODELS };
+export { ENEMY_MODELS, HERO_MODELS, ALLY_MODELS, BOSS_MODELS, PROJECTILE_MODELS, PICKUP_MODELS, NPC_MODELS };
 
-const ALL: Record<string, VoxelModel> = { ...ENEMY_MODELS, ...HERO_MODELS, ...ALLY_MODELS, ...BOSS_MODELS };
+const ALL: Record<string, VoxelModel> = { ...ENEMY_MODELS, ...HERO_MODELS, ...ALLY_MODELS, ...BOSS_MODELS, ...NPC_MODELS };
 
 export function getModel(id: string): VoxelModel | undefined {
   return ALL[id];

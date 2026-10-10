@@ -26,6 +26,8 @@ export interface CharSave {
   created: number;
   playTime: number;
   runs: number;
+  /** Continent progress: waystones, home town, explored map, last position. */
+  world?: import('../game/world/World').WorldProgress;
 }
 
 export const MAX_CHARS = 8;

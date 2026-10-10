@@ -31,7 +31,7 @@ export const PROG = {
 
   /** Zone level of a map on a difficulty: map base + difficulty step. */
   /** Monster level range of each map: the first wave starts at the low end, the last campaign wave reaches the top. */
-  mapRange: { blightwood: [1, 10], gloamhaven: [11, 20], ossuary: [21, 30], emberwaste: [31, 40], frostveil: [41, 50], aetherfall: [41, 50] } as Record<string, [number, number]>,
+  mapRange: { eldoria: [1, 50], blightwood: [1, 10], gloamhaven: [11, 20], ossuary: [21, 30], emberwaste: [31, 40], frostveil: [41, 50], aetherfall: [41, 50] } as Record<string, [number, number]>,
   /** Monster level on a map at a wave (campaign has 30 waves; Endless keeps climbing to 50). */
   mobLevel(mapId: string, wave: number): number {
     const [lo, hi] = PROG.mapRange[mapId] ?? [1, 10];
