@@ -7,7 +7,8 @@ export const TILE = {
   smooth: 0, leaves: 1, bark: 2, planks: 3, cobble: 4, brick: 5, shingle: 6, logTop: 7, birch: 8,
   sandstone: 9, stoneBricks: 10, ice: 11, obsidian: 12, snow: 13, pillar: 14, basalt: 15,
 } as const;
-export const TILE_COUNT = 16;
+/** Tiles in the block atlas: 16 grey tinted ones plus 8 full-colour detail tiles (see game/world/build/VB XTILE). */
+export const TILE_COUNT = 24;
 
 /** Which pixel texture a terrain material uses. */
 export function tileOf(mat: string): number {
@@ -37,6 +38,7 @@ export interface Vox {
   sz: number;
   color: number;
   tile: number;
+  glow?: boolean;
 }
 
 function shade(c: number, k: number): number {

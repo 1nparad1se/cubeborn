@@ -50,6 +50,24 @@ export interface RoofInst {
   mat: string;
 }
 
+/**
+ * A hand-made structure (house, wall, tower, tent, bridge...) built by a prefab of
+ * game/world/build: footprint min corner (x, z), quarter-turn rotation, variant and seed.
+ * Its voxels are made when the renderer builds the chunk; collisions were stamped at generation.
+ */
+export interface BuildInst {
+  kind: string;
+  x: number;
+  z: number;
+  rot: number;
+  seed: number;
+  /** Footprint size after rotation (for bucketing). */
+  w: number;
+  d: number;
+  /** Prefab parameters (lengths, styles). */
+  p?: number[];
+}
+
 export interface Decor {
   x: number;
   z: number;
@@ -84,6 +102,7 @@ export class Terrain {
   readonly decor: Decor[] = [];
   readonly trees: TreeInst[] = [];
   readonly roofs: RoofInst[] = [];
+  readonly builds: BuildInst[] = [];
   readonly lights: TerrainLight[] = [];
   /** Special markers used by events (rune circles etc). */
   readonly markers: { x: number; z: number; kind: string; sub?: string }[] = [];

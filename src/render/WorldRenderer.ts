@@ -5,6 +5,8 @@ import { hash2 } from '../core/Rng';
 import { ATLAS_VARIANTS, GROUND_ROWS, ROW_RIM, ROW_SOIL, ROW_STONE, SPRITE, SPRITE_COLORED, SPRITE_COUNT, makeBlockAtlas, makeFoliageAtlas, makeGroundAtlas } from './Textures';
 import { TILE_COUNT, roofVoxels, tileOf, treeVoxels, type Vox } from './VoxelFlora';
 import { unitCube } from './VoxelGeometry';
+import { buildVoxels } from '../game/world/build/prefabs';
+import '../game/world/build/all';
 
 type Slot = { x: number; z: number; build: () => void; objs: THREE.Mesh[] | null };
 
@@ -501,7 +503,10 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
 float tl = aTile;
 if (tl == 2.0 && abs(normal.y) > 0.5) tl = 7.0;
 if (tl == 9.0 && normal.y > 0.5) tl = 0.0;
-float rep = max(1.0, floor(max(length(instanceMatrix[0].xyz), length(instanceMatrix[1].xyz)) * 2.0 + 0.5));
+// texture repeats per face axis (two tiles per block; detail tiles 16+ once per block)
+float sX = length(instanceMatrix[0].xyz); float sY = length(instanceMatrix[1].xyz); float sZ = length(instanceMatrix[2].xyz);
+vec2 fsz = abs(normal.y) > 0.5 ? vec2(sX, sZ) : abs(normal.x) > 0.5 ? vec2(sZ, sY) : vec2(sX, sY);
+vec2 rep = max(vec2(1.0), floor(fsz * (aTile > 15.5 ? 1.0 : 2.0) + 0.5));
 vSub = vMapUv * rep;
 vTl = tl;
 vNy = normal.y;`)
@@ -521,7 +526,9 @@ diffuseColor.rgb *= mix(0.72, 1.0, smoothstep(0.0, 1.0, vWPos.y));`);
     };
     const glowMat = new THREE.MeshBasicMaterial({ map: tex });
     glowMat.onBeforeCompile = (sh) => {
-      sh.vertexShader = sh.vertexShader.replace('#include <uv_vertex>', `#include <uv_vertex>\nvMapUv.x /= ${TILE_COUNT}.0;`);
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nattribute float aTile;')
+        .replace('#include <uv_vertex>', `#include <uv_vertex>\nif (aTile > 15.5) vMapUv.x += aTile;\nvMapUv.x /= ${TILE_COUNT}.0;`);
     };
     this.disposables.push(cube, mat, glowMat, tex);
     const buckets: (typeof t.blocks)[] = Array.from({ length: chunks * chunks }, () => []);
@@ -548,8 +555,10 @@ diffuseColor.rgb *= mix(0.72, 1.0, smoothstep(0.0, 1.0, vWPos.y));`);
     // tree and roof voxels are made when their chunk is built (big worlds hold ~1M of them)
     const treeB: (typeof t.trees)[] = Array.from({ length: chunks * chunks }, () => []);
     const roofB: (typeof t.roofs)[] = Array.from({ length: chunks * chunks }, () => []);
+    const buildB: (typeof t.builds)[] = Array.from({ length: chunks * chunks }, () => []);
     for (const tr of t.trees) treeB[bucketOf(tr.x, tr.z)].push(tr);
     for (const rf of t.roofs) roofB[bucketOf(rf.x + rf.w / 2, rf.z + rf.d / 2)].push(rf);
+    for (const b of t.builds) buildB[bucketOf(b.x + b.w / 2, b.z + b.d / 2)].push(b);
     const voxOf = (i: number): Vox[] => {
       const out: Vox[] = [];
       for (const tr of treeB[i]) {
@@ -561,6 +570,7 @@ diffuseColor.rgb *= mix(0.72, 1.0, smoothstep(0.0, 1.0, vWPos.y));`);
         for (const v of list) out.push(v);
       }
       for (const rf of roofB[i]) roofVoxels(rf, map, out);
+      for (const b of buildB[i]) buildVoxels(b, t, out);
       return out;
     };
     const toVox = (b: Block): Vox => {
@@ -570,7 +580,12 @@ diffuseColor.rgb *= mix(0.72, 1.0, smoothstep(0.0, 1.0, vWPos.y));`);
       return { x: b.x + 0.5, y: b.y, z: b.z + 0.5, sx: s, sy: s, sz: s, color: col.getHex(), tile: tileOf(b.mat) };
     };
     const fill = (list: Block[], extra: Vox[], material: THREE.Material, shadows: boolean, cx = -1, cz = -1) => {
-      const items = list.map(toVox).concat(extra);
+      let items = list.map(toVox).concat(extra);
+      if (material === mat && items.some((v) => v.glow)) {
+        // glowing voxels of structures (lanterns, fires) use the unlit material
+        fill([], items.filter((v) => v.glow), glowMat, false, cx, cz);
+        items = items.filter((v) => !v.glow);
+      }
       if (!items.length) return;
       const geo = cube.clone();
       const tiles = new Float32Array(items.length);
@@ -593,7 +608,7 @@ diffuseColor.rgb *= mix(0.72, 1.0, smoothstep(0.0, 1.0, vWPos.y));`);
     };
     const shadows = quality !== 'low';
     buckets.forEach((list, i) => {
-      if (!list.length && !treeB[i].length && !roofB[i].length) return;
+      if (!list.length && !treeB[i].length && !roofB[i].length && !buildB[i].length) return;
       const cx = i % chunks;
       const cz = Math.floor(i / chunks);
       this.defer((cx + 0.5) * CHUNK, (cz + 0.5) * CHUNK, () => fill(list, voxOf(i), mat, shadows, cx, cz));

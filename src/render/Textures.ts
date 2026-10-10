@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { TILE_COUNT } from './VoxelFlora';
 import { hash2 } from '../core/Rng';
 
 /** Small grayscale "pixel" texture applied to every voxel face for a crafted block look. */
@@ -385,7 +386,7 @@ export function makeGroundAtlas(tileNames: string[], tiles: Record<string, numbe
  */
 export function makeBlockAtlas(): THREE.DataTexture {
   const px = 16;
-  const tiles = 16;
+  const tiles = TILE_COUNT;
   const W = px * tiles;
   const data = new Uint8Array(W * px * 4);
   const set = (t: number, x: number, y: number, v: number, a = 255) => {
@@ -477,6 +478,7 @@ export function makeBlockAtlas(): THREE.DataTexture {
       // 15 basalt / rough stone
       set(15, x, y, (x + y) % 2 ? basalt(x, y) : rock(x, y));
     }
+  drawDetailTiles(data, W, px);
   const tex = new THREE.DataTexture(data, W, px, THREE.RGBAFormat);
   tex.magFilter = THREE.NearestFilter;
   tex.minFilter = THREE.NearestFilter;
@@ -484,6 +486,81 @@ export function makeBlockAtlas(): THREE.DataTexture {
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.needsUpdate = true;
   return tex;
+}
+
+/**
+ * Full-colour detail tiles 16..23 of the block atlas (windows, doors, lattice, lanterns, hay,
+ * flowers, glass). Instances using them carry a white tint; they map once per block.
+ */
+function drawDetailTiles(data: Uint8Array, W: number, px: number) {
+  const put = (t: number, x: number, y: number, c: number, a = 255) => {
+    const i = (y * W + t * px + x) * 4;
+    data[i] = (c >> 16) & 255;
+    data[i + 1] = (c >> 8) & 255;
+    data[i + 2] = c & 255;
+    data[i + 3] = a;
+  };
+  const mul = (c: number, k: number) => {
+    const r = Math.min(255, Math.round(((c >> 16) & 255) * k));
+    const g = Math.min(255, Math.round(((c >> 8) & 255) * k));
+    const b = Math.min(255, Math.round((c & 255) * k));
+    return (r << 16) | (g << 8) | b;
+  };
+  for (let y = 0; y < px; y++)
+    for (let x = 0; x < px; x++) {
+      const n = H(x, y, 91);
+      const edge = x === 0 || y === 0 || x === px - 1 || y === px - 1;
+      // 16 window: oak frame with a cross mullion, pale sky glass with a highlight streak
+      {
+        const frame = edge || x === 1 || y === 1 || x === px - 2 || y === px - 2 || x === 7 || x === 8 || y === 7 || y === 8;
+        const glass = (x + y) % 11 === 0 || (x + y) % 11 === 1 ? 0xe8f4ff : mul(0x9cc8e8, 0.92 + n * 0.12);
+        put(16, x, y, frame ? mul(0x8a6438, edge ? 0.75 : 0.95 + n * 0.1) : glass);
+      }
+      // 17 door: vertical oak boards, dark frame, two small panes, an iron handle
+      {
+        let c = mul(0x9a7040, 0.86 + H(x >> 2, y, 92) * 0.14);
+        if (x % 4 === 0) c = mul(0x9a7040, 0.68);
+        if (edge) c = 0x4e3620;
+        if (y >= 2 && y <= 5 && ((x >= 3 && x <= 6) || (x >= 9 && x <= 12))) c = mul(0x9cc8e8, 0.9 + n * 0.1);
+        if (x === 12 && y >= 9 && y <= 10) c = 0x2a2a2e;
+        put(17, x, y, c);
+      }
+      // 18 lattice (trapdoor): brown frame with square holes showing a dark interior
+      {
+        const hole = x % 5 !== 0 && y % 5 !== 0 && !edge;
+        put(18, x, y, hole ? mul(0x5a3e24, 0.7 + n * 0.1) : mul(0xa47844, 0.88 + n * 0.12));
+      }
+      // 19 lantern: dark iron cage around a warm flame
+      {
+        const cage = edge || x === 1 || x === px - 2 || y <= 2 || y >= px - 2;
+        const core = Math.hypot(x - 7.5, y - 8.5) / 6;
+        put(19, x, y, cage ? mul(0x3a3c42, 0.9 + n * 0.2) : mul(0xffd070, 1.15 - core * 0.35));
+      }
+      // 20 dark window: spruce frame, deep blue glass
+      {
+        const frame = edge || x === 1 || y === 1 || x === px - 2 || y === px - 2 || x === 7 || x === 8 || y === 7 || y === 8;
+        const glass = (x + y) % 11 === 0 ? 0x8ab0d8 : mul(0x3a5a7a, 0.9 + n * 0.15);
+        put(20, x, y, frame ? mul(0x5a3e24, edge ? 0.75 : 0.95 + n * 0.1) : glass);
+      }
+      // 21 hay bale: straw with two dark bands
+      {
+        let c = mul(0xd8b44a, 0.82 + H(x, y >> 1, 93) * 0.25);
+        if (y === 4 || y === 11) c = mul(0x8a5a2a, 0.9);
+        put(21, x, y, c);
+      }
+      // 22 flowers: leafy green with red, yellow, pink and white blossoms
+      {
+        let c = mul(0x4f8a34, 0.75 + H(x >> 1, y >> 1, 94) * 0.35);
+        const f = H(x >> 1, y >> 1, 95);
+        if (f > 0.84) c = [0xe04a3a, 0xf0d040, 0xf08ab0, 0xf4f0e8, 0xb06ae0][Math.floor(H(x >> 1, y >> 1, 96) * 5)];
+        put(22, x, y, c);
+      }
+      // 23 glass pane: thin frame, clear glass
+      {
+        const glass = (x + y) % 9 === 0 ? 0xf0f8ff : mul(0xb8d8f0, 0.94 + n * 0.08);
+        put(23, x, y, edge ? 0x8a6438 : glass);
+      }
+    }
 }
 
 /** Foliage sprites (index into makeFoliageAtlas). Grass sprites are grey and tinted per map. */
