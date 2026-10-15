@@ -84,6 +84,11 @@ export function gripAt(def: HeroRigDef, side: 'L' | 'R'): V3 {
 
 export interface HeroRigDef {
   id: string;
+  /**
+   * A ready-made 3D model (.glb under public/) that replaces the part-built body once loaded. It is
+   * cut along this skeleton (render/rig/meshBind.ts), so clips, IK and effects drive it unchanged.
+   */
+  model?: { url: string; yaw?: number; height?: number; keepBones?: BoneId[] };
   /** World units per voxel. */
   scale: number;
   /**
@@ -238,6 +243,16 @@ export class HeroRig {
     const tp = toGripSpace(def, { b: def.tip.bone, p: def.tip.p } as RigPart).p;
     this.tip.position.set(tp[0] * s, tp[1] * s, tp[2] * s);
     this.bones[def.tip.bone].add(this.tip);
+    if (def.model && typeof window !== 'undefined') {
+      const m = def.model;
+      void import('./meshBind').then(({ loadAndBind }) =>
+        loadAndBind(this, m.url, { yaw: m.yaw, height: m.height, keepBones: m.keepBones })
+          .then((meshes) => {
+            for (const mesh of meshes) mesh.castShadow = !!opts.shadows;
+          })
+          .catch((e) => console.warn('hero model failed to load, keeping the built body', m.url, e)),
+      );
+    }
   }
 
   show(grp: string, on: boolean) {

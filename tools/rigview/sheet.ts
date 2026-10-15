@@ -2,6 +2,7 @@
 // ?hero=berserker&anim=idle&t=0.6&views=front,angle,left,back,right,game&w=1800&h=640
 import * as THREE from 'three';
 import { ALL_RIGS } from './rigsList';
+import { bindModel } from '../../src/render/rig/meshBind';
 import { berserkerSculptRig } from '../../src/models/classRigs/berserkerSculpt';
 import { HeroRig } from '../../src/render/rig/HeroRig';
 import { HeroAnimator } from '../../src/render/rig/Animator';
@@ -43,6 +44,14 @@ views.forEach((v, i) => {
   const st = q.get('stance');
   const def = st || q.get('noik') ? { ...base, anim: { ...base.anim, stance: st ? JSON.parse(st) : base.anim.stance, twoHand: q.get('noik') ? undefined : base.anim.twoHand } } : base;
   const rig = new HeroRig(def, tex, { shadows: true });
+  if (q.get('bind')) {
+    // stand-in for an unrigged model: the sculpt in rest pose, cut along the game skeleton
+    const src = new HeroRig(berserkerSculptRig(), tex, {});
+    src.bones.gripR.visible = false;
+    src.bones.gripR.parent?.remove(src.bones.gripR);
+    src.root.updateMatrixWorld(true);
+    bindModel(rig, src.root, { keepBones: ['gripR'] });
+  }
   const a = new HeroAnimator(rig);
   rig.root.rotation.y = YAW[v] ?? 0;
   if (q.get('nosword')) rig.bones.gripR.visible = false;
