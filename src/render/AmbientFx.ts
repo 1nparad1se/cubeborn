@@ -39,30 +39,8 @@ const POLLEN: LayerDef = { count: 200, size: 0.07, colors: [0xfff4c8, 0xffffff],
 const LEAVES: LayerDef = { count: 70, size: 0.16, colors: [0x7ec23a, 0xd9b23c], glow: false, motion: 'fall', vel: [0.55, -0.45, 0.2], sway: 0.8, freq: 0.6, y: [0, 7], alpha: 0.95, night: -0.4, blink: 0 };
 
 const LAYERS: Record<string, LayerDef[]> = {
-  // Blightwood: sunny woods with pollen and falling leaves by day, fireflies through dusk and night
-  forest: [POLLEN, LEAVES, { ...FIREFLY, alpha: 0.12, night: 0.88 }],
-  // Gloamhaven: an evening town, always lit by fireflies and drifting warm dust
-  city: [{ ...FIREFLY, count: 150, alpha: 0.75, night: 0.25, colors: [0xffd37a, 0xd8ff6a] }, { ...POLLEN, count: 110, colors: [0xffd8a0, 0xffc890], bright: 0.9, alpha: 0.5, night: 0.1 }],
-  // Ossuary: slow cold dust motes in the crypt air and a few ghostly wisps
-  catacombs: [
-    { count: 220, size: 0.06, colors: [0xcfe8ff, 0xb8fff0], glow: true, bright: 0.9, motion: 'drift', vel: [0.08, 0.05, 0.04], sway: 0.35, freq: 0.15, y: [0.2, 4], alpha: 0.75, night: 0.1, blink: 0.3 },
-    { ...FIREFLY, count: 40, size: 0.16, colors: [0x9affd8, 0x7ad8ff], alpha: 0.55, night: 0.35, bright: 2.4 },
-  ],
-  // Emberwaste: embers rising off the ground and grey ash flakes coming down
-  volcano: [
-    { count: 170, size: 0.08, colors: [0xff8a2a, 0xffc040], glow: true, bright: 3.5, motion: 'rise', vel: [0.2, 0.9, 0.1], sway: 0.5, freq: 0.9, y: [0, 6], alpha: 0.9, night: 0.1, blink: 0.6 },
-    { count: 110, size: 0.1, colors: [0x6a625e, 0x9a908a], glow: false, motion: 'fall', vel: [0.3, -0.35, 0.15], sway: 0.5, freq: 0.4, y: [0, 7], alpha: 0.75, night: 0, blink: 0 },
-  ],
-  // Frostveil: steady snowfall and a few glints
-  tundra: [
-    { count: 320, size: 0.09, colors: [0xffffff, 0xe0f0ff], glow: false, motion: 'fall', vel: [0.35, -0.9, 0.15], sway: 0.45, freq: 0.5, y: [0, 8], alpha: 0.95, night: 0, blink: 0 },
-    { ...POLLEN, count: 70, colors: [0xcfeaff, 0xffffff], bright: 1.6, alpha: 0.45, night: 0.2, blink: 0.9 },
-  ],
-  // Aetherfall: floating arcane motes rising slowly
-  ruins: [
-    { count: 170, size: 0.08, colors: [0x8ad8ff, 0xd8b0ff], glow: true, bright: 2.2, motion: 'rise', vel: [0.06, 0.32, 0.04], sway: 0.6, freq: 0.3, y: [0.2, 6], alpha: 0.75, night: 0.25, blink: 0.6 },
-    { ...FIREFLY, count: 50, colors: [0xd8b0ff, 0x8ad8ff], alpha: 0.1, night: 0.8 },
-  ],
+  // Greenvale: sunny meadow with pollen and falling leaves by day, fireflies through dusk and night
+  meadow: [POLLEN, LEAVES, { ...FIREFLY, alpha: 0.12, night: 0.88 }],
 };
 
 const VERT = /* glsl */ `
@@ -159,7 +137,7 @@ export class AmbientFx {
   ) {
     this.box = quality === 'low' ? 38 : 46;
     const qMul = (quality === 'low' ? 0.4 : quality === 'medium' ? 0.7 : 1) * density;
-    const defs = LAYERS[generator] ?? LAYERS.forest;
+    const defs = LAYERS[generator] ?? LAYERS.meadow;
     for (const def of defs) {
       const n = Math.max(8, Math.round(def.count * qMul * (this.box / 46) ** 2));
       const pos = new Float32Array(n * 3);

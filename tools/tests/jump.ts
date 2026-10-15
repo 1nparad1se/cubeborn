@@ -1,16 +1,14 @@
 /** Headless checks for the jump: arc, no double jump, buffering, walls still block. Run: npx tsx tools/tests/jump.ts */
 import { Run } from '../../src/game/Run';
 import { NullFx } from '../../src/game/types';
-import { MAP_BY_ID } from '../../src/data/maps';
+import { GREENVALE } from '../../src/data/maps';
 import { HERO_BY_ID } from '../../src/data/heroes';
-import { DIFFICULTY_BY_ID } from '../../src/data/difficulty';
 import { BALANCE } from '../../src/config/balance';
 
 const run = new Run({
-  map: MAP_BY_ID.blightwood, diff: DIFFICULTY_BY_ID.normal, hero: HERO_BY_ID.sorceress, permanent: {}, mode: 'campaign',
-  fx: NullFx, settings: { damageNumbers: false }, tr: (k: string) => k, seed: 7,
+  map: GREENVALE, hero: HERO_BY_ID.sorceress,
+  fx: NullFx, settings: { damageNumbers: false }, tr: (k: string) => k,
 });
-run.debug.god = true;
 const p = run.player;
 const dt = 1 / 60;
 let fails = 0;
@@ -66,7 +64,6 @@ for (let i = 0; i < 120; i++) {
 }
 ok(p.x < wx, `walls block in the air (x=${p.x.toFixed(2)} wall at ${wx})`);
 // dying in the air cancels the jump
-run.debug.god = false;
 p.cancelJump();
 p.requestJump();
 for (let i = 0; i < 12; i++) run.update(dt, 0, 0);

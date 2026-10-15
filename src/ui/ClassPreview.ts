@@ -1,8 +1,6 @@
 import { h, clear, hex } from './dom';
 import { iconImg } from './icons';
 import { L } from '../i18n';
-import { keyName } from '../input/Input';
-import { SKILL_BINDS, type BindAction, type Keybinds } from '../meta/Save';
 import type { ClassDef, SkillDef, SkillTag, CastType } from '../game/action/types';
 import { SLOT_KEYS } from '../game/action/types';
 import type { DmgType } from '../game/types';
@@ -48,15 +46,6 @@ export const TAGS: Record<SkillTag, [string, string]> = {
   charge: ['заряд', 'charge'],
   holding: ['удержание', 'holding'],
 };
-const RATINGS: [keyof ClassDef['ratings'], string, string][] = [
-  ['attack', 'Атака', 'Attack'],
-  ['defense', 'Защита', 'Defense'],
-  ['mobility', 'Мобильность', 'Mobility'],
-  ['control', 'Контроль', 'Control'],
-  ['support', 'Поддержка', 'Support'],
-  ['range', 'Дальность', 'Range'],
-];
-
 export const dmgName = (el: DmgType): string => tr(...(DMG[el] ?? DMG.phys));
 
 /** Clip prefix of a class (bz, pl, sf…), read from its first basic step. */
@@ -196,82 +185,6 @@ export function skillTipBody(c: ClassDef, s: SkillDef, key: string): HTMLElement
     s.unlock > 1 ? kv(tr('Открывается', 'Unlocks at'), tr(`ур. ${s.unlock}`, `lvl ${s.unlock}`)) : null,
     s.tags.length ? h('div.cs-tags', ...s.tags.map((tg) => h('span', tr(...(TAGS[tg] ?? [tg, tg]))))) : null,
     s.note ? h('div.cs-tip-note', L(s.note)) : null,
-  );
-}
-
-// ------------------------------------------------------------------ info panel
-
-const bindKey = (kb: Keybinds | undefined, a: BindAction, fallback: string) => (kb?.[a]?.[0] ? keyName(kb[a][0]) : fallback);
-
-/** Full class sheet: name, title, role, difficulty, ratings, base stats, weapon, resource, passive, identity, skills. */
-export function classInfo(c: ClassDef, kb?: Keybinds): HTMLElement {
-  const col = hex(c.color);
-  const sec = (label: string) => h('div.cs-sec', label);
-  const kv = (k: string, v: string) => h('div.kv', h('span', k), h('span', v));
-  const ratings = h(
-    'div.cs-ratings',
-    ...RATINGS.map(([k, ru, en]) =>
-      h('div.cs-rate', h('span.cs-rate-n', tr(ru, en)), h('div.cs-bar', ...Array.from({ length: 5 }, (_, i) => h('i' + (i < c.ratings[k] ? '.on' : '')))), h('b', String(c.ratings[k]))),
-    ),
-  );
-  const skillRow = (s: SkillDef, key: string) => {
-    const row = h('div.cs-skill', { style: `--sc:${hex(s.color)}` }, h('span.cs-key', key), iconImg('sk_' + s.icon, s.color, 'icon'), h('span.cs-skill-n', L(s.name)), s.unlock > 1 ? h('span.cs-skill-lv', tr(`ур. ${s.unlock}`, `lv ${s.unlock}`)) : null);
-    attachTip(row, () => skillTipBody(c, s, key));
-    return row;
-  };
-  const res = c.res;
-  return h(
-    'div.cs-sheet',
-    { style: `--hc:${col}` },
-    h('div.cs-head', h('div.cs-name', L(c.name)), h('div.cs-title', L(c.title))),
-    h(
-      'div.cs-pills',
-      h('span.pill', { style: `--pc:${col}` }, L(c.role)),
-      h('span.cs-diff', { title: tr('Сложность', 'Difficulty') }, tr('Сложность ', 'Difficulty '), h('b', '★'.repeat(c.difficulty)), h('i', '☆'.repeat(Math.max(0, 3 - c.difficulty)))),
-    ),
-    h('p.cs-desc', L(c.desc)),
-    sec(tr('Характеристики', 'Ratings')),
-    ratings,
-    h(
-      'div.cs-base',
-      kv(tr('Здоровье', 'Health'), String(c.baseHp)),
-      kv(tr('Скорость', 'Speed'), String(c.baseSpeed)),
-      kv(tr('Броня', 'Armor'), String(c.armor)),
-      kv(tr('Оружие', 'Weapon'), L(c.weapon)),
-    ),
-    sec(tr('Ресурс', 'Resource')),
-    h(
-      'div.cs-res',
-      { style: `--rc:${res.color}` },
-      h('div.cs-res-top', h('b', L(res.name)), res.orbs ? h('span.cs-orbs', ...Array.from({ length: res.orbs }, () => h('i'))) : h('span.cs-resbar', h('i'))),
-      h('span', L(res.desc)),
-    ),
-    sec(tr('Пассивное умение класса', 'Class passive')),
-    h('div.perk', h('b', L(c.passive.name)), h('span', L(c.passive.desc))),
-    sec(tr('Идентичность', 'Identity') + ` (${bindKey(kb, 'identity', 'Z')})`),
-    h('div.cs-identity', { style: `--sc:${hex(c.identity.color)}` }, iconImg('sk_' + c.identity.icon, c.identity.color, 'icon'), h('div', h('b', L(c.identity.name)), h('span', L(c.identity.desc)))),
-    sec(tr('Навыки', 'Skills')),
-    h(
-      'div.cs-skills',
-      (() => {
-        const row = h('div.cs-skill.basic', { style: `--sc:${hex(c.color)}` }, h('span.cs-key', tr('ПКМ', 'RMB')), iconImg('sk_' + c.basic.icon, c.color, 'icon'), h('span.cs-skill-n', L(c.basic.name)));
-        attachTip(row, () =>
-          h(
-            'div.cs-tip-body',
-            h('div.cs-tip-head', iconImg('sk_' + c.basic.icon, c.color, 'icon'), h('div', h('div.cs-tip-name', L(c.basic.name)), h('div.cs-tip-sub', tr('Базовая атака', 'Basic attack')))),
-            h('p', L(c.basic.desc)),
-            h('div.cs-tip-kv', h('span', tr('Тип урона', 'Damage type')), h('b', { style: `color:${DMG_COLOR[c.basic.el]}` }, dmgName(c.basic.el))),
-            h('div.cs-tip-kv', h('span', tr('Ударов в цепочке', 'Chain hits')), h('b', String(c.basic.steps.length))),
-          ),
-        );
-        return row;
-      })(),
-      ...c.skills.map((s, i) => skillRow(s, bindKey(kb, SKILL_BINDS[i], SLOT_KEYS[i]))),
-      skillRow(c.ult, bindKey(kb, 'ult', 'V')),
-    ),
-    c.special ? sec(tr('Особое действие', 'Special action') + ` (${bindKey(kb, 'special', 'X')})`) : null,
-    c.special ? h('div.perk', h('b', L(c.special.name)), h('span', L(c.special.desc))) : null,
-    h('div.kv', h('span', tr('Уклонение', 'Dodge') + ` (${bindKey(kb, 'dodge', 'Space')})`), h('span', `${L(c.dodge.name)} · ${c.dodge.cd}${tr(' сек', 's')}${c.dodge.charges > 1 ? ' ×' + c.dodge.charges : ''}`)),
   );
 }
 

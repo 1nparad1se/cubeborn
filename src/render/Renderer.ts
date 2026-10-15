@@ -6,7 +6,7 @@ import type { Terrain } from '../game/Terrain';
 import { CameraRig } from './CameraRig';
 import { WorldRenderer } from './WorldRenderer';
 import { EntityRenderer } from './EntityRenderer';
-import { Particles, type AmbientKind } from './Particles';
+import { Particles } from './Particles';
 import { Overlay } from './Overlay';
 import { LightPool } from './LightPool';
 import { makeBlobTexture, makeBlockTexture } from './Textures';
@@ -29,14 +29,6 @@ import type { Settings } from '../meta/Save';
 
 export type Quality = 'low' | 'medium' | 'high';
 
-const AMBIENT: Record<string, [AmbientKind, number]> = {
-  forest: ['rain', 0xc58aff],
-  city: ['fireflies', 0xffd37a],
-  catacombs: ['dust', 0x9affd8],
-  volcano: ['embers', 0xff8a2a],
-  tundra: ['snow', 0xffffff],
-  ruins: ['motes', 0x8ad8ff],
-};
 
 export interface FxHooks {
   sound(id: string, volume?: number): void;
@@ -439,8 +431,7 @@ export class Renderer {
     this.run = run;
     this.buildWorld(run.terrain, run.map);
     this.entities = new EntityRenderer(this.scene, run, this.blockTex, this.blobTex, this.detail === 'high' && this.s.shadows !== 'low' ? 'high' : this.detail === 'low' ? 'low' : 'medium', this.lights);
-    const [kind, color] = AMBIENT[run.map.generator] ?? ['motes', 0xffffff];
-    this.particles = new Particles(this.scene, this.blockTex, this.blobTex, this.s.particles, kind, color);
+    this.particles = new Particles(this.scene, this.blockTex, this.blobTex, this.s.particles);
     this.ambient = new AmbientFx(this.scene, run.map.generator, this.quality, this.particleMul);
     this.overlay.clear();
     this.rig.snap(run.player.x, run.player.z);
@@ -525,6 +516,13 @@ export class Renderer {
     this.camp.setParty(members, activeId);
   }
 
+  /** Client-space points above the campfire characters' heads (empty outside the menu). */
+  campfireAnchors(): { id: string; x: number; y: number }[] {
+    if (!this.camp || !this.menuMode) return [];
+    const r = this.gl.domElement.getBoundingClientRect();
+    return this.camp.anchors(this.rig.camera).map((a) => ({ id: a.id, x: r.left + ((a.x + 1) / 2) * r.width, y: r.top + ((1 - a.y) / 2) * r.height }));
+  }
+
   /** Character id of the campfire party under a client point, or null. */
   pickCampfire(clientX: number, clientY: number): string | null {
     if (!this.camp || !this.menuMode) return null;
@@ -586,7 +584,7 @@ export class Renderer {
     const t = this.rig.target;
     if (this.torchTerrain) {
       // after dark torches and fires throw wider, warmer pools of light (MCD night scenes)
-      const nk = this.run ? Math.max(this.run.dayNight.night, this.run.weather.darkness) : 0;
+      const nk = this.run ? this.run.dayNight.night : 0;
       const boost = 1 + nk * 0.45;
       const rad = 7 + nk * 2.5;
       for (const l of this.torchTerrain.lights) {
@@ -596,7 +594,7 @@ export class Renderer {
       }
     }
     lights.end(dt, t.x, t.z);
-    this.world?.update(this.time, this.run?.weather.surge ?? 0);
+    this.world?.update(this.time, 0);
     if (this.composer) this.composer.render(dt);
     else this.gl.render(this.scene, this.rig.camera);
     this.overlay.draw(dt, this.rig.camera, this.menuMode ? null : this.run);
@@ -671,14 +669,12 @@ export class Renderer {
     this.rig.update(dt, p.x, p.z, lead);
     const zoom = this.rig.zoom;
     const t = this.rig.target;
-    // weather
     const pal = run.map.palette;
-    const dark = run.weather.darkness;
     // day/night: moonlight, colder palette and thicker fog after dark
     const L = run.dayNight.light;
     const nightK = run.dayNight.night;
-    this.hemi.intensity = pal.ambientIntensity * 3.0 * MCD.ambMul * (1 - dark * 0.72) * L.ambient;
-    this.sun.intensity = pal.sunIntensity * 2.4 * MCD.sunMul * (1 - dark * 0.8) * L.sun;
+    this.hemi.intensity = pal.ambientIntensity * 3.0 * MCD.ambMul * L.ambient;
+    this.sun.intensity = pal.sunIntensity * 2.4 * MCD.sunMul * L.sun;
     // MCD bias (teal fill, warm sun) fades out as the phase tint (moonlight, dusk) takes over
     this.hemi.color.setHex(pal.ambient).lerp(this.cA.setHex(MCD.sky), MCD.skyMix * (1 - L.tint)).lerp(this.cA.setHex(L.ambientColor), L.tint);
     this.hemi.groundColor.setHex(pal.hemiGround).lerp(this.cA.setHex(MCD.ground), MCD.groundMix);
@@ -695,14 +691,12 @@ export class Renderer {
       // MCD nights stay rich blue rather than grey: cooler shadows after dark
       g.uShadow.value.set(0.9 - nightK * 0.18, 1.0 - nightK * 0.04, 1.12 + nightK * 0.28);
     }
-    const bl = run.weather.blizzard;
-    const storm = Math.min(1, run.weather.storm);
     // fog is measured from the camera: start a little past the hero so the far (top) part of the
     // view hazes over like MCD, and push it back with the view-distance setting
     const camD = this.rig.distance * this.rig.autoZoom;
     const vm = this.viewMul;
-    const nearK = (1 - bl * 0.45) * (1 - dark * 0.3) * (1 - storm * 0.55) * L.fog;
-    const farK = (1 - bl * 0.4) * (1 - dark * 0.3) * (1 - storm * 0.5) * (0.35 + 0.65 * L.fog);
+    const nearK = L.fog;
+    const farK = 0.35 + 0.65 * L.fog;
     fog.near = Math.max(camD * 0.75, camD - 6 + (pal.fogNear - 18) * vm * nearK);
     fog.far = Math.max(camD + 12, camD - 6 + (pal.fogFar - 6) * vm * farK);
     // shadow box grows with zoom so the whole view stays shadowed
@@ -732,15 +726,13 @@ export class Renderer {
     this.world?.uniforms.uFocus.value.set(p.x, 0, p.z);
     this.world?.uniforms.uCamDir.value.set(this.rig.toCam.x, this.rig.toCam.z);
     // a warm light pool follows the hero on dark maps
-    if (pal.heroLight) this.lights.request(p.x, 2.6, p.z, pal.heroLight, 1.6 + dark * 0.8 + nightK * 0.4, 9, t.x, t.z);
+    if (pal.heroLight) this.lights.request(p.x, 2.6, p.z, pal.heroLight, 1.6 + nightK * 0.4, 9, t.x, t.z);
     else if (nightK > 0.05) this.lights.request(p.x, 2.6, p.z, 0xffd8a0, 2.6 * nightK, 10, t.x, t.z);
     this.entities!.update(dt, t.x, t.z, this.rig.camera);
-    // the old per-map ambient particles only carry weather now; AmbientFx owns the mood
-    this.particles!.ambientOn = bl > 0.02 || storm > 0.02;
-    this.particles!.update(dt, t.x, t.z, bl);
+    this.particles!.update(dt);
     const cam = this.rig.camera;
     const px = (this.h * this.gl.getPixelRatio()) / (2 * Math.tan((cam.fov * Math.PI) / 360));
-    this.ambient?.update(dt, t.x, t.z, Math.max(nightK, dark * 0.8), px, storm);
+    this.ambient?.update(dt, t.x, t.z, nightK, px, 0);
   }
 
   dispose() {

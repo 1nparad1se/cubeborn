@@ -19,8 +19,6 @@ export class Input {
   onZoom: ((dir: number) => void) | null = null;
   onMap: (() => void) | null = null;
   onJump: (() => void) | null = null;
-  /** Developer hotkeys; returns true when developer mode handled the key. */
-  onDev: ((action: 'devPanel' | 'devDebug' | 'devGod') => boolean) | null = null;
   /** Fired when the player first moves (used by the controls hint). */
   onFirstMove: (() => void) | null = null;
   /** While set, the next key press is captured for rebinding instead of played. */
@@ -35,10 +33,8 @@ export class Input {
   dodgeQueued = false;
   identityQueued = false;
   onSkills: (() => void) | null = null;
-  onInventory: (() => void) | null = null;
   /** Ctrl + skill key: spend a skill point on that slot (4 = dodge). */
   onLearn: ((slot: number) => void) | null = null;
-  onPotion: (() => void) | null = null;
   private padPause = false;
   private padJump = false;
 
@@ -53,21 +49,11 @@ export class Input {
         return;
       }
       if (e.code === 'Tab' && this.enabled) e.preventDefault();
-      // typing into a text field (developer panel) never drives the game
+      // typing into a text field (character name) never drives the game
       const tg = e.target as HTMLElement | null;
       if (tg && (tg.tagName === 'INPUT' || tg.tagName === 'SELECT' || tg.tagName === 'TEXTAREA')) return;
-      for (const a of ['devPanel', 'devDebug', 'devGod'] as const) {
-        if (this.is(a, e.code) && !e.repeat && this.onDev?.(a)) {
-          e.preventDefault();
-          return;
-        }
-      }
       if (e.repeat) return;
       // Escape always pauses, whatever the bindings say
-      if (this.is('inventory', e.code)) {
-        this.onInventory?.();
-        return;
-      }
       if (e.code === 'Escape' || this.is('pause', e.code)) {
         this.onPause?.();
         return;
@@ -92,7 +78,6 @@ export class Input {
         }
         if (this.is('identity', e.code)) this.identityQueued = true;
         if (this.is('skills', e.code)) this.onSkills?.();
-        if (this.is('potion', e.code)) this.onPotion?.();
       }
       this.keys.add(e.code);
     });

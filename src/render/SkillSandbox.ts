@@ -170,8 +170,7 @@ export class SkillSandbox {
       },
     };
     // Particles and LightPool only call add() on their parent: the stage group keeps them in local space
-    this.particles = new Particles(g as unknown as THREE.Scene, this.blockTex, this.blobTex, 'medium', 'motes', 0xffffff);
-    this.particles.ambientOn = false;
+    this.particles = new Particles(g as unknown as THREE.Scene, this.blockTex, this.blobTex, 'medium');
     this.lights = new LightPool(g as unknown as THREE.Scene, 4);
     this.reset();
   }
@@ -513,7 +512,7 @@ export class SkillSandbox {
     this.actFx.update(dt);
     for (const b of B.all) b.end();
     for (const m of this.models.values()) m.b.end();
-    this.particles.update(dt, h.x, h.z, 0);
+    this.particles.update(dt);
     this.lights.end(dt, h.x, h.z);
   }
 

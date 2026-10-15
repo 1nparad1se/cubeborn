@@ -1,5 +1,5 @@
 import type { MapDef } from '../data/types';
-import type { RoofInst, TreeInst } from '../game/Terrain';
+import type { TreeInst } from '../game/Terrain';
 import { hash2 } from '../core/Rng';
 
 /** Atlas tiles of the 16px block texture (see makeBlockAtlas). */
@@ -239,49 +239,5 @@ function treeVoxelsRaw(tr: TreeInst, map: MapDef, out: Vox[]) {
     for (const [dx, dz] of [[-1, 0], [2, 1], [0, 2], [1, -1]]) if (h3(dx, 0, dz, 7) < 0.6) wood(dx, 0, dz, trunkC);
     blob(0, T, 0, 4.2, 1.6, leafC);
     blob(1, T + 2, 1, 2.6, 1.2, leafC);
-  }
-}
-
-/** Minecraft stair roof: shingle steps rising to a ridge, plank gables and dark trim. */
-export function roofVoxels(rf: RoofInst, map: MapDef, out: Vox[]) {
-  const pal = map.palette.blocks;
-  const cols = pal[rf.mat] ?? [0x8a4a3a];
-  let rc = cols[0];
-  let tile: number = TILE.shingle;
-  if (rf.mat === 'leaves') {
-    rc = 0xb08a54;
-    tile = TILE.planks;
-  }
-  if (rf.mat === 'snow') rc = 0xeef3f8;
-  const plankC = (pal.plank ?? [0xa87c4a])[0];
-  const alongX = rf.w >= rf.d;
-  const L = alongX ? rf.w : rf.d;
-  const W = alongX ? rf.d : rf.w;
-  // cells across the roof: -1 .. W (one block of overhang each side)
-  const at = (a: number, c: number, y: number, color: number, t: number, sy = 1) => {
-    const x = alongX ? rf.x + a : rf.x + c;
-    const z = alongX ? rf.z + c : rf.z + a;
-    out.push({ x: x + 0.5, y, z: z + 0.5, sx: 1, sy, sz: 1, color, tile: t });
-  };
-  const half = (W + 1) / 2;
-  for (let i = 0; i <= Math.floor(half); i++) {
-    const lo = -1 + i;
-    const hi = W - i;
-    const y = rf.y + i * 0.5;
-    if (lo > hi) break;
-    for (let a = -1; a <= L; a++) {
-      const trim = a === -1 || a === L;
-      const c = trim ? shade(rc, 0.62) : shade(rc, i % 2 ? 0.92 : 1);
-      at(a, lo, y, c, tile, 0.5);
-      if (hi !== lo) at(a, hi, y, c, tile, 0.5);
-      // gables: fill between the two slopes at the house ends
-      if ((a === 0 || a === L - 1) && hi - lo > 1)
-        for (let k = lo + 1; k < hi; k++) at(a, k, y, shade(plankC, 0.95), TILE.planks, 0.5);
-    }
-  }
-  // chimney
-  if (L >= 4) {
-    const top = rf.y + half * 0.5 + 1;
-    for (let y = rf.y; y < top; y++) at(L - 2, W - 2, y, 0x8a8a90, TILE.brick);
   }
 }

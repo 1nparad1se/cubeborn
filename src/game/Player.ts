@@ -163,8 +163,6 @@ export class Player {
     if (this.burstT > 0) s *= 1.35;
     if (this.airborne) s *= BALANCE.jump.airSpeed;
     if (this.slowT > 0) s *= 0.6;
-    if (this.run.weather.blizzard > 0) s *= 0.85;
-    s *= this.run.features.moveMul(this.x, this.z, true);
     return s;
   }
 
@@ -248,11 +246,11 @@ export class Player {
       this.hazardTick -= dt;
       if (this.hazardTick <= 0) {
         this.hazardTick = 0.5;
-        this.hurt((run.map.hazardDps ?? 8) * 0.5 * run.diff.damage, null, true);
+        this.hurt((run.map.hazardDps ?? 8) * 0.5, null, true);
       }
     }
     // regeneration
-    const regen = this.stats.regen * (run.diff.id === 'inferno' ? 0.5 : 1);
+    const regen = this.stats.regen;
     if (regen > 0 && this.hp < this.stats.maxHp) {
       this.regenAcc += regen * dt;
       if (this.regenAcc >= 1) {
@@ -398,7 +396,7 @@ export class Player {
   /** Applies incoming damage. Returns damage actually taken. */
   hurt(raw: number, source: Enemy | null, ignoreInvuln = false): number {
     const run = this.run;
-    if (this.dead || run.debug.god) return 0;
+    if (this.dead) return 0;
     if (!ignoreInvuln && this.invulnT > 0) return 0;
     if (this.buffs.aegis > 0) return 0;
     if (this.stats.dodge > 0 && Math.random() < this.stats.dodge) {
@@ -431,7 +429,6 @@ export class Player {
     run.fx.vibrate(25);
     run.fx.shake(0.15);
     if (source && this.stats.thorns > 0) run.combat.applyRaw(source, raw * this.stats.thorns * this.stats.might, 0xb0e070, 'thorns');
-    if (run.debug.infHp) this.hp = this.stats.maxHp;
     if (this.hp <= 0) this.onLethal();
     return dmg;
   }
@@ -447,12 +444,6 @@ export class Player {
       run.fx.sound('revive');
       run.fx.text(this.x, this.z, run.tr('revived'), 0xffc060);
       this.cues.ability++;
-      // clear nearby threats
-      run.hazards.clearNear(this.x, this.z, 8);
-      run.enemies.forEachInRadius(this.x, this.z, 6, (e) => {
-        run.reviveBlast.damage = 40 * run.waveScale.hp * run.diff.hp * run.map.tier;
-        if (!e.boss) run.combat.hit(e, run.reviveBlast, 1);
-      });
       return;
     }
     this.hp = 0;
@@ -463,16 +454,13 @@ export class Player {
 
   heal(amount: number, quiet = false) {
     if (this.dead) return;
-    const mul = this.run.diff.id === 'inferno' ? 0.5 : 1;
     const before = this.hp;
-    this.hp = Math.min(this.stats.maxHp, this.hp + amount * mul);
+    this.hp = Math.min(this.stats.maxHp, this.hp + amount);
     const healed = this.hp - before;
     if (!quiet && healed > 0.5) this.run.fx.number(this.x, this.z, healed, false, 0x6bff8a);
   }
 
   addXp(v: number) {
-    // fewer, tougher foes: each is worth more experience
-    v *= this.run.debug.xpMul * PROG.xpMul(this.run.zoneLevel, this.level);
     this.xp += v * this.stats.growth;
     this.run.stats.xpGained += v * this.stats.growth;
     while (this.xp >= this.xpNext) {

@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import type { Run } from '../game/Run';
-import { ELITE_MODS } from '../data/enemies';
 
 interface Num {
   x: number;
@@ -23,7 +22,7 @@ function hex(c: number): string {
 
 /**
  * 2D canvas layered over the WebGL view: floating damage numbers, short text popups,
- * elite health bars and off-screen indicators for chests and bosses.
+ * and health bars of combat targets.
  */
 export class Overlay {
   readonly canvas: HTMLCanvasElement;
@@ -95,75 +94,35 @@ export class Overlay {
     ctx.textBaseline = 'middle';
     ctx.lineJoin = 'round';
 
-    // health bars: elites always (unless off), ordinary enemies only once damaged
+    // health bars of combat targets: once damaged, or always with the "all" setting
     const px = run.player.x;
     const pz = run.player.z;
     if (this.healthBars !== 'off') {
       const all = this.healthBars === 'all';
       let drawn = 0;
       for (const e of run.enemies.list) {
-        if (!e.active || e.dying > 0 || e.boss || e.def.behavior === 'prop') continue;
-        if (!e.elite && (!all || e.hp >= e.maxHp || drawn > 160)) continue;
+        if (!e.active || e.dying > 0 || drawn > 160) continue;
+        if (!all && e.hp >= e.maxHp) continue;
         if ((e.x - px) ** 2 + (e.z - pz) ** 2 > 30 * 30) continue;
         if (!this.project(camera, e.x, 1.2 + e.scale * 1.4, e.z)) continue;
-        const bw = e.elite ? 34 : 18;
+        const bw = 22;
         const sx = Math.round(v.x - bw / 2);
         const sy = Math.round(v.y);
         ctx.fillStyle = 'rgba(0,0,0,0.65)';
-        ctx.fillRect(sx - 1, sy - 1, bw + 2, e.elite ? 6 : 4);
-        ctx.fillStyle = e.elite ? hex(ELITE_MODS[e.elite].color) : '#ff4a5a';
-        ctx.fillRect(sx, sy, Math.max(0, (bw * e.hp) / e.maxHp), e.elite ? 4 : 2);
-        // stagger bar: fills with stagger damage, flashes while the enemy is broken
-        if (e.elite && (e.stag > 0 || e.brokenT > 0)) {
+        ctx.fillRect(sx - 1, sy - 1, bw + 2, 4);
+        ctx.fillStyle = '#ff4a5a';
+        ctx.fillRect(sx, sy, Math.max(0, (bw * e.hp) / e.maxHp), 2);
+        // stagger bar: fills with stagger damage, flashes while the target is broken
+        if (e.stag > 0 || e.brokenT > 0) {
           ctx.fillStyle = 'rgba(0,0,0,0.65)';
-          ctx.fillRect(sx - 1, sy + 5, bw + 2, 4);
+          ctx.fillRect(sx - 1, sy + 4, bw + 2, 4);
           const k = e.brokenT > 0 ? 1 : Math.min(1, e.stag / Math.max(1, e.stagMax));
           ctx.fillStyle = e.brokenT > 0 ? (Math.floor(run.time * 8) % 2 ? '#fff4c0' : '#ffd040') : '#f0c040';
-          ctx.fillRect(sx, sy + 6, Math.max(0, bw * k), 2);
+          ctx.fillRect(sx, sy + 5, Math.max(0, bw * k), 2);
         }
         drawn++;
       }
     }
-
-    // boss stagger bar and the stagger check (break the boss before the timer runs out)
-    for (const bc of run.bosses) {
-      const e = bc.e;
-      if (!e.active || e.dying > 0 || e.boss !== bc) continue;
-      if (!this.project(camera, e.x, 2.4 + e.scale * 3.2, e.z)) continue;
-      const bw = 90;
-      const sx = Math.round(v.x - bw / 2);
-      const sy = Math.round(v.y);
-      if (e.stag > 0 || e.brokenT > 0) {
-        ctx.fillStyle = 'rgba(0,0,0,0.7)';
-        ctx.fillRect(sx - 1, sy - 1, bw + 2, 6);
-        const k = e.brokenT > 0 ? e.brokenT / 5 : Math.min(1, e.stag / Math.max(1, e.stagMax));
-        ctx.fillStyle = e.brokenT > 0 ? '#fff4c0' : '#f0c040';
-        ctx.fillRect(sx, sy, Math.max(0, bw * k), 4);
-      }
-      if (bc.checkT > 0) {
-        const cy = sy - 26;
-        ctx.font = '10px "Press Start 2P", "Russo One", monospace';
-        ctx.lineWidth = 3;
-        ctx.strokeStyle = 'rgba(10,8,16,0.9)';
-        const label = run.tr('act_check');
-        ctx.strokeText(label, v.x, cy - 10);
-        ctx.fillStyle = '#ffb040';
-        ctx.fillText(label, v.x, cy - 10);
-        const cw = 150;
-        const cx = Math.round(v.x - cw / 2);
-        ctx.fillStyle = 'rgba(0,0,0,0.75)';
-        ctx.fillRect(cx - 2, cy - 2, cw + 4, 12);
-        ctx.fillStyle = '#ffd040';
-        ctx.fillRect(cx, cy, Math.max(0, cw * Math.min(1, bc.checkDone / bc.checkNeed)), 8);
-        ctx.fillStyle = '#ff3a3a';
-        ctx.fillRect(cx, cy + 9, Math.max(0, cw * (bc.checkT / bc.checkMax)), 2);
-      }
-    }
-
-    // off-screen chest / boss arrows
-    const pl = run.player;
-    for (const k of run.pickups.list) if (k.active && k.kind === 'chest' && !run.terrain.blocksWalker(Math.floor(k.x), Math.floor(k.z))) this.arrow(camera, k.x, k.z, '#ffd23d', pl.x, pl.z);
-    for (const b of run.bosses) if (b.e.active && b.e.boss === b) this.arrow(camera, b.e.x, b.e.z, '#ff4a5a', pl.x, pl.z);
 
     // damage numbers
     for (let i = this.nums.length - 1; i >= 0; i--) {
@@ -203,49 +162,5 @@ export class Overlay {
     v.x = (v.x * 0.5 + 0.5) * this.w;
     v.y = (-v.y * 0.5 + 0.5) * this.h;
     return v.x > -40 && v.x < this.w + 40 && v.y > -40 && v.y < this.h + 40;
-  }
-
-  private arrow(camera: THREE.Camera, x: number, z: number, color: string, px: number, pz: number) {
-    // a far target can sit behind the camera, where projection flips it to the wrong side of the screen:
-    // aim at a point a short way from the hero in the target's direction instead
-    const dx = x - px;
-    const dz = z - pz;
-    const d = Math.hypot(dx, dz);
-    const m = 28;
-    v.set(x, 0.5, z).project(camera);
-    if (v.z < 1) {
-      const tx = (v.x * 0.5 + 0.5) * this.w;
-      const ty = (-v.y * 0.5 + 0.5) * this.h;
-      if (tx > m && tx < this.w - m && ty > m && ty < this.h - m) return;
-    }
-    const k = d > 6 ? 6 / d : 1;
-    v.set(px, 0.5, pz).project(camera);
-    const hx = (v.x * 0.5 + 0.5) * this.w;
-    const hy = (-v.y * 0.5 + 0.5) * this.h;
-    v.set(px + dx * k, 0.5, pz + dz * k).project(camera);
-    const sx = (v.x * 0.5 + 0.5) * this.w;
-    const sy = (-v.y * 0.5 + 0.5) * this.h;
-    const cx = this.w / 2;
-    const cy = this.h / 2;
-    const a = Math.atan2(sy - hy, sx - hx);
-    const t = Math.min(Math.abs((cx - m) / Math.cos(a) || 1e9), Math.abs((cy - m - 40) / Math.sin(a) || 1e9));
-    const ax = cx + Math.cos(a) * t;
-    const ay = cy + Math.sin(a) * t;
-    const ctx = this.ctx;
-    ctx.save();
-    ctx.translate(ax, ay);
-    ctx.rotate(a);
-    ctx.fillStyle = color;
-    ctx.strokeStyle = 'rgba(0,0,0,0.8)';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(12, 0);
-    ctx.lineTo(-6, -8);
-    ctx.lineTo(-2, 0);
-    ctx.lineTo(-6, 8);
-    ctx.closePath();
-    ctx.stroke();
-    ctx.fill();
-    ctx.restore();
   }
 }

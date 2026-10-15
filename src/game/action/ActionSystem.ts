@@ -172,7 +172,6 @@ export class ActionSystem {
   shield = 0;
   shieldMax = 0;
   /** Shield from the Evasion legendary power: seconds left. */
-  private evasionT = 0;
   /** Healing left this second from battle vigour (melee classes). */
   private vigour = 0;
   private vigourT = 0;
@@ -234,7 +233,7 @@ export class ActionSystem {
   }
 
   get resMax(): number {
-    return this.cls.res.max + (this.cls.res.orbs ? 0 : this.run.loot.totals.resMax);
+    return this.cls.res.max;
   }
 
   get maxLevel(): number {
@@ -293,15 +292,10 @@ export class ActionSystem {
     return tripodsFor(s)[tier][i] ?? null;
   }
 
-  /** Legendary power worn by the hero (gear). */
-  has(power: string): boolean {
-    return this.run.loot.powers.has(power);
-  }
-
   /** Adds Awakening gauge (once the Ultimate is unlocked). */
   addUlt(v: number) {
     if (this.run.player.level < this.cls.ult.unlock) return;
-    this.ult = Math.min(100, this.ult + v * (this.has('p_awaken') ? 1.4 : 1));
+    this.ult = Math.min(100, this.ult + v);
   }
 
   cooldownOf(slot: number): number {
@@ -309,7 +303,6 @@ export class ActionSystem {
     const s = this.skill(slot)!;
     let cd = s.cd * this.run.player.stats.cooldown;
     if (slot < 8 && this.tripod(slot, 0)?.kind === 'cd') cd *= 0.8;
-    if (slot !== SLOT_ULT && this.has('p_haste')) cd *= 0.88;
     return cd;
   }
 
@@ -322,9 +315,9 @@ export class ActionSystem {
 
   ready(slot: number): boolean {
     if (this.level(slot) <= 0) return false;
-    if (slot === SLOT_ULT) return this.ult >= 100 || this.run.debug.noCd;
+    if (slot === SLOT_ULT) return this.ult >= 100;
     if (this.cds[slot] > 0 && !this.comboOpen(slot)) return false;
-    return this.res >= this.costOf(slot) - 0.01 || this.run.debug.infRes;
+    return this.res >= this.costOf(slot) - 0.01;
   }
 
   private comboOpen(slot: number): boolean {
@@ -397,7 +390,6 @@ export class ActionSystem {
     const run = this.run;
     this.overflow++;
     run.player.heal(run.player.stats.maxHp * 0.25);
-    run.stats.gold += 5;
     run.fx.text(run.player.x, run.player.z, run.tr('arpg_overflow'), 0x8affff);
   }
 
@@ -453,15 +445,9 @@ export class ActionSystem {
     if (regen < 0 && run.time - run.stats.lastHurt < 3) regen = 0;
     if (regen < 0 && run.time - this.lastHitTime < 3) regen = 0;
     if (this.identityT > 0 && this.cls.identity.kind === 'bloodlust') regen = -this.cls.res.max / this.cls.identity.dur;
-    if (!r.orbs) regen += run.loot.totals.resRegen;
     this.res = Math.max(0, Math.min(this.resMax, this.res + regen * dt));
-    if (run.debug.infRes) this.res = this.resMax;
     const cdRate = this.identityT > 0 && this.cls.identity.kind === 'rupture' ? 2 : 1;
     for (let i = 0; i < 10; i++) if (this.cds[i] > 0) this.cds[i] = Math.max(0, this.cds[i] - dt * cdRate);
-    if (run.debug.noCd) {
-      this.cds.fill(0);
-      this.dodgeCharges = this.cls.dodge.charges;
-    }
     if (this.dodgeCharges < this.cls.dodge.charges) {
       this.dodgeT += dt;
       if (this.dodgeT >= this.cls.dodge.cd) {
@@ -635,7 +621,7 @@ export class ActionSystem {
       }
       if (t2?.kind === 'speed') rate *= 1 + t2.v;
     }
-    if (src === 'basic') rate *= 1 + this.buff.atkSpeed + this.run.loot.totals.atkSpeed + (this.cls.id === 'steelfist' ? this.flow * 0.03 : 0);
+    if (src === 'basic') rate *= 1 + this.buff.atkSpeed + (this.cls.id === 'steelfist' ? this.flow * 0.03 : 0);
     else if (src === 'skill') rate *= 1 + this.buff.atkSpeed * 0.5;
     const play: Playing = {
       src, slot, def, step, idx, phase, t: 0, evs: sortedEvents(step), next: 0, rate,
@@ -696,10 +682,10 @@ export class ActionSystem {
     else {
       // fresh cast: pay and start the cooldown
       const cost = this.costOf(slot);
-      if (cost > 0 && !run.debug.infRes) this.res -= cost;
+      if (cost > 0) this.res -= cost;
       if (def.cost && def.cost < 0) this.gain(-def.cost);
       if (slot === SLOT_ULT) {
-        if (!run.debug.noCd) this.ult = 0;
+        this.ult = 0;
         run.fx.sound('evolution', 0.9);
         run.fx.shake(0.2);
         const f = this.fx.add('flash', p.x, p.z, 0.6, def.color);
@@ -755,11 +741,6 @@ export class ActionSystem {
     p.clearPath();
     run.stats.dodges++;
     run.fx.sound('dash', 0.5);
-    if (this.has('p_evasion')) {
-      this.shield = Math.max(this.shield, p.stats.maxHp * 0.1);
-      this.shieldMax = Math.max(this.shieldMax, this.shield);
-      this.evasionT = 2;
-    }
   }
 
   private triggerIdentity(c: Controls) {
@@ -1036,18 +1017,16 @@ export class ActionSystem {
     const el = this.elOf(cur, ev.el);
     d.el = el;
     d.weaponId = EL_WEAPON[el];
-    const gear = run.loot.totals;
     const lvMul = 1 + (p.level - 1) * 0.07;
-    let mul = cur.mul * extraMul * lvMul * (1 + this.buff.dmg) * (1 + (gear.elem[el] ?? 0));
-    if (cur.src !== 'basic') mul *= 1 + gear.skillDmg;
+    let mul = cur.mul * extraMul * lvMul * (1 + this.buff.dmg);
     if (this.identityT > 0 && this.cls.identity.kind === 'awaken') mul *= 1.3;
     if (cur.def?.type === 'cast' && this.cls.id === 'sorceress') mul *= 1;
     d.damage = this.cls.power * ev.dmg * mul;
     d.knockback = ev.knock ?? (cur.src === 'basic' ? 0.3 : 0.6);
     d.source = cur.src === 'basic' ? SRC_BASIC : SRC_SKILL;
-    d.critChance = this.buff.crit + (this.has('p_precision') ? 0.12 : 0);
+    d.critChance = this.buff.crit;
     d.critDamage = 1.6;
-    d.stag = (ev.stag ?? 0) * cur.stagMul * (1 + (p.level - 1) * 0.03) * (this.has('p_breaker') ? 1.4 : 1);
+    d.stag = (ev.stag ?? 0) * cur.stagMul * (1 + (p.level - 1) * 0.03);
     d.backMul = ev.backMul ?? 1;
     d.execute = ev.execute ?? 1;
     d.launch = !!ev.launch;
@@ -1206,11 +1185,9 @@ export class ActionSystem {
         const px = ox - e.x;
         const pz = oz - e.z;
         const l = Math.hypot(px, pz) || 1;
-        if (!e.boss) {
-          const f = ev.pull * (1 - e.kbResist) * 2;
-          e.kx += (px / l) * f;
-          e.kz += (pz / l) * f;
-        }
+        const f = ev.pull * (1 - e.kbResist) * 2;
+        e.kx += (px / l) * f;
+        e.kz += (pz / l) * f;
       }
       run.combat.hit(e, info, 1, e.x - run.player.x || dx, e.z - run.player.z || dz);
       hits++;
@@ -1250,7 +1227,7 @@ export class ActionSystem {
   gain(v: number) {
     if (v <= 0) return;
     if (this.identityT > 0 && this.cls.identity.kind === 'bloodlust') return;
-    this.res = Math.min(this.resMax, this.res + v * (this.has('p_wellspring') ? 1.3 : 1));
+    this.res = Math.min(this.resMax, this.res + v);
   }
 
   private breakStealth() {
@@ -1635,7 +1612,6 @@ export class ActionSystem {
 
   private pullIn(x: number, z: number, r: number, force: number) {
     this.run.enemies.forEachInRadius(x, z, r, (e) => {
-      if (e.boss) return;
       const dx = x - e.x;
       const dz = z - e.z;
       const l = Math.hypot(dx, dz) || 1;
@@ -1707,13 +1683,12 @@ export class ActionSystem {
     }
     this.buffs.length = w;
     if (!counter) this.counter = null;
-    if (this.evasionT > 0) this.evasionT -= dt;
     this.vigourT -= dt;
     if (this.vigourT <= 0) {
       this.vigourT = 1;
       this.vigour = this.run.player.stats.maxHp * 0.025;
     }
-    if (this.shield > 0 && this.evasionT <= 0 && !this.buffs.some((b) => b.b.shield)) this.shield = 0;
+    if (this.shield > 0 && !this.buffs.some((b) => b.b.shield)) this.shield = 0;
     if (this.cls.id === 'reaper' || this.cls.id === 'deathblade') s.crit += 0.05;
   }
 
@@ -1802,13 +1777,12 @@ export class ActionSystem {
     const behind = (ax * fx + az * fz) / al < -0.25;
     if (behind && info.source !== SRC_SUMMON) {
       const base = this.cls.id === 'deathblade' ? 1.4 : this.cls.id === 'reaper' ? 1.3 : 1.1;
-      m *= Math.max(base, info.backMul) * (this.has('p_backstab') ? 1.25 : 1);
+      m *= Math.max(base, info.backMul);
       if (Math.random() < 0.02 && this.run.fx.level() >= 0) this.run.fx.text(e.x, e.z, this.run.tr('act_back'), 0xd0a0ff);
     }
     if (info.execute > 1 && e.hp < e.maxHp * 0.3) m *= info.execute;
-    if (this.has('p_reaper') && e.hp < e.maxHp * 0.3) m *= 1.4;
     if (e.markT > 0 && info.source === SRC_SKILL) m *= 1.25;
-    if (e.brokenT > 0) m *= this.has('p_breakpoint') ? 1.5 : 1.3;
+    if (e.brokenT > 0) m *= 1.3;
     void dirX;
     void dirZ;
     return m;
@@ -1832,7 +1806,7 @@ export class ActionSystem {
 
   onKill(e: Enemy) {
     this.gain(this.cls.res.onKill);
-    this.addUlt(e.elite ? 6 : e.boss ? 20 : 0.8);
+    this.addUlt(0.8);
   }
 
   /**

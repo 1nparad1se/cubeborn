@@ -296,6 +296,14 @@ export class MenuCampfire {
     return [x, z, face(x)];
   }
 
+  /** Screen points (NDC) above each character's head, for the name cards of the main menu. */
+  anchors(cam: THREE.Camera): { id: string; x: number; y: number }[] {
+    return this.seats.map((s) => {
+      this.v.set(s.x, 2.35, s.z).applyMatrix4(this.group.matrixWorld).project(cam);
+      return { id: s.id, x: this.v.x, y: this.v.y };
+    });
+  }
+
   /** Character id under a screen point (NDC), or null. */
   pick(ndcX: number, ndcY: number, cam: THREE.Camera): string | null {
     let best: string | null = null;

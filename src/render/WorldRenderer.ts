@@ -3,10 +3,8 @@ import type { MapDef } from '../data/types';
 import { CELL, type Block, type Terrain } from '../game/Terrain';
 import { hash2 } from '../core/Rng';
 import { ATLAS_VARIANTS, GROUND_ROWS, ROW_RIM, ROW_SOIL, ROW_STONE, SPRITE, SPRITE_COLORED, SPRITE_COUNT, makeBlockAtlas, makeFoliageAtlas, makeGroundAtlas } from './Textures';
-import { TILE_COUNT, roofVoxels, tileOf, treeVoxels, type Vox } from './VoxelFlora';
+import { TILE_COUNT, tileOf, treeVoxels, type Vox } from './VoxelFlora';
 import { unitCube } from './VoxelGeometry';
-import { buildVoxels } from '../game/world/build/prefabs';
-import '../game/world/build/all';
 
 type Slot = { x: number; z: number; build: () => void; objs: THREE.Mesh[] | null };
 
@@ -48,33 +46,13 @@ const TUFTS: SpriteW = [[SPRITE.grass, 70], [SPRITE.tallGrass, 20], [SPRITE.fern
 
 /** Which foliage grows on a tile, per map generator. */
 function foliageRule(gen: string, tile: string): FoliageRule | null {
-  const grassy = /grass|moss/.test(tile);
-  switch (gen) {
-    case 'forest':
-      if (grassy) return { density: 1.7, sprites: MEADOW };
-      if (/dirt/.test(tile)) return { density: 0.3, sprites: TUFTS };
-      if (/path/.test(tile)) return { density: 0.06, sprites: TUFTS };
-      if (/bog/.test(tile)) return { density: 0.25, sprites: [[SPRITE.tallGrass, 1]], tint: 0x6a7a3a };
-      return null;
-    case 'city':
-      if (grassy) return { density: 1.1, sprites: [[SPRITE.grass, 60], [SPRITE.tallGrass, 20], [SPRITE.poppy, 2], [SPRITE.daisy, 2], [SPRITE.bluet, 2]] };
-      if (/cobble|dirt/.test(tile)) return { density: 0.05, sprites: TUFTS };
-      return null;
-    case 'catacombs':
-      if (grassy) return { density: 0.7, sprites: [[SPRITE.grass, 6], [SPRITE.fern, 2], [SPRITE.mushroom, 1]] };
-      return null;
-    case 'volcano':
-      if (/ash|scorch/.test(tile)) return { density: 0.05, sprites: [[SPRITE.deadBush, 1]] };
-      return null;
-    case 'tundra':
-      if (/rock/.test(tile)) return { density: 0.3, sprites: [[SPRITE.dryGrass, 3], [SPRITE.fern, 1]], tint: 0x8a9a74 };
-      if (/snow2/.test(tile)) return { density: 0.14, sprites: [[SPRITE.dryGrass, 3], [SPRITE.deadBush, 1]], tint: 0x9aa480 };
-      if (/snow/.test(tile)) return { density: 0.03, sprites: [[SPRITE.deadBush, 1]] };
-      return null;
-    case 'ruins':
-      if (grassy) return { density: 1.2, sprites: [[SPRITE.grass, 50], [SPRITE.tallGrass, 20], [SPRITE.fern, 6], [SPRITE.allium, 2], [SPRITE.bluet, 2], [SPRITE.daisy, 2]] };
-      if (/sand/.test(tile)) return { density: 0.08, sprites: [[SPRITE.deadBush, 2], [SPRITE.dryGrass, 1]], tint: 0xb0a060 };
-      return null;
+  const grassy = /grass/.test(tile);
+  if (gen === 'meadow') {
+    if (grassy) return { density: 1.7, sprites: MEADOW };
+    // river banks: shorter, sparser grass thinning toward the water
+    if (/bank/.test(tile)) return { density: 0.7, sprites: TUFTS };
+    if (/sand/.test(tile)) return { density: 0.06, sprites: TUFTS };
+    return null;
   }
   return grassy ? { density: 1, sprites: TUFTS } : null;
 }
@@ -550,15 +528,11 @@ diffuseColor.rgb *= mix(0.72, 1.0, smoothstep(0.0, 1.0, vWPos.y));`);
     const pal = map.palette.blocks;
     // Blocks are drawn by material: stone as rounded masonry (lone stones as boulders), wood
     // as stacked horizontal logs, everything else as plain blocks.
-    // Every block is a Minecraft-style textured cube; trees and roofs add their own blocks.
+    // Every block is a Minecraft-style textured cube; trees add their own blocks.
     const bucketOf = (x: number, z: number) => Math.min(chunks - 1, Math.max(0, Math.floor(z / CHUNK))) * chunks + Math.min(chunks - 1, Math.max(0, Math.floor(x / CHUNK)));
-    // tree and roof voxels are made when their chunk is built (big worlds hold ~1M of them)
+    // tree voxels are made when their chunk is built (big worlds hold ~1M of them)
     const treeB: (typeof t.trees)[] = Array.from({ length: chunks * chunks }, () => []);
-    const roofB: (typeof t.roofs)[] = Array.from({ length: chunks * chunks }, () => []);
-    const buildB: (typeof t.builds)[] = Array.from({ length: chunks * chunks }, () => []);
     for (const tr of t.trees) treeB[bucketOf(tr.x, tr.z)].push(tr);
-    for (const rf of t.roofs) roofB[bucketOf(rf.x + rf.w / 2, rf.z + rf.d / 2)].push(rf);
-    for (const b of t.builds) buildB[bucketOf(b.x + b.w / 2, b.z + b.d / 2)].push(b);
     const voxOf = (i: number): Vox[] => {
       const out: Vox[] = [];
       for (const tr of treeB[i]) {
@@ -569,8 +543,6 @@ diffuseColor.rgb *= mix(0.72, 1.0, smoothstep(0.0, 1.0, vWPos.y));`);
         if (lift) for (const v of list) v.y += lift;
         for (const v of list) out.push(v);
       }
-      for (const rf of roofB[i]) roofVoxels(rf, map, out);
-      for (const b of buildB[i]) buildVoxels(b, t, out);
       return out;
     };
     const toVox = (b: Block): Vox => {
@@ -608,7 +580,7 @@ diffuseColor.rgb *= mix(0.72, 1.0, smoothstep(0.0, 1.0, vWPos.y));`);
     };
     const shadows = quality !== 'low';
     buckets.forEach((list, i) => {
-      if (!list.length && !treeB[i].length && !roofB[i].length && !buildB[i].length) return;
+      if (!list.length && !treeB[i].length) return;
       const cx = i % chunks;
       const cz = Math.floor(i / chunks);
       this.defer((cx + 0.5) * CHUNK, (cz + 0.5) * CHUNK, () => fill(list, voxOf(i), mat, shadows, cx, cz));

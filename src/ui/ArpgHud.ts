@@ -1,6 +1,5 @@
 import type { Run } from '../game/Run';
 import type { Enemy } from '../game/Enemy';
-import type { BossController } from '../game/bosses/Boss';
 import { SLOT_SPECIAL, SLOT_ULT } from '../game/action/ActionSystem';
 import { keyName } from '../input/Input';
 import type { Keybinds } from '../meta/Save';
@@ -67,7 +66,6 @@ export class ArpgHud {
   private orbs = h('div.ah-orbs');
   private xpFill = h('div.ah-xp-fill');
   private xpText = h('div.ah-xp-text');
-  private gold = h('span');
   private slots: Slot[] = [];
   private castBox = h('div.ah-cast.hidden');
   private castName = h('div.ah-cast-name');
@@ -84,7 +82,6 @@ export class ArpgHud {
   private hover: Enemy | null = null;
   private runRef: Run | null = null;
   binds: Keybinds | null = null;
-  onInventory: () => void = () => {};
   onLearn: (slot: number) => void = () => {};
   /** Opens the skills screen (the K button on the bar and the skill-points badge). */
   onSkills: () => void = () => {};
@@ -93,7 +90,6 @@ export class ArpgHud {
   private tipSlot = -1;
   private tipT = 0;
   private lastRun: Run | null = null;
-  private bagKey = h('span.key');
   private skKey = h('span.key');
   private specialWrap: HTMLElement;
 
@@ -164,14 +160,13 @@ export class ArpgHud {
         'div.ah-plate',
         h(
           'div.ah-main',
-          h('div.ah-left', ident.root, h('div.ah-gold', h('i.ic-coin'), this.gold)),
+          h('div.ah-left', ident.root),
           this.heart,
           h('div.ah-center', grid, this.resBar),
           h('div.ah-extra', basic.root, dodge.root, special.root),
           ult.root,
           h(
             'div.ah-side',
-            h('button.ah-bag', { title: t('inv_title'), onclick: () => this.onInventory() }, iconImg('chest', 0xffc060, 'icon'), this.bagKey),
             h('button.ah-bag.ah-skb', { title: t('ak_skills_btn'), onclick: () => this.onSkills() }, iconImg('rune', 0x9ad0ff, 'icon'), this.skKey),
           ),
         ),
@@ -300,14 +295,8 @@ export class ArpgHud {
       this.xpLv.textContent = String(p.level);
       this.xpText.textContent = capped ? t('arpg_lv_max', { n: p.level }) : t('arpg_lv', { n: p.level, max: a.maxLevel }) + ` · ${Math.floor(p.xp)} / ${p.xpNext}`;
     });
-    const ik = this.binds?.inventory?.[0] ?? '';
     const kk = this.binds?.skills?.[0] ?? 'KeyK';
-    this.set('bagk', ik + kk, () => {
-      this.bagKey.textContent = keyName(ik);
-      this.skKey.textContent = keyName(kk);
-    });
-    this.set('bagn', run.loot.bag.length, () => this.root.style.setProperty('--bagn', `'${run.loot.bag.length}'`));
-    this.set('gold', Math.round(run.stats.gold), () => (this.gold.textContent = fmtNum(run.stats.gold)));
+    this.set('skk', kk, () => (this.skKey.textContent = keyName(kk)));
     this.set('pts', a.points + kk, () => {
       this.pointsBox.classList.toggle('hidden', a.points <= 0);
       this.pointsBox.textContent = t('ak_points_hud', { n: a.points, k: keyName(kk) });
@@ -448,23 +437,18 @@ export class ArpgHud {
 
   private updateHover(run: Run) {
     const e = this.hover;
-    const show = !!e && e.alive && e.active && !e.boss;
+    const show = !!e && e.alive && e.active;
     this.set('hv', show ? e!.uid : 0, () => this.hoverBox.classList.toggle('hidden', !show));
     if (!show || !e) return;
-    const name = ((e as { name?: string }).name || L(e.def.name)) + (e.elite ? ' ★' : '');
-    this.set('hvn', name, () => {
-      this.hName.textContent = name;
-      this.hName.style.color = e.elite ? '#ffd23d' : '#f1f2f4';
-    });
-    const own = (e as { level?: number }).level;
-    const lvl = Math.max(1, own ?? run.zoneLevel + (e.elite ? 2 : 0) + (e.boss ? 3 : 0));
-    const role = (e.elite ? t('role_elite') + ' · ' : '') + t('role_' + e.role);
+    const name = e.name || L(e.def.name);
+    this.set('hvn', name, () => (this.hName.textContent = name));
+    const lvl = Math.max(1, e.level);
     // level colour by the gap to the hero (grey far below, green below, white even, yellow above, red far above)
     const gap = lvl - run.player.level;
     const lc = gap <= -6 ? '#9a9a9a' : gap <= -3 ? '#6bd46b' : gap < 3 ? '#f1f2f4' : gap < 6 ? '#ffd23d' : '#ff5a4a';
-    this.set('hvm', role + lvl + lc, () => {
+    this.set('hvm', lvl + lc, () => {
       clear(this.hMeta);
-      this.hMeta.append(h('b', { style: `color:${lc}` }, t('arpg_lv_short', { n: lvl })), ` · ${role}`);
+      this.hMeta.append(h('b', { style: `color:${lc}` }, t('arpg_lv_short', { n: lvl })));
     });
     const k = Math.max(0, e.hp / e.maxHp);
     this.set('hvk', Math.round(k * 300), () => (this.hFill.style.transform = `scaleX(${k})`));
@@ -483,21 +467,6 @@ export class ArpgHud {
       clear(this.hFx);
       if (broken) this.hFx.append(h('span.fx-chip', { style: '--fc:#ffc030' }, t('ak_broken')));
       for (const f of fx) this.hFx.append(h('span.fx-chip', { style: `--fc:${f.color}` }, t(f.key)));
-    });
-  }
-
-  /** Boss bar extras: phase label and effects. */
-  bossExtras(boss: BossController, phaseEl: HTMLElement, fxEl: HTMLElement) {
-    const n = boss.def.phases.length;
-    this.set('bph', boss.phase, () => {
-      clear(phaseEl);
-      phaseEl.append(h('span.boss-phase-t', t('arpg_phase', { n: boss.phase + 1, total: n })));
-      for (let i = 0; i < n; i++) phaseEl.append(h('i' + (i <= boss.phase ? '.on' : '')));
-    });
-    const fx = enemyEffects(boss.e);
-    this.set('bfx', fx.map((f) => f.key).join(), () => {
-      clear(fxEl);
-      for (const f of fx) fxEl.append(h('span.fx-chip', { style: `--fc:${f.color}` }, t(f.key)));
     });
   }
 

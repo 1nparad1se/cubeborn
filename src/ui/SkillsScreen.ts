@@ -118,7 +118,6 @@ export function slotPower(run: Run, slot: number, lv?: number): { dmg: number; s
     if (t2?.kind === 'dmg') mul *= 1 + t2.v;
     if (t2?.kind === 'stag') sm *= 1 + t2.v;
   }
-  if (slot !== SLOT_BASIC) mul *= 1 + (run.loot.totals.skillDmg ?? 0);
   return { dmg: d * mul, stag: s * sm };
 }
 

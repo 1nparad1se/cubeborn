@@ -1,865 +1,597 @@
-import { armoryScreen } from './ArmoryScreen';
-import { heroScreen as charHeroScreen, inventoryScreen, forgeScreen } from './ProgressScreens';
-import { h, clear, hex, put } from './dom';
+import { h, clear, hex } from './dom';
 import { iconImg } from './icons';
 import { thumbImg } from '../render/Thumbnails';
 import { t, L } from '../i18n';
-import type { RunMode } from '../game/Waves';
-import { statModLines, fmtNum, fmtTime } from './format';
 import type { Profile } from '../meta/Profile';
-import { HEROES, HERO_BY_ID } from '../data/heroes';
 import { CLASSES, classDef } from '../game/action/classes';
-import { ENEMIES, ENEMY_BY_ID } from '../data/enemies';
-import { MAP_LORE } from '../data/mapLore';
-import { WAVE_TYPE_COLOR, WaveDirector } from '../game/Waves';
-import { BOSSES, RELICS, BOSS_BY_ID } from '../data/bosses';
-import { MAPS } from '../data/maps';
-import { MapPreview } from '../render/MapPreview';
-import { PROG } from '../config/progression';
-import { DIFFICULTIES } from '../data/difficulty';
-import { ACHIEVEMENTS, ACHIEVEMENT_CATEGORIES } from '../data/achievements';
-import type { AchievementCategory, AchievementDef } from '../data/types';
+import type { ClassDef } from '../game/action/types';
+import { SLOT_KEYS } from '../game/action/types';
+import { MAX_CHARS, REGION, type CharSave } from '../meta/Characters';
+import { SkillSandbox, type DemoAction } from '../render/SkillSandbox';
+import { BESTIARY_CATEGORIES, CREATURES } from '../data/bestiary';
 import { settingsPanel } from './Settings';
-import { viewerScreen } from './ViewerScreen';
-import { classInfo, classStage, tr } from './ClassPreview';
-import { createScreen, rosterScreen } from './CharScreens';
-import { dev } from '../dev/DevMode';
-import { MAX_CHARS } from '../meta/Characters';
+import { attachTip, classStage, hideTip, skillTipBody, tr } from './ClassPreview';
+import { fmtTime } from './format';
+import './menu.css';
 
 export interface MenuApi {
   profile: Profile;
+  version: string;
   sfx(id: string): void;
-  startRun(hero: string, map: string, diff: string, mode?: RunMode): void;
+  /** Enters the world with a saved character. */
+  play(charId: string): void;
   /** Captures the next key press for rebinding. */
   captureKey(cb: (code: string) => void): void;
   /** True when a setting changed that only applies after a restart. */
   needsRestart(): boolean;
-  setShowcase(modelId: string): void;
-  /** Menu campfire with the created characters (empty = single showcase). */
-  setCampfire(members: { id: string; cls: string }[], activeId: string | null): void;
-  /** Character of the campfire under a client point. */
-  pickCampfire(clientX: number, clientY: number): string | null;
-  /** Slides the menu showcase model toward the right edge (0 = centred, 1 = right third). */
-  setMenuShift(v: number): void;
   applySettings(): void;
-  resetProgress(): void;
+  /** Restores the default settings (characters are kept). */
+  resetSettings(): void;
+  /** Menu campfire with the created characters (empty = a single showcase hero). */
+  setCampfire(members: { id: string; cls: string }[], activeId: string | null): void;
+  setShowcase(modelId: string): void;
+  /** Client-space points above the campfire characters' heads. */
+  campfireAnchors(): { id: string; x: number; y: number }[];
+  /** Slides the menu backdrop toward the right edge (0 = centred, 1 = right third). */
+  setMenuShift(v: number): void;
   /** Stops drawing the 3D menu backdrop while a screen with its own 3D view is open. */
   setBackdropPaused(v: boolean): void;
-  /** Developer mode switch and its tools (Settings → Developer). */
-  setDevMode(on: boolean): void;
-  openDevPanel(): void;
-  toggleDevDebug(): void;
-  version: string;
 }
 
-type ScreenId = 'main' | 'roster' | 'create' | 'hero' | 'inventory' | 'forge' | 'armory' | 'heroes' | 'viewer' | 'maps' | 'collection' | 'achievements' | 'settings';
+type ScreenId = 'main' | 'continue' | 'create' | 'bestiary' | 'settings';
 
-const RARITY_COLOR: Record<string, string> = { common: '#c8ccd8', uncommon: '#6aff8a', rare: '#5ab4ff', epic: '#c77dff', legendary: '#ffb02e' };
-/** Tabs along the top bar of the menu screens (Q / E cycle through them). */
-const TABS: ScreenId[] = ['hero', 'inventory', 'forge', 'armory', 'viewer', 'maps', 'collection', 'achievements', 'settings'];
-/** Screens where the 3D showcase stays visible on the right instead of an item preview. */
-const SHOWCASE: ScreenId[] = ['main', 'maps', 'roster'];
-/** Screens with their own 3D view (the menu backdrop stops drawing). */
-const OWN_3D: ScreenId[] = ['viewer', 'heroes', 'create'];
+/** Menu entries in order (main list and the tab bar of the inner screens). */
+const ENTRIES: { id: ScreenId | 'exit'; icon: string; ru: string; en: string }[] = [
+  { id: 'continue', icon: 'play', ru: 'Продолжить игру', en: 'Continue' },
+  { id: 'create', icon: 'helm', ru: 'Создать персонажа', en: 'Create character' },
+  { id: 'bestiary', icon: 'skull', ru: 'Бестиарий', en: 'Bestiary' },
+  { id: 'settings', icon: 'gear', ru: 'Настройки', en: 'Settings' },
+  { id: 'exit', icon: 'door', ru: 'Выход', en: 'Exit' },
+];
 
-function pill(text: string, color: string): HTMLElement {
-  return h('span.pill', { style: `--pc:${color}` }, text);
+/** Small square-pixel glyphs for the menu buttons (CSS draws them, see menu.css). */
+const glyph = (name: string) => h('i.mm-glyph.g-' + name);
+
+/** Class emblem: the class's identity icon in its colour. */
+export function classEmblem(c: ClassDef, cls = 'mm-emblem'): HTMLElement {
+  return iconImg('sk_' + c.identity.icon, c.color, cls);
 }
 
-/** Builds the out-of-run menu screens inside a single container. */
+/** Readable play time: "2 ч 15 мин" / "2 h 15 min". */
+function playTime(sec: number): string {
+  const m = Math.floor(sec / 60);
+  if (m < 60) return tr(`${m} мин`, `${m} min`);
+  return tr(`${Math.floor(m / 60)} ч ${m % 60} мин`, `${Math.floor(m / 60)} h ${m % 60} min`);
+}
+
+/** Checks a new character name; returns an error text or null. */
+export function nameError(p: Profile, raw: string): string | null {
+  const name = raw.trim();
+  if (name.length < 2) return tr('Имя должно содержать минимум 2 символа', 'The name needs at least 2 characters');
+  if (name.length > 16) return tr('Имя не длиннее 16 символов', 'The name must be at most 16 characters');
+  if (!/^[\p{L}\p{N}][\p{L}\p{N} _-]*$/u.test(name)) return tr('Только буквы, цифры, пробел, «-» и «_»', 'Letters, digits, space, "-" and "_" only');
+  if (p.data.chars.some((c) => c.name.toLowerCase() === name.toLowerCase())) return tr('Персонаж с таким именем уже есть', 'A character with this name already exists');
+  return null;
+}
+
+/** Real numbers of a class for the creation screen. */
+function classStats(c: ClassDef) {
+  const chain = c.basic.steps.reduce((s, st) => s + st.dur, 0);
+  return {
+    hp: c.baseHp,
+    attack: c.power,
+    armor: c.armor,
+    speed: c.baseSpeed,
+    /** Basic attack hits per second. */
+    aps: chain > 0 ? c.basic.steps.length / chain : 1,
+  };
+}
+const STAT_MAX = (() => {
+  const all = CLASSES.map(classStats);
+  return { hp: Math.max(...all.map((s) => s.hp)), attack: Math.max(...all.map((s) => s.attack)), armor: Math.max(...all.map((s) => s.armor)), speed: Math.max(...all.map((s) => s.speed)), aps: Math.max(...all.map((s) => s.aps)) };
+})();
+
+/** Out-of-game screens: main menu at the campfire, continue, character creation, bestiary, settings. */
 export class Menus {
   readonly root: HTMLElement;
-  private stack: ScreenId[] = [];
-  private selectMode = false;
-  private selHero: string = HEROES[0].id;
-  private selMap = 'blightwood';
-  private selDiff = 'normal';
-  private achStatus: 'all' | 'done' | 'locked' = 'all';
-  private achCat: AchievementCategory | 'all' = 'all';
-  /** Set by the Endless button: the map screen opens with Endless mode picked. */
-  private presetMode: RunMode | null = null;
-  /** Tear-down for the open screen (the character viewer owns a WebGL context). */
+  private stack: ScreenId[] = ['main'];
+  /** Tear-down for the open screen (3D viewers, timers, key handlers). */
   private cleanup: (() => void) | null = null;
+  /** Character highlighted in the Continue list / at the campfire. */
+  private sel: string | null = null;
 
   constructor(parent: HTMLElement, private api: MenuApi) {
     this.root = h('div.menus');
     parent.appendChild(this.root);
-    const last = api.profile.data.last;
-    this.selHero = HERO_BY_ID[last.hero] ? last.hero : HEROES[0].id;
-    this.selMap = last.map;
-    this.selDiff = last.diff;
-    this.syncHero();
-    window.addEventListener('keydown', (e) => this.onKey(e));
-    // clicking a character at the campfire makes it the active one
-    this.root.addEventListener('click', (e) => {
-      const cur = this.current;
-      if (cur !== 'main' && cur !== 'roster') return;
-      if ((e.target as HTMLElement).closest('button, input, a, .detail, .modal-back, .gold-chip, .main-char')) return;
-      const id = this.api.pickCampfire(e.clientX, e.clientY);
-      if (!id || id === this.api.profile.char?.id) return;
-      this.api.sfx('select');
-      this.api.profile.selectChar(id);
-      this.syncHero();
-      this.render();
-    });
-  }
-
-  /** The class played is the active character's class. */
-  private syncHero() {
-    const c = this.api.profile.char;
-    if (c) this.selHero = c.cls;
-  }
-
-  /** Puts the created characters around the menu campfire. */
-  private showCamp() {
-    const p = this.api.profile;
-    const chars = p.data.chars;
-    if (chars.length) this.api.setCampfire(chars.map((c) => ({ id: c.id, cls: c.cls })), p.char?.id ?? null);
-    else this.api.setShowcase(HERO_BY_ID[this.selHero]?.model ?? HEROES[0].model);
-  }
-
-  /** Play flow: no character → creation; otherwise the map choice for the active character. */
-  private play(preset: RunMode | null) {
-    const p = this.api.profile;
-    this.selectMode = true;
-    this.presetMode = preset;
-    if (!p.char) {
-      this.open('create');
-      return;
-    }
-    this.syncHero();
-    // the open world is the main way to play; the old wave modes stay in developer mode
-    if (!preset || !dev.enabled) {
-      this.api.startRun(this.selHero, MAPS[0].id, 'normal', 'world');
-      return;
-    }
-    this.open('maps');
-  }
-
-  private get current(): ScreenId {
-    return this.stack[this.stack.length - 1] ?? 'main';
-  }
-
-  private onKey(e: KeyboardEvent) {
-    if (e.defaultPrevented || e.repeat || this.root.classList.contains('hidden')) return;
-    if (modalOpen()) return;
-    const id = this.current;
-    if (id === 'main') return;
-    if (OWN_3D.includes(id) && e.code !== 'KeyQ' && e.code !== 'KeyE' && e.code !== 'Enter') return;
-    if (e.code === 'KeyQ' || e.code === 'KeyE') {
-      e.preventDefault();
-      this.cycleTab(e.code === 'KeyQ' ? -1 : 1);
-    } else if (e.code === 'Enter' && this.selectMode) {
-      e.preventDefault();
-      (this.root.querySelector('.detail .btn.primary') as HTMLElement | null)?.click();
-    }
-  }
-
-  private tabs(): ScreenId[] {
-    return this.selectMode ? ['roster', 'maps'] : TABS;
-  }
-
-  private cycleTab(dir: number) {
-    const tabs = this.tabs();
-    const i = tabs.indexOf(this.current);
-    if (i < 0) return;
-    const next = tabs[(i + dir + tabs.length) % tabs.length];
-    if (this.selectMode && next === 'maps' && !this.api.profile.char) return;
-    this.api.sfx('ui');
-    this.switchTo(next);
-  }
-
-  private switchTo(id: ScreenId) {
-    this.stack[this.stack.length - 1] = id;
-    this.render();
   }
 
   setVisible(v: boolean) {
     this.root.classList.toggle('hidden', !v);
+    if (!v) {
+      this.cleanup?.();
+      this.cleanup = null;
+    }
   }
 
-  open(id: ScreenId, push = true) {
-    if (push) this.stack.push(id);
-    this.render();
+  get current(): ScreenId {
+    return this.stack[this.stack.length - 1];
   }
 
   /** True when a screen other than the main menu is open. */
   get canGoBack(): boolean {
-    return this.stack.length > 1 || (this.stack.length === 1 && this.stack[0] !== 'main');
+    return this.current !== 'main' || !!this.root.querySelector('.mm-dialog');
+  }
+
+  open(id: ScreenId) {
+    if (id === 'main') this.stack = ['main'];
+    else this.stack = ['main', id];
+    this.render();
   }
 
   back() {
-    this.api.sfx('uiBack');
-    this.stack.pop();
-    if (!this.stack.length) this.stack.push('main');
-    if (this.stack[this.stack.length - 1] === 'main') {
-      this.selectMode = false;
-      this.presetMode = null;
+    const dlg = this.root.querySelector('.mm-dialog');
+    if (dlg) {
+      dlg.remove();
+      return;
     }
-    this.render();
+    this.api.sfx('uiBack');
+    this.open('main');
   }
 
   home() {
-    this.stack = ['main'];
-    this.selectMode = false;
-    this.presetMode = null;
-    this.render();
+    this.open('main');
   }
 
   render() {
-    const id = this.stack[this.stack.length - 1] ?? 'main';
     this.cleanup?.();
     this.cleanup = null;
+    hideTip();
     clear(this.root);
-    this.api.setBackdropPaused(OWN_3D.includes(id));
+    const id = this.current;
+    this.api.setBackdropPaused(id === 'create');
     const el = this.build(id);
     el.classList.add('screen', 'screen-' + id);
     this.root.appendChild(el);
-    this.api.setMenuShift(id === 'main' ? 0 : 1);
-    this.root.scrollTop = 0;
+    this.api.setMenuShift(id === 'main' ? 0.35 : id === 'continue' ? 0.75 : 1);
   }
 
   private build(id: ScreenId): HTMLElement {
     switch (id) {
       case 'main':
         return this.mainScreen();
-      case 'heroes':
-        return this.heroScreen();
-      case 'roster':
-        return this.rosterScreen();
+      case 'continue':
+        return this.continueScreen();
       case 'create':
         return this.createScreen();
-      case 'viewer': {
-        const v = viewerScreen(this.api.profile, this.selHero, (x) => this.api.sfx(x), (hid) => {
-          if (this.api.profile.isHeroUnlocked(hid)) this.selHero = hid;
-        });
-        this.cleanup = () => v.dispose();
-        return this.frame(v.el);
-      }
-      case 'hero':
-        return this.frame(charHeroScreen(this.api.profile, (x) => this.api.sfx(x)));
-      case 'inventory':
-        return this.frame(inventoryScreen(this.api.profile, (x) => this.api.sfx(x)));
-      case 'forge': {
-        const gold = h('div.gold-chip', h('i.ic-coin'), h('span', fmtNum(this.api.profile.data.gold)));
-        return this.frame(forgeScreen(this.api.profile, (x) => this.api.sfx(x), () => ((gold.lastChild as HTMLElement).textContent = fmtNum(this.api.profile.data.gold))), { gold });
-      }
-      case 'armory': {
-        const gold = h('div.gold-chip', h('i.ic-coin'), h('span', fmtNum(this.api.profile.data.gold)));
-        const el = armoryScreen(this.api.profile, (x) => this.api.sfx(x), this.selHero, (hid) => (this.selHero = hid), () => ((gold.lastChild as HTMLElement).textContent = fmtNum(this.api.profile.data.gold)));
-        return this.frame(el, { gold });
-      }
-      case 'maps':
-        return this.mapScreen();
-      case 'collection':
-        return this.collectionScreen();
-      case 'achievements':
-        return this.achievementScreen();
+      case 'bestiary':
+        return this.bestiaryScreen();
       case 'settings':
-        return this.frame(h('div.mcol', settingsPanel(this.api, () => this.render())));
+        return this.frame(t('menu_settings'), h('div.mm-settings', settingsPanel(this.api, () => this.render())));
     }
   }
 
-  /**
-   * Dungeon-crawler style screen frame: tab bar with Q/E key chips and currency on top,
-   * content in the middle, key hints along the bottom.
-   */
-  private frame(body: HTMLElement, opts: { extra?: HTMLElement; gold?: HTMLElement } = {}): HTMLElement {
-    const id = this.current;
-    const tabs = this.tabs();
-    const bar = h('div.mtabs');
-    tabs.forEach((tid, i) => {
-      const label = this.selectMode ? `${i + 1}. ${tid === 'roster' ? tr('Персонаж', 'Character') : t('choose_map')}` : t('menu_' + tid);
-      bar.append(
-        h('button.mtab' + (tid === id ? '.sel' : ''), {
-          onclick: () => {
-            if (tid === id) return;
-            if (this.selectMode && tid === 'maps' && !this.api.profile.char) return;
-            this.api.sfx('ui');
-            this.switchTo(tid);
-          },
-        }, label),
-      );
-    });
-    const hint = (label: string, keys: string[], onclick: () => void) => h('button.mhint', { onclick }, h('span', label), ...keys.map((k) => h('span.key', k)));
-    const hints = [hint(t('btn_back'), ['Esc'], () => this.back())];
-    if (tabs.length > 1) hints.unshift(hint(t('hint_tabs'), ['Q', 'E'], () => this.cycleTab(1)));
-    if (this.selectMode) hints.unshift(hint(id === 'maps' ? t('btn_start') : t('btn_next'), ['Enter'], () => (this.root.querySelector('.detail .btn.primary') as HTMLElement | null)?.click()));
-    return h(
-      'div.mframe' + (SHOWCASE.includes(id) ? '.showcase' : ''),
-      h(
-        'div.mtop',
-        h('div.mtop-l'),
-        h('div.mtop-c', h('span.key.tabkey', { onclick: () => this.cycleTab(-1) }, 'Q'), bar, h('span.key.tabkey', { onclick: () => this.cycleTab(1) }, 'E')),
-        h('div.mtop-r', opts.extra ?? null, opts.gold ?? h('div.gold-chip', h('i.ic-coin'), fmtNum(this.api.profile.data.gold))),
-      ),
-      h('div.mbody', body),
-      h('div.mfoot', ...hints),
-    );
+  private go(id: ScreenId | 'exit') {
+    this.api.sfx('ui');
+    if (id === 'exit') this.exitDialog();
+    else this.open(id);
   }
 
-  /** Marks the clicked cell of a grid as selected. */
-  private selectable(grid: HTMLElement): HTMLElement {
-    grid.addEventListener('click', (e) => {
-      const cell = (e.target as HTMLElement).closest('.icon-cell');
-      if (!cell) return;
-      for (const c of grid.children) c.classList.toggle('sel', c === cell);
-    });
-    return grid;
-  }
-
-  private btn(label: string, onclick: () => void, cls = ''): HTMLElement {
-    return h('button.btn' + cls, {
-      onclick: () => {
-        this.api.sfx('ui');
-        onclick();
-      },
-    }, label);
+  // ------------------------------------------------------------------ campfire
+  private showCamp() {
+    const p = this.api.profile;
+    const chars = p.chars;
+    if (!this.sel || !chars.some((c) => c.id === this.sel)) this.sel = p.char?.id ?? chars[0]?.id ?? null;
+    if (chars.length) this.api.setCampfire(chars.slice(0, 9).map((c) => ({ id: c.id, cls: c.cls })), this.sel);
+    else this.api.setShowcase(CLASSES[0].id);
   }
 
   // ------------------------------------------------------------------ main
   private mainScreen(): HTMLElement {
     const p = this.api.profile;
-    this.syncHero();
     this.showCamp();
-    const newAch = ACHIEVEMENTS.length;
-    const ch = p.char;
+    const has = p.data.chars.length > 0;
+    const nav = h('nav.mm-nav');
+    for (const e of ENTRIES) {
+      const off = e.id === 'continue' && !has;
+      const b = h(
+        'button.mm-btn' + (off ? '.off' : '') + (e.id === 'continue' && has ? '.primary' : ''),
+        {
+          onclick: () => {
+            if (off) {
+              this.api.sfx('denied');
+              note.textContent = tr('Сохранённых персонажей пока нет. Создайте первого.', 'No saved characters yet. Create your first one.');
+              note.classList.add('show');
+              return;
+            }
+            this.go(e.id);
+          },
+        },
+        glyph(e.icon),
+        h('span.mm-label', tr(e.ru, e.en)),
+        h('span.mm-arrow', '›'),
+      );
+      nav.append(b);
+    }
+    const note = h('div.mm-note');
+    // name cards above the characters at the campfire
+    const cards = h('div.mm-cards');
+    const byId = new Map<string, HTMLElement>();
+    for (const c of p.chars.slice(0, 9)) {
+      const def = classDef(c.cls);
+      const card = h(
+        'button.mm-card' + (c.id === this.sel ? '.sel' : ''),
+        {
+          style: `--hc:${hex(def.color)}`,
+          title: tr('Двойной щелчок — играть', 'Double-click to play'),
+          onclick: () => {
+            if (this.sel === c.id) return;
+            this.api.sfx('select');
+            this.sel = c.id;
+            this.api.profile.selectChar(c.id);
+            this.showCamp();
+            for (const [k, el] of byId) el.classList.toggle('sel', k === c.id);
+          },
+          ondblclick: () => this.api.play(c.id),
+        },
+        classEmblem(def),
+        h('div.mm-card-txt', h('b', c.name), h('span', `${L(def.name)} · ${tr('Уровень', 'Level')} ${c.level}`), h('small', L(REGION))),
+      );
+      byId.set(c.id, card);
+      cards.append(card);
+    }
+    let raf = 0;
+    const place = () => {
+      raf = requestAnimationFrame(place);
+      const host = this.root.getBoundingClientRect();
+      for (const a of this.api.campfireAnchors()) {
+        const el = byId.get(a.id);
+        if (!el) continue;
+        el.style.transform = `translate(${Math.round(a.x - host.left)}px, ${Math.round(a.y - host.top)}px) translate(-50%, -100%)`;
+        el.style.visibility = 'visible';
+      }
+    };
+    if (byId.size) raf = requestAnimationFrame(place);
+    this.cleanup = () => cancelAnimationFrame(raf);
     return h(
-      'div.main-menu',
-      h('div.logo', h('div.logo-title', 'CUBEBORN'), h('div.logo-sub', t('game_subtitle'))),
-      h(
-        'div.main-buttons',
-        ch
-          ? h(
-              'div.main-char',
-              {
-                title: tr('Сменить персонажа', 'Switch character'),
-                onclick: () => {
-                  this.api.sfx('ui');
-                  this.selectMode = true;
-                  this.presetMode = null;
-                  this.open('roster');
-                },
-              },
-              h('b', ch.name),
-              h('span', `${L(classDef(ch.cls).name)} · ${tr('Ур.', 'Lv')} ${ch.level}`),
-            )
-          : null,
-        this.btn(t('menu_play'), () => this.play(null), '.primary.big'),
-        this.btn(ch ? tr('Мои персонажи', 'My characters') + ` ${p.data.chars.length}/${MAX_CHARS}` : tr('Создать персонажа', 'Create character'), () => {
-          this.selectMode = true;
-          this.presetMode = null;
-          this.open(ch ? 'roster' : 'create');
-        }),
-        h(
-          'div.main-grid',
-          this.btn(t('menu_hero'), () => this.open('hero')),
-          this.btn(t('menu_inventory'), () => this.open('inventory')),
-          this.btn(t('menu_forge'), () => this.open('forge')),
-          this.btn(t('menu_armory'), () => this.open('armory'), '.armory-btn'),
-          this.btn(t('menu_characters'), () => {
-            this.selectMode = false;
-            this.open('viewer');
-          }),
-          this.btn(t('menu_maps'), () => {
-            this.selectMode = false;
-            this.open('maps');
-          }),
-          this.btn(t('menu_collection'), () => this.open('collection')),
-          this.btn(`${t('menu_achievements')} ${p.data.achievements.length}/${newAch}`, () => this.open('achievements')),
-          dev.enabled ? this.btn(t('menu_endless'), () => this.play('endless')) : null,
-          this.btn(t('menu_settings'), () => this.open('settings')),
-        ),
-      ),
-      h('div.main-foot', h('div.gold-chip', h('i.ic-coin'), fmtNum(p.data.gold)), h('div.power', t('power_level', { n: p.powerLevel() })), h('div.version', this.api.version)),
+      'div.mm',
+      h('div.mm-side', h('div.mm-logo', h('div.mm-logo-title', 'CUBEBORN'), h('div.mm-logo-sub', t('game_subtitle'))), nav, note),
+      cards,
+      h('div.mm-ver', this.api.version),
     );
   }
 
-  // ------------------------------------------------------------------ characters
-  private charApi() {
-    return { profile: this.api.profile, sfx: (x: string) => this.api.sfx(x), btn: (l: string, f: () => void, c = '') => this.btn(l, f, c) };
-  }
-
-  private rosterScreen(): HTMLElement {
-    this.syncHero();
-    this.showCamp();
-    const el = rosterScreen(this.charApi(), {
-      onSelect: () => {
-        this.syncHero();
-        this.showCamp();
-      },
-      onCreate: () => this.open('create'),
-      onPlay: () => this.play(this.presetMode),
-      confirm: (text, yes) => confirmBox(this.root, text, yes),
-      onDevClass: dev.enabled ? () => this.open('heroes') : undefined,
-    });
-    return this.frame(el);
-  }
-
-  private createScreen(): HTMLElement {
-    const fromPlay = !this.stack.includes('roster');
-    const v = createScreen(this.charApi(), this.selHero, () => {
-      this.api.sfx('select');
-      this.syncHero();
-      this.showCamp();
-      // straight from Play: go on to the map (or the tutorial); otherwise back to the roster
-      this.stack.pop();
-      if (fromPlay) this.play(this.presetMode);
-      else this.render();
-    });
-    this.cleanup = () => v.dispose();
-    return this.frame(v.el);
-  }
-
-  // ------------------------------------------------------------------ heroes
-  /**
-   * Class select: the nine classes on the left, a large rotatable 3D preview with animation
-   * buttons in the middle, and the full class sheet on the right; "Choose map" moves on.
-   */
-  private heroScreen(): HTMLElement {
-    const p = this.api.profile;
-    if (!p.isHeroUnlocked(this.selHero)) this.selHero = HEROES.find((x) => p.isHeroUnlocked(x.id))?.id ?? HEROES[0].id;
-    const st = classStage((x) => this.api.sfx(x), false);
-    const list = h('div.cs-list');
-    const info = h('div.detail.cs-info');
-    let cur = this.selHero;
-    const show = (id: string) => {
-      const c = classDef(id);
-      const unlocked = p.isHeroUnlocked(id);
-      cur = id;
-      if (unlocked) this.selHero = id;
-      for (const el of list.children) el.classList.toggle('sel', (el as HTMLElement).dataset.id === id);
-      st.setClass(c);
-      clear(info);
-      const ach = ACHIEVEMENTS.find((a) => a.reward?.kind === 'hero' && a.reward.id === id);
-      const wins = p.stat('herowin_' + id);
-      put(
-        info,
-        classInfo(c, p.data.settings.keybinds),
-        wins ? h('div.kv', h('span', t('cv_wins')), h('span', String(wins))) : null,
-        unlocked ? null : h('div.locked-note', '🔒 ' + (ach ? t('unlock_by', { name: L(ach.name), desc: L(ach.desc) }) : t('locked'))),
+  /** Inner screen frame: tab bar of the menu entries on top, back button, title, body. */
+  private frame(title: string, body: HTMLElement, cls = ''): HTMLElement {
+    const bar = h('div.mm-tabs');
+    for (const e of ENTRIES) {
+      const off = e.id === 'continue' && !this.api.profile.data.chars.length;
+      bar.append(
+        h('button.mm-tab' + (e.id === this.current ? '.sel' : '') + (off ? '.off' : ''), {
+          onclick: () => {
+            if (e.id === this.current || off) return;
+            this.go(e.id);
+          },
+        }, glyph(e.icon), h('span', tr(e.ru, e.en))),
       );
-      clear(foot);
-      if (this.selectMode && unlocked) foot.append(this.btn(tr('Выбрать карту', 'Choose map') + ' →', () => this.open('maps'), '.primary.big'));
-      else if (!this.selectMode)
-        foot.append(
-          this.btn(t('cv_open'), () => {
-            this.selHero = id;
-            this.open('viewer');
-          }),
+    }
+    return h(
+      'div.mm-frame' + cls,
+      h('div.mm-top', h('button.mm-back', { title: 'Esc', onclick: () => this.back() }, '←'), h('h1.mm-title', title), bar),
+      h('div.mm-body', body),
+    );
+  }
+
+  // ------------------------------------------------------------------ continue
+  private continueScreen(): HTMLElement {
+    const p = this.api.profile;
+    this.showCamp();
+    const wrap = h('div.mc');
+    const render = () => {
+      clear(wrap);
+      const chars = p.chars;
+      if (!chars.length) {
+        wrap.append(
+          h('div.mc-empty', h('p', tr('Сохранённых персонажей пока нет.', 'There are no saved characters yet.')), h('button.mm-big', { onclick: () => this.go('create') }, tr('Создать персонажа', 'Create character'))),
         );
+        return;
+      }
+      const list = h('div.mc-list');
+      for (const c of chars) {
+        const def = classDef(c.cls);
+        list.append(
+          h(
+            'button.mc-row' + (c.id === this.sel ? '.sel' : ''),
+            {
+              style: `--hc:${hex(def.color)}`,
+              onclick: () => {
+                if (c.id === this.sel) return;
+                this.api.sfx('select');
+                this.sel = c.id;
+                p.selectChar(c.id);
+                this.showCamp();
+                render();
+              },
+              ondblclick: () => this.api.play(c.id),
+            },
+            thumbImg(c.cls, 'mc-thumb'),
+            h('div.mc-txt', h('b', c.name), h('span', `${L(def.name)} · ${tr('Уровень', 'Level')} ${c.level}`), h('small', `${L(REGION)} · ${playTime(c.playTime)}`)),
+            classEmblem(def),
+          ),
+        );
+      }
+      const cur = chars.find((c) => c.id === this.sel) ?? chars[0];
+      const def = classDef(cur.cls);
+      const detail = h(
+        'div.mc-detail',
+        { style: `--hc:${hex(def.color)}` },
+        h('div.mc-head', classEmblem(def), h('div', h('h2', cur.name), h('span', `${L(def.name)} · ${tr('Уровень', 'Level')} ${cur.level}`))),
+        h('div.mc-kv', h('span', tr('Регион', 'Region')), h('b', L(REGION))),
+        h('div.mc-kv', h('span', tr('Время в игре', 'Play time')), h('b', playTime(cur.playTime))),
+        h('div.mc-kv', h('span', tr('Очки навыков', 'Skill points')), h('b', String(cur.points))),
+        h('div.mc-kv', h('span', tr('Последняя игра', 'Last played')), h('b', new Date(cur.lastPlayed).toLocaleDateString())),
+        h('button.mm-big', { onclick: () => this.api.play(cur.id) }, tr('Играть', 'Play')),
+        h('button.mm-small.danger', { onclick: () => this.deleteDialog(cur, render) }, tr('Удалить персонажа', 'Delete character')),
+      );
+      wrap.append(h('div.mc-col', h('div.mc-count', tr(`Персонажи: ${chars.length} / ${MAX_CHARS}`, `Characters: ${chars.length} / ${MAX_CHARS}`)), list), detail);
     };
-    const foot = h('div.detail.cs-foot');
-    for (const c of CLASSES) {
-      const unlocked = p.isHeroUnlocked(c.id);
-      const wins = p.stat('herowin_' + c.id);
-      list.append(
+    render();
+    return this.frame(tr('Продолжить игру', 'Continue'), wrap, '.mm-left');
+  }
+
+  private deleteDialog(c: CharSave, done: () => void) {
+    const def = classDef(c.cls);
+    this.dialog(
+      tr(`Удалить персонажа «${c.name}» (${L(def.name)}, ур. ${c.level})? Его уровень и навыки будут потеряны навсегда.`, `Delete "${c.name}" (${L(def.name)}, lv ${c.level})? Their level and skills are lost for good.`),
+      [
+        { label: tr('Отмена', 'Cancel') },
+        {
+          label: tr('Удалить', 'Delete'),
+          cls: '.danger',
+          fn: () => {
+            this.api.profile.deleteChar(c.id);
+            this.sel = null;
+            this.showCamp();
+            done();
+          },
+        },
+      ],
+    );
+  }
+
+  /** Modal question with buttons; Esc or a button closes it. */
+  private dialog(text: string, buttons: { label: string; cls?: string; fn?: () => void }[]) {
+    const box: HTMLElement = h(
+      'div.mm-dialog',
+      h(
+        'div.mm-dialog-box',
+        h('p', text),
         h(
-          'button.cs-card' + (unlocked ? '' : '.locked'),
+          'div.mm-dialog-btns',
+          ...buttons.map((b) =>
+            h('button.mm-small' + (b.cls ?? ''), {
+              onclick: () => {
+                this.api.sfx('ui');
+                box.remove();
+                b.fn?.();
+              },
+            }, b.label),
+          ),
+        ),
+      ),
+    );
+    this.root.appendChild(box);
+  }
+
+  // ------------------------------------------------------------------ exit
+  private exitDialog() {
+    this.dialog(tr('Выйти из игры? Все персонажи и настройки уже сохранены.', 'Quit the game? All characters and settings are saved.'), [
+      { label: tr('Отмена', 'Cancel') },
+      {
+        label: tr('Выйти', 'Quit'),
+        cls: '.primary',
+        fn: () => {
+          this.api.profile.save();
+          // a page can close only a window it opened itself; otherwise say how to leave
+          window.close();
+          setTimeout(() => {
+            if (window.closed) return;
+            this.dialog(tr('Браузер не даёт странице закрыть себя. Закройте вкладку, чтобы выйти, — прогресс сохранён.', 'The browser does not let a page close itself. Close the tab to quit — your progress is saved.'), [{ label: tr('Понятно', 'OK') }]);
+          }, 250);
+        },
+      },
+    ]);
+  }
+
+  // ------------------------------------------------------------------ create
+  /**
+   * Character creation: class cards along the bottom, the full-height 3D model in the middle
+   * (drag to rotate, wheel to zoom), the class sheet with real numbers, skills, animation
+   * preview, the name field and the Choose button on the right.
+   */
+  private createScreen(): HTMLElement {
+    const p = this.api.profile;
+    const sfx = (x: string) => this.api.sfx(x);
+    const st = classStage(sfx, false);
+    let cur: ClassDef = classDef(p.char?.cls ?? CLASSES[0].id);
+    let sb: SkillSandbox | null = null;
+    const stopDemo = () => {
+      if (st.viewer.demoActive) st.viewer.detachDemo();
+      sb = null;
+    };
+    const demo = (key: string, list: DemoAction[]) => {
+      sfx('select');
+      if (!st.viewer.demoActive || !sb || sb.classId !== cur.id) {
+        stopDemo();
+        sb = new SkillSandbox(cur.id);
+      }
+      sb.play(list);
+      st.viewer.attachDemo(sb, 'demo:' + key);
+    };
+    const panel = h('div.cc2-panel');
+    const strip = h('div.cc2-strip');
+    const err = h('div.cc2-err');
+    const input = h('input.cc2-name', { type: 'text', maxlength: '16', placeholder: tr('Имя персонажа', 'Character name'), spellcheck: 'false', autocomplete: 'off' }) as HTMLInputElement;
+    const full = p.data.chars.length >= MAX_CHARS;
+    const submit = () => {
+      if (full) return;
+      const e = nameError(p, input.value);
+      err.textContent = e ?? '';
+      if (e) {
+        sfx('denied');
+        input.focus();
+        return;
+      }
+      const c = p.createChar(input.value.trim(), cur.id);
+      if (!c) return;
+      sfx('select');
+      this.sel = c.id;
+      this.api.play(c.id);
+    };
+    input.addEventListener('input', () => (err.textContent = input.value.trim() ? (nameError(p, input.value) ?? '') : ''));
+    input.addEventListener('keydown', (e) => {
+      if (e.code !== 'Escape') e.stopPropagation();
+      if (e.code === 'Enter' || e.code === 'NumpadEnter') {
+        e.preventDefault();
+        submit();
+      }
+    });
+    const bar = (label: string, v: number, max: number, text: string, color: string) =>
+      h('div.cc2-stat', h('span', label), h('div.cc2-bar', h('i', { style: `width:${Math.round((v / max) * 100)}%;background:${color}` })), h('b', text));
+    const showPanel = () => {
+      clear(panel);
+      const c = cur;
+      const s = classStats(c);
+      const skill = (sd: ClassDef['skills'][number], key: string, act: DemoAction) => {
+        const b = h('button.cc2-skill', { style: `--sc:${hex(sd.color)}`, onclick: () => demo(sd.id, [act]) }, iconImg('sk_' + sd.icon, sd.color, 'icon'), h('span.key', key));
+        attachTip(b, () => skillTipBody(c, sd, key));
+        return b;
+      };
+      panel.append(
+        h('div.cc2-head', { style: `--hc:${hex(c.color)}` }, classEmblem(c, 'cc2-emblem'), h('div', h('h2', L(c.name)), h('div.cc2-role', `${L(c.role)} · ${L(c.weapon)}`))),
+        h('p.cc2-desc', L(c.desc)),
+        h(
+          'div.cc2-stats',
+          bar(tr('Здоровье', 'Health'), s.hp, STAT_MAX.hp, String(s.hp), '#e0454f'),
+          bar(tr('Атака', 'Attack'), s.attack, STAT_MAX.attack, String(s.attack), '#ff8a3a'),
+          bar(tr('Защита', 'Defense'), s.armor, STAT_MAX.armor, String(s.armor), '#4a9aff'),
+          bar(tr('Скорость передвижения', 'Move speed'), s.speed, STAT_MAX.speed, s.speed.toFixed(1), '#f0c040'),
+          bar(tr('Скорость атаки', 'Attack speed'), s.aps, STAT_MAX.aps, tr(`${s.aps.toFixed(1)} уд/с`, `${s.aps.toFixed(1)} hits/s`), '#9a6aff'),
+        ),
+        h('div.cc2-sec', tr('Особенности класса', 'Class features')),
+        h('div.cc2-feat', h('b', L(c.passive.name)), h('span', L(c.passive.desc))),
+        h('div.cc2-feat', { style: `--rc:${c.res.color}` }, h('b', tr('Ресурс: ', 'Resource: ') + L(c.res.name)), h('span', L(c.res.desc))),
+        h('div.cc2-sec', tr('Основные навыки', 'Main skills')),
+        h('div.cc2-skills', ...c.skills.slice(0, 4).map((sd, i) => skill(sd, SLOT_KEYS[i], { k: 'skill', slot: i })), skill(c.ult, 'V', { k: 'ult' })),
+        h('div.cc2-hint', tr('Нажмите на навык, чтобы увидеть его в действии.', 'Click a skill to see it in action.')),
+        h('div.cc2-sec', tr('Просмотр анимации', 'Animation preview')),
+        st.anims,
+      );
+    };
+    const pick = (c: ClassDef) => {
+      cur = c;
+      stopDemo();
+      st.setClass(c);
+      st.viewer.play('idle');
+      for (const el of strip.children) el.classList.toggle('sel', (el as HTMLElement).dataset.id === c.id);
+      showPanel();
+    };
+    for (const c of CLASSES)
+      strip.append(
+        h(
+          'button.cc2-card',
           {
             'data-id': c.id,
             style: `--hc:${hex(c.color)}`,
             onclick: () => {
-              this.api.sfx('select');
-              show(c.id);
+              if (c.id === cur.id) return;
+              sfx('select');
+              pick(c);
             },
           },
-          thumbImg(c.id, 'thumb', !unlocked),
-          h('div.cs-card-txt', h('div.cs-card-name', L(c.name)), h('div.cs-card-role', L(c.role)), h('div.cs-card-diff', '★'.repeat(c.difficulty) + '☆'.repeat(Math.max(0, 3 - c.difficulty)))),
-          wins ? h('div.badge', '★') : null,
+          thumbImg(c.id, 'cc2-thumb'),
+          h('div.cc2-card-name', L(c.name)),
+          classEmblem(c, 'cc2-card-em'),
         ),
       );
-    }
-    const step = (dir: number) => {
-      const i = CLASSES.findIndex((c) => c.id === cur);
-      this.api.sfx('select');
-      show(CLASSES[(i + dir + CLASSES.length) % CLASSES.length].id);
-    };
+    const order = CLASSES.map((c) => c.id);
     const onKey = (e: KeyboardEvent) => {
-      if (e.repeat || e.defaultPrevented || modalOpen()) return;
-      if (e.code === 'ArrowUp' || e.code === 'ArrowLeft') step(-1);
-      else if (e.code === 'ArrowDown' || e.code === 'ArrowRight') step(1);
-      else return;
+      if (e.repeat || e.defaultPrevented || document.activeElement === input) return;
+      const dir = e.code === 'ArrowLeft' ? -1 : e.code === 'ArrowRight' ? 1 : 0;
+      if (!dir) return;
       e.preventDefault();
+      sfx('select');
+      pick(classDef(order[(order.indexOf(cur.id) + dir + order.length) % order.length]));
     };
     window.addEventListener('keydown', onKey);
+    pick(cur);
+    st.viewer.start();
+    const choose = h(
+      'div.cc2-choose',
+      h('label', tr('Имя персонажа', 'Character name'), h('small', tr(`персонажей ${p.data.chars.length} / ${MAX_CHARS}`, `characters ${p.data.chars.length} / ${MAX_CHARS}`))),
+      input,
+      err,
+      full ? h('div.cc2-err', tr('Достигнут предел персонажей — удалите одного в «Продолжить игру».', 'Character limit reached — delete one under Continue.')) : h('button.mm-big.cc2-go', { onclick: submit }, tr('Выбрать', 'Choose')),
+    );
     this.cleanup = () => {
       window.removeEventListener('keydown', onKey);
+      stopDemo();
       st.dispose();
     };
-    show(cur);
-    st.viewer.play('idle');
-    st.viewer.start();
-    const center = h(
-      'div.cs-center',
-      h('div.cv-stage-wrap.cs-stage', st.stage, h('button.cv-nav.prev', { onclick: () => step(-1) }, '‹'), h('button.cv-nav.next', { onclick: () => step(1) }, '›'), h('div.cv-hint', tr('Тяните мышью — вращать · колесо — масштаб · ↑/↓ — класс', 'Drag to rotate · wheel to zoom · ↑/↓ — class'))),
-      st.anims,
+    const el = h(
+      'div.cc2',
+      h('div.cc2-stage', st.stage, h('div.cc2-stage-hint', tr('Тяните мышью — вращать · колесо — масштаб · ←/→ — класс', 'Drag to rotate · wheel to zoom · ←/→ — class'))),
+      h('div.cc2-right', panel, choose),
+      strip,
     );
-    return this.frame(h('div.cs', list, center, h('div.cs-right', info, foot)));
+    setTimeout(() => input.focus(), 60);
+    return this.frame(tr('Создание персонажа', 'Create character'), el, '.mm-full');
   }
 
-  // ------------------------------------------------------------------ maps
-  private selMode: RunMode = 'campaign';
-
-  private mapScreen(): HTMLElement {
-    const p = this.api.profile;
-    if (!p.isMapUnlocked(this.selMap)) this.selMap = MAPS[0].id;
-    this.selMode = this.presetMode ?? (dev.enabled ? p.data.last.mode : null) ?? 'world';
-    if (!dev.enabled) this.selMode = 'world';
-    const list = h('div.map-list');
-    const detail = h('div.detail.map-detail');
-    const preview = new MapPreview();
-    this.cleanup = () => preview.dispose();
-    const pvName = h('div.map-preview-name');
-    const pvLock = h('div.map-preview-lock');
-    const stage = h('div.map-preview', preview.canvas, pvName, pvLock);
-    const show = (id: string) => {
-      const m = MAPS.find((x) => x.id === id)!;
-      const lore = MAP_LORE[id];
-      const unlocked = p.isMapUnlocked(id);
-      preview.show(m);
-      stage.classList.toggle('locked', !unlocked);
-      pvName.textContent = L(m.name);
-      pvLock.textContent = unlocked ? '' : '🔒 ' + tr('Карта закрыта', 'Map locked');
-      if (unlocked) this.selMap = id;
-      for (const c of list.children) c.classList.toggle('sel', (c as HTMLElement).dataset.id === id);
-      clear(detail);
-      const maxD = p.maxDifficulty(id);
-      if (DIFFICULTIES.findIndex((d) => d.id === this.selDiff) > maxD) this.selDiff = 'normal';
-      const diffs = h('div.diffs');
-      const diffInfo = h('div.diff-info');
-      const renderDiffs = () => {
-        clear(diffs);
-        DIFFICULTIES.forEach((d, i) => {
-          const ok = i <= maxD;
-          diffs.append(
-            h(
-              'button.diff' + (d.id === this.selDiff ? '.sel' : '') + (ok ? '' : '.locked'),
-              {
-                style: `--dc:${d.color}`,
-                onclick: () => {
-                  if (!ok) {
-                    this.api.sfx('denied');
-                    return;
-                  }
-                  this.api.sfx('select');
-                  this.selDiff = d.id;
-                  renderDiffs();
-                },
-              },
-              ok ? L(d.name) : '🔒',
-            ),
-          );
-        });
-        const d = DIFFICULTIES.find((x) => x.id === this.selDiff)!;
-        clear(diffInfo);
-        diffInfo.append(h('span', L(d.modifiers)), h('span.reward', t('reward_mult', { n: d.reward })));
-      };
-      renderDiffs();
-      const prev = MAPS[MAPS.indexOf(m) - 1];
-      const prevBoss = prev && BOSS_BY_ID[prev.boss];
-      const seenBoss = (bid: string) => unlocked || p.data.discovered.bosses.includes(bid);
-      // main enemies: the heaviest weights across the map's pools
-      const weights = new Map<string, number>();
-      for (const seg of m.segments) for (const [eid, w] of seg.pool) weights.set(eid, (weights.get(eid) ?? 0) + w);
-      const mainEnemies = [...weights.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([eid]) => (p.data.discovered.enemies.includes(eid) || unlocked ? L(ENEMY_BY_ID[eid]?.name) : '???'));
-      const next = MAPS[MAPS.indexOf(m) + 1];
-      const relics = [m.midBoss, m.boss].map((b) => RELICS.find((r) => r.id === BOSS_BY_ID[b]?.relic)).filter(Boolean);
-      const rec = p.data.endless[id];
-      const modes = h('div.seg.mode-seg');
-      const modeInfo = h('div.mode-info');
-      const renderModes = () => {
-        clear(modes);
-        for (const md of (dev.enabled ? ['world', 'campaign', 'endless'] : ['world']) as RunMode[])
-          modes.append(
-            h('button' + (this.selMode === md ? '.sel' : ''), {
-              onclick: () => {
-                this.api.sfx('select');
-                this.selMode = md;
-                renderModes();
-              },
-            }, t('mode_' + md)),
-          );
-        clear(modeInfo);
-        if (this.selMode === 'world') {
-          modeInfo.append(h('p.small', m.id === MAPS[0].id ? t('mode_world') + ': ' + tr('один большой мир — город, зоны охоты, элиты и логова боссов.', 'one big world — a town, hunting areas, elites and boss lairs.') : t('tp_note')));
-        } else if (this.selMode === 'campaign') {
-          const plan = WaveDirector.campaignPlan();
-          const strip = h('div.wave-strip.big');
-          plan.forEach((type, i) => strip.append(h('i' + (type === 'boss' || type === 'final' ? '.boss' : ''), { style: `--wc:${WAVE_TYPE_COLOR[type]}`, title: `${i + 1}: ${t('wave_' + type)}` })));
-          const idx = (ty: string) => plan.map((x, i) => (x === ty ? i + 1 : 0)).filter(Boolean).join(', ');
-          modeInfo.append(
-            h('p.small', t('campaign_desc', { n: plan.length })),
-            strip,
-            h('div.kv', h('span', t('wave_elite')), h('span', idx('elite'))),
-            h('div.kv', h('span', t('wave_danger')), h('span', idx('danger'))),
-            h('div.kv', h('span', t('wave_boss')), h('span', `10, 20 — ${seenBoss(m.midBoss) ? L(BOSS_BY_ID[m.midBoss].name) : '???'}`)),
-            h('div.kv', h('span', t('wave_final')), h('span', `30 — ${seenBoss(m.boss) ? L(BOSS_BY_ID[m.boss].name) : '???'}`)),
-          );
-        } else {
-          modeInfo.append(
-            h('p.small', t('endless_desc')),
-            rec
-              ? h('div.record', h('b', t('best_wave', { n: rec.wave })), h('span', `${fmtTime(rec.time)} · ${fmtNum(rec.kills)} ${t('r_kills').toLowerCase()} · ${t('lvl_short', { n: rec.level })} · ${rec.gold} ${t('gold')}`))
-              : h('div.record.none', t('no_record')),
-          );
-        }
-      };
-      renderModes();
-      const [mlo, mhi] = PROG.mapRange[id] ?? [1, 10];
-      put(
-        detail,
-        h(
-          'div.map-head',
-          stage,
-          h(
-            'div.map-head-info',
-            h('div.detail-title', h('h3', L(m.name)), h('div.stars', '★'.repeat(m.difficultyStars) + '☆'.repeat(Math.max(0, 6 - m.difficultyStars)))),
-            h('div.map-mlvl', tr('Уровень монстров', 'Monster level') + ': ', h('b', `${mlo}–${mhi}`)),
-            h('p.map-desc', L(m.desc)),
-            lore ? h('div.feature', h('b', '✦ ' + L(lore.feature.name)), h('span', L(lore.feature.desc))) : null,
-          ),
-        ),
-      );
-      const facts = h(
-        'div.map-facts',
-        lore ? h('p.story', { title: L(lore.story) }, L(lore.story)) : null,
-        h('div.kv', h('span', t('main_enemies')), h('span', mainEnemies.join(', '))),
-        h('div.kv', h('span', t('boss_mid')), h('span', seenBoss(m.midBoss) ? L(BOSS_BY_ID[m.midBoss].name) : '???')),
-        h('div.kv', h('span', t('boss_final')), h('span', seenBoss(m.boss) ? L(BOSS_BY_ID[m.boss].name) : '???')),
-        h('div.kv', h('span', t('rewards')), h('span', [t('relics') + ': ' + relics.map((r) => (p.data.discovered.relics.includes(r!.id) ? L(r!.name) : '???')).join(', '), next ? t('opens_map', { name: L(next.name) }) : t('last_map')].join(' · '))),
-        h('div.kv', h('span', t('best_clear')), h('span', p.data.mapClears[id] !== undefined ? L(DIFFICULTIES[p.data.mapClears[id]].name) : '—')),
-      );
-      const play = h(
-        'div.map-play',
-        unlocked ? h('div', h('div.label', t('mode')), modes, modeInfo, h('div.label', t('difficulty')), diffs, diffInfo) : h('div.locked-note', '🔒 ' + t('map_unlock', { boss: prevBoss ? L(prevBoss.name) : '?' })),
-        unlocked
-          ? this.btn(t('btn_start'), () => {
-              if (this.selMode === 'world' && this.selMap !== MAPS[0].id) {
-                this.api.sfx('denied');
-                return;
-              }
-              p.data.last = { hero: this.selHero, map: this.selMap, diff: this.selDiff, mode: this.selMode };
-              p.save();
-              this.api.startRun(this.selHero, this.selMap, this.selDiff, this.selMode);
-            }, '.primary.big')
-          : null,
-      );
-      detail.append(h('div.map-cols', facts, play));
-    };
-    for (const m of MAPS) {
-      const unlocked = p.isMapUnlocked(m.id);
-      const clear_ = p.data.mapClears[m.id];
-      const rec = p.data.endless[m.id];
-      list.append(
-        h(
-          'button.map-card' + (unlocked ? '' : '.locked'),
-          {
-            'data-id': m.id,
-            style: `--mc:${hex(m.palette.tiles[Object.keys(m.palette.tiles)[0]][0])}`,
-            onclick: () => {
-              this.api.sfx('select');
-              show(m.id);
-            },
-          },
-          h('div.map-swatch'),
-          h('div.name', unlocked ? L(m.name) : '???'),
-          rec ? h('div.badge.wave-badge', '∞' + rec.wave) : null,
-          clear_ !== undefined ? h('div.badge', { style: `color:${DIFFICULTIES[clear_].color}` }, '★') : null,
-        ),
-      );
-    }
-    setTimeout(() => show(this.selMap));
-    return this.frame(h('div.split.map-split', list, h('div.map-right', detail)));
-  }
-
-  // ------------------------------------------------------------------ collection
-  private tab = 'enemies';
-  private collectionScreen(): HTMLElement {
-    const p = this.api.profile;
-    const tabs = h('div.tabs');
-    const body = h('div.split.tri');
-    const grid = this.selectable(h('div.icon-grid'));
-    const detail = h('div.detail');
-    const preview = h('div.preview');
-    const look = (node: HTMLElement, color: string) => {
-      clear(preview);
-      preview.append(node);
-      preview.style.setProperty('--rc', color);
-    };
-    body.append(grid, detail, preview);
+  // ------------------------------------------------------------------ bestiary
+  /**
+   * Bestiary: categories on the left, the creature grid and a detail panel. The world has no
+   * creatures yet, so the grid shows that nothing has been discovered; entries come from
+   * data/bestiary.ts and are unlocked by `profile.data.bestiary` (ids of creatures met).
+   */
+  private bestiaryScreen(): HTMLElement {
+    const seen = new Set(this.api.profile.data.bestiary);
+    let cat = 'all';
+    const cats = h('div.mb-cats');
+    const grid = h('div.mb-grid');
+    const detail = h('div.mb-detail');
     const render = () => {
-      clear(tabs);
-      for (const id of ['enemies', 'bosses', 'relics']) {
-        tabs.append(
-          h('button.tab' + (this.tab === id ? '.sel' : ''), {
+      clear(cats);
+      for (const c of BESTIARY_CATEGORIES) {
+        const list = CREATURES.filter((x) => c.id === 'all' || x.category === c.id);
+        const found = list.filter((x) => seen.has(x.id)).length;
+        cats.append(
+          h('button.mb-cat' + (cat === c.id ? '.sel' : ''), {
             onclick: () => {
+              if (cat === c.id) return;
               this.api.sfx('ui');
-              this.tab = id;
+              cat = c.id;
               render();
             },
-          }, t('tab_' + id)),
+          }, glyph(c.icon), h('span', L(c.name)), h('small', c.id === 'all' ? `${found} / ${list.length}` : String(found))),
         );
       }
       clear(grid);
       clear(detail);
-      clear(preview);
-      if (this.tab === 'enemies') {
-        grid.classList.add('thumbs');
-        for (const e of ENEMIES) {
-          if (e.behavior === 'prop' || e.id === 'shield_crystal') continue;
-          const seen = p.data.discovered.enemies.includes(e.id);
-          grid.append(
-            h('button.icon-cell.thumb-cell' + (seen ? '' : '.locked'), {
-              onclick: () => {
-                clear(detail);
-                if (!seen) {
-                  put(detail, h('h3', '???'), h('p', t('not_seen')));
-                  return;
-                }
-                look(thumbImg(e.model, 'thumb huge'), RARITY_COLOR.common);
-                put(detail, 
-                  h('div.detail-title', h('h3', L(e.name)), pill(t('cat_' + e.category), RARITY_COLOR.common)),
-                  h('div.kv', h('span', t('stat_maxHp')), h('span', String(e.hp))),
-                  h('div.kv', h('span', t('ws_damage')), h('span', String(e.damage))),
-                  h('div.kv', h('span', t('stat_moveSpeed')), h('span', String(e.speed))),
-                  h('div.kv', h('span', t('killed')), h('span', fmtNum(p.stat('kill_' + e.id)))),
-                );
-              },
-            }, thumbImg(e.model, 'thumb', !seen)),
-          );
-        }
-      } else if (this.tab === 'bosses') {
-        grid.classList.add('thumbs');
-        for (const b of BOSSES) {
-          const seen = p.data.discovered.bosses.includes(b.id);
-          grid.append(
-            h('button.icon-cell.thumb-cell' + (seen ? '' : '.locked'), {
-              style: `--rc:${RARITY_COLOR.epic}`,
-              onclick: () => {
-                clear(detail);
-                if (!seen) {
-                  put(detail, h('h3', '???'), h('p', t('not_seen')));
-                  return;
-                }
-                const relic = RELICS.find((r) => r.id === b.relic);
-                look(thumbImg(b.model, 'thumb huge'), RARITY_COLOR.epic);
-                put(detail, 
-                  h('div.detail-title', h('h3', L(b.name)), pill(L(b.title), hex(b.color))),
-                  h('div.kv', h('span', t('stat_maxHp')), h('span', fmtNum(b.hp))),
-                  h('div.kv', h('span', t('phases')), h('span', String(b.phases.length))),
-                  h('div.kv', h('span', t('killed')), h('span', fmtNum(p.stat('boss_' + b.id)))),
-                  relic ? h('div.kv', h('span', t('relic')), h('span', p.data.discovered.relics.includes(relic.id) ? L(relic.name) : '???')) : null,
-                );
-              },
-            }, thumbImg(b.model, 'thumb', !seen)),
-          );
-        }
-      } else {
-        for (const r of RELICS) {
-          const got = p.data.discovered.relics.includes(r.id);
-          grid.append(
-            h('button.icon-cell' + (got ? '' : '.locked'), {
-              style: `--rc:${RARITY_COLOR.legendary}`,
-              onclick: () => {
-                clear(detail);
-                if (got) look(iconImg('relic_' + r.id, r.color, 'icon xl'), RARITY_COLOR.legendary);
-                const boss = BOSSES.find((b) => b.relic === r.id);
-                put(detail, 
-                  h('div.detail-title', h('h3', got ? L(r.name) : '???'), got ? pill(t('relic'), RARITY_COLOR.legendary) : null),
-                  h('p', got ? L(r.desc) : t('relic_hint', { boss: boss ? L(boss.name) : '?' })),
-                  got ? h('div.mods', ...statModLines(r.stats).map((s) => h('div.mod', s))) : null,
-                );
-              },
-            }, iconImg('relic_' + r.id, r.color, 'icon', !got)),
-          );
-        }
+      const shown = CREATURES.filter((x) => (cat === 'all' || x.category === cat) && seen.has(x.id));
+      if (!shown.length) {
+        grid.append(h('div.mb-empty', glyph('skull'), h('p', tr('Существа пока не обнаружены', 'No creatures discovered yet'))));
+        detail.append(h('p.mb-detail-empty', tr('Встреченные в мире существа появятся здесь: описание, характеристики, добыча и анимации.', 'Creatures you meet in the world appear here: description, stats, loot and animations.')));
+        return;
       }
-      if (this.tab !== 'enemies' && this.tab !== 'bosses') grid.classList.remove('thumbs');
-      (grid.firstChild as HTMLElement | null)?.click();
+      for (const x of shown) grid.append(h('div.mb-cell', thumbImg(x.model, 'mb-thumb'), h('span', L(x.name))));
     };
     render();
-    return this.frame(h('div.mcol', tabs, body));
-  }
-
-  // ------------------------------------------------------------------ achievements
-  private achievementScreen(): HTMLElement {
-    const p = this.api.profile;
-    const all = ACHIEVEMENTS;
-    const doneSet = new Set(p.data.achievements);
-    const doneCount = all.filter((a) => doneSet.has(a.id)).length;
-    const pct = Math.round((doneCount / all.length) * 100);
-    const goldEarned = all.filter((a) => doneSet.has(a.id)).reduce((g, a) => g + (a.gold ?? 0), 0);
-    const rerender = () => this.render();
-    // filters: status and category
-    const statusSeg = h(
-      'div.seg.ach-filter',
-      ...(['all', 'done', 'locked'] as const).map((f) =>
-        h('button' + (this.achStatus === f ? '.sel' : ''), { onclick: () => ((this.achStatus = f), this.api.sfx('ui'), rerender()) }, t('ach_' + f) + ` · ${f === 'all' ? all.length : f === 'done' ? doneCount : all.length - doneCount}`),
-      ),
+    return this.frame(
+      tr('Бестиарий', 'Bestiary'),
+      h('div.mb', cats, grid, detail, h('button.mm-small.mb-back', { onclick: () => this.back() }, tr('Назад', 'Back'))),
+      '.mm-full',
     );
-    const catSeg = h(
-      'div.seg.ach-cats',
-      h('button' + (this.achCat === 'all' ? '.sel' : ''), { onclick: () => ((this.achCat = 'all'), this.api.sfx('ui'), rerender()) }, t('ach_all')),
-      ...ACHIEVEMENT_CATEGORIES.map((c) => {
-        const inCat = all.filter((a) => a.category === c);
-        const got = inCat.filter((a) => doneSet.has(a.id)).length;
-        return h('button' + (this.achCat === c ? '.sel' : ''), { onclick: () => ((this.achCat = c), this.api.sfx('ui'), rerender()) }, `${t('achcat_' + c)} ${got}/${inCat.length}`);
-      }),
-    );
-    const head = h(
-      'div.ach-head',
-      h('div.ach-total', h('span', t('ach_total', { n: doneCount, m: all.length })), h('span.ach-pct', pct + '%')),
-      h('div.prog.big', h('div', { style: `width:${pct}%` })),
-      h('div.ach-sub', t('ach_rewards', { g: goldEarned.toLocaleString('ru-RU') })),
-      statusSeg,
-      catSeg,
-    );
-    const list = h('div.ach-list');
-    const shown = all
-      .filter((a) => (this.achCat === 'all' || a.category === this.achCat) && (this.achStatus === 'all' || (this.achStatus === 'done') === doneSet.has(a.id)))
-      // unlocked first, then the closest to completion
-      .map((a, i) => ({ a, i, done: doneSet.has(a.id), prog: p.achievementProgress(a) }))
-      .sort((x, y) => Number(y.done) - Number(x.done) || (x.done ? 0 : y.prog - x.prog) || x.i - y.i);
-    for (const { a, done, prog } of shown) {
-      const hidden = a.hidden && !done;
-      const val = p.achievementValue(a);
-      const rc = RARITY_COLOR[a.rarity];
-      list.append(
-        h(
-          'div.ach' + (done ? '.done' : '') + '.r-' + a.rarity,
-          { style: `--rc:${rc}` },
-          h('div.ach-icon', iconImg(hidden ? 'crystal' : a.icon, done ? a.color : 0x5a606a, 'icon')),
-          h(
-            'div.ach-body',
-            h('div.ach-top', h('div.ach-name', hidden ? '???' : L(a.name)), h('div.ach-rar', t('rarity_' + a.rarity))),
-            h('div.ach-desc', hidden ? t('hidden_ach') : L(a.desc)),
-            done
-              ? null
-              : h('div.ach-progrow', h('div.prog', h('div', { style: `width:${Math.round(prog * 100)}%` })), h('span.ach-num', `${fmtNum(val)} / ${fmtNum(a.cond.value)}`)),
-            a.reward || a.gold ? h('div.ach-reward', rewardText(a)) : null,
-          ),
-        ),
-      );
-    }
-    if (!shown.length) list.append(h('div.ach-empty', t('ach_empty')));
-    return this.frame(h('div.mcol.ach-screen', head, list), { extra: h('div.count', `${doneCount}/${all.length}`) });
   }
-}
-
-// ------------------------------------------------------------------ shared helpers
-
-export function rewardText(a: AchievementDef): string {
-  const parts: string[] = [];
-  if (a.reward) {
-    const r = a.reward;
-    const name =
-      r.kind === 'hero' ? L(HERO_BY_ID[r.id]?.name) : r.kind === 'map' ? L(MAPS.find((m) => m.id === r.id)?.name) : '';
-    // weapons and passives are gone with the class rework: their rewards show nothing
-    if (name) parts.push(t('unlock_' + r.kind, { name }));
-  }
-  if (a.gold) parts.push(`+${a.gold} ${t('gold')}`);
-  return parts.join(' · ');
 }
 
 export function confirmBox(parent: HTMLElement, text: string, yes: () => void) {
@@ -883,10 +615,4 @@ export function confirmBox(parent: HTMLElement, text: string, yes: () => void) {
   (parent.closest('.app') ?? parent).appendChild(box);
 }
 
-export { settingsPanel };
-export { fmtTime };
-
-/** True while a visible modal is open (hidden screens may keep their modal elements in the DOM). */
-function modalOpen(): boolean {
-  return [...document.querySelectorAll<HTMLElement>('.modal-back')].some((m) => m.getClientRects().length > 0);
-}
+export { settingsPanel, fmtTime };

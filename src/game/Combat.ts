@@ -1,10 +1,6 @@
-import { DAY_NIGHT } from '../config/dayNight';
-import { BALANCE } from '../config/balance';
-import { ENEMY_BY_ID } from '../data/enemies';
 import type { Enemy } from './Enemy';
 import type { Run } from './Run';
 import type { DamageInfo } from './types';
-import { TAU } from '../core/math';
 
 /** Central damage resolution so crits, statuses, knockback, numbers and kills are consistent. */
 export class Combat {
@@ -22,17 +18,13 @@ export class Combat {
       if (Math.random() < 0.2) run.fx.burst(e.x, 1, e.z, 0xa0a0ff, 3, 2, 0.12, 0.3, 'glow');
       return 0;
     }
-    if (e.dayKind === 'sleeper') e.awakeT = DAY_NIGHT.sleeperDozeAfter;
     const critChance = info.critChance + st.critChance;
     const crit = Math.random() < critChance;
     let dmg = info.damage * st.might * run.player.damageMul * mult;
     if (crit) dmg *= info.critDamage + st.critDamage;
     dmg *= 0.92 + Math.random() * 0.16;
-    if (e.hasElite('armored')) dmg *= 0.7;
-    if (e.boss && e.brokenT <= 0) dmg *= e.boss.dmgTakenMul();
     if (info.el) dmg *= this.combo(e, info, crit, dmg, dirX, dirZ);
     e.hp -= dmg;
-    if (run.world) run.world.provoke(e);
     e.flash = 0.1;
     run.stats.addDamage(info.weaponId, dmg);
 
@@ -54,7 +46,7 @@ export class Combat {
       e.slowMul = Math.min(e.slowMul, info.slow);
       e.slowT = Math.max(e.slowT, info.slowDur * st.duration);
     }
-    if (info.freeze > 0 && !e.boss && Math.random() < info.freeze) e.freezeT = Math.max(e.freezeT, (info.freezeDur || 1.5) * st.duration);
+    if (info.freeze > 0 && Math.random() < info.freeze) e.freezeT = Math.max(e.freezeT, (info.freezeDur || 1.5) * st.duration);
     if (info.poison > 0) {
       e.poisonDps = Math.max(e.poisonDps, info.poison * st.might);
       e.poisonT = Math.max(e.poisonT, info.poisonDur * st.duration);
@@ -63,7 +55,7 @@ export class Combat {
       e.burnDps = Math.max(e.burnDps, info.burn * st.might);
       e.burnT = Math.max(e.burnT, info.burnDur * st.duration);
     }
-    if (info.stun > 0) e.stunT = Math.max(e.stunT, info.stun * (e.boss ? 0.25 : 1) * st.duration);
+    if (info.stun > 0) e.stunT = Math.max(e.stunT, info.stun * st.duration);
     if (info.bleed > 0) {
       e.bleedDps = Math.max(e.bleedDps, info.bleed * st.might);
       e.bleedT = Math.max(e.bleedT, (info.bleedDur || 3) * st.duration);
@@ -71,34 +63,12 @@ export class Combat {
     if (info.curse > 0) e.curseT = Math.max(e.curseT, info.curse * st.duration);
     if (info.weaken > 0) e.weakenT = Math.max(e.weakenT, info.weaken * st.duration);
     if (info.el) run.action.onHit(e, info, dmg, crit);
-    // counterattack: the hero's hits break a mob's wind-up and keep it from starting a new attack for a moment
-    // (always for common mobs, 80% for elites, never bosses)
-    if (info.el && !e.boss && e.hp > 0 && Math.random() < (e.elite ? 0.8 : 1)) {
-      const winding = e.atkT > 0 || (e.state === 1 && e.role === 'assassin');
-      if (e.atkZone) e.atkZone.active = false;
-      e.atkZone = null;
-      e.atkT = 0;
-      e.atkCd = Math.max(e.atkCd, 1.1);
-      e.touchCd = Math.max(e.touchCd, 0.8);
-      // an aimed shot is dropped too
-      e.atkX = e.atkZ = 0;
-      e.cd = Math.max(e.cd, 1.1);
-      if (e.role === 'assassin' && e.state !== 0) e.state = 0;
-      if (winding) {
-        run.stats.interrupts++;
-        run.fx.text(e.x, e.z, run.tr('act_interrupt'), 0xffd060);
-      }
-    }
     if (info.stag > 0 || info.launch || info.root > 0 || info.mark > 0) this.actionEffects(e, info);
     if (crit) run.stats.crits++;
     if (run.settings.damageNumbers) run.fx.number(e.x, e.z, dmg, crit);
     run.vfx.impact(e, info.weaponId, dmg, crit, dirX || e.x - run.player.x, dirZ || e.z - run.player.z);
     run.hitSoundBudget++;
-    if (e.hp <= 0) {
-      const el = run.vfx.elementOf(info.weaponId);
-      if (e.alive && e.def.category !== 'prop') run.stats.elementKills[el] = (run.stats.elementKills[el] ?? 0) + 1;
-      this.killEnemy(e);
-    }
+    if (e.hp <= 0) this.killEnemy(e);
     return dmg;
   }
 
@@ -138,57 +108,25 @@ export class Combat {
     return m;
   }
 
-  /** Stagger bar size of an enemy (bosses define their own per phase). */
+  /** Stagger bar size of a target. */
   stagMaxOf(e: Enemy): number {
-    if (e.boss) return e.boss.stagMax();
-    let m: number;
-    switch (e.def.category) {
-      case 'tank':
-        m = 70;
-        break;
-      case 'summoner':
-      case 'special':
-        m = 45;
-        break;
-      case 'fast':
-        m = 12;
-        break;
-      case 'prop':
-        m = 1;
-        break;
-      default:
-        m = 18;
-    }
-    m += e.maxHp * 0.05;
-    if (e.elite) m *= 3.2;
-    return m;
+    return 18 + e.maxHp * 0.05;
   }
 
   /** Stagger, knock-up, root and mark from action skills. */
   private actionEffects(e: Enemy, info: DamageInfo) {
     if (!e.alive) return;
-    if (e.boss && info.stag > 0) {
-      // counter window (charge wind-up) and stagger check (long channel)
-      if (e.boss.counterOpen && info.stag >= 6) {
-        e.boss.countered();
-        e.stag += info.stag;
-      }
-      if (e.boss.checkHit(info.stag)) {
-        this.breakStagger(e);
-        return;
-      }
-    }
     if (info.stag > 0 && e.brokenT <= 0) {
       if (!e.stagMax) e.stagMax = this.stagMaxOf(e);
       e.stag += info.stag;
       e.stagIdle = 0;
       if (e.stag >= e.stagMax) this.breakStagger(e);
     }
-    if (info.launch && !e.boss && e.kbResist < 0.95 && !e.flying) {
+    if (info.launch && e.kbResist < 0.95 && !e.flying) {
       e.launchT = 0.6;
       e.stunT = Math.max(e.stunT, 0.65);
     }
-    if (info.root > 0) e.rootT = Math.max(e.rootT, info.root * (e.boss ? 0.3 : 1));
+    if (info.root > 0) e.rootT = Math.max(e.rootT, info.root);
     if (info.mark > 0) e.markT = Math.max(e.markT, info.mark);
   }
 
@@ -196,73 +134,29 @@ export class Combat {
   breakStagger(e: Enemy) {
     const run = this.run;
     e.stag = 0;
-    e.brokenT = e.boss ? 5 : e.elite ? 3.5 : 1.6;
+    e.brokenT = 1.6;
     e.stunT = Math.max(e.stunT, e.brokenT);
-    e.atkT = 0;
-    if (e.atkZone) {
-      e.atkZone.active = false;
-      e.atkZone = null;
-    }
-    e.boss?.onStagger();
     const f = run.action.fx.add('break', e.x, e.z, 0.8, 0xffe080);
     f.r = e.radius * 2 + 0.6;
     f.y = e.scale * 1.6;
-    if (e.boss || e.elite) {
-      run.fx.text(e.x, e.z, run.tr('act_broken'), 0xffd040);
-      run.fx.shake(e.boss ? 0.4 : 0.2);
-      run.fx.sound('shield', 0.8);
-      run.stats.combos++;
-    }
-    run.action.addUlt(e.boss ? 8 : e.elite ? 3 : 0.3);
+    run.action.addUlt(0.3);
   }
 
   /** Damage over time / non-weapon damage without crit or knockback. */
   applyRaw(e: Enemy, dmg: number, color: number, source: string) {
     if (!e.alive || e.invuln || e.shieldT > 0) return;
     e.hp -= dmg;
-    if (this.run.world) this.run.world.provoke(e);
     this.run.stats.addDamage(source, dmg);
     if (this.run.settings.damageNumbers) this.run.fx.number(e.x, e.z, dmg, false, color);
     if (e.hp <= 0) this.killEnemy(e);
   }
 
-  /** Kills an enemy: rewards (at the enemy's own level in the open world), death fx, split/explode effects, perks. */
+  /** Kills a target: death fx, plague spread, experience and skill hooks. */
   killEnemy(e: Enemy, silent = false) {
     if (!e.alive) return;
     const run = this.run;
-    if (!run.world) return this.killInner(e, silent);
-    run.world.onKill(e);
-    const prev = run.levelCtx;
-    if (e.level > 0) run.levelCtx = e.level;
-    try {
-      this.killInner(e, silent);
-    } finally {
-      run.levelCtx = prev;
-    }
-  }
-
-  private killInner(e: Enemy, silent: boolean) {
-    if (!e.alive) return;
-    const run = this.run;
-    const def = e.def;
     run.enemies.startDying(e);
-    const isProp = def.category === 'prop';
-    if (e.boss) {
-      if (!e.boss.isClone) run.loot.onKill(e);
-      e.boss.onDeath();
-      return;
-    }
-    // death fx: chunks in the enemy's main color
-    run.fx.burst(e.x, 0.6 * e.scale, e.z, run.enemyColor(def.id), isProp ? 10 : e.elite ? 26 : 7, 4 + e.scale, 0.14 * e.scale, 0.7, 'debris');
-    if (e.elite) {
-      run.fx.shake(0.35);
-      run.fx.light(e.x, e.z, 0xffe0a0, 3, 6, 0.4);
-    }
-    if (isProp) {
-      run.pickups.dropFromProp(e.x, e.z);
-      run.fx.sound('crate');
-      return;
-    }
+    run.fx.burst(e.x, 0.6 * e.scale, e.z, 0xb0b0b0, 7, 4 + e.scale, 0.14 * e.scale, 0.7, 'debris');
     if (!silent) run.killSoundBudget++;
     if (e.poisonT > 0 && e.poisonDps > 0) {
       // plague: poison jumps to nearby foes when its carrier dies
@@ -282,52 +176,11 @@ export class Combat {
       }
     }
     run.action.onKill(e);
-    run.loot.onKill(e);
     run.stats.kills++;
-    run.stats.killsBy[def.id] = (run.stats.killsBy[def.id] ?? 0) + 1;
-    if (run.dayNight.isNight) run.stats.nightKills++;
-    else if (run.dayNight.enabled) run.stats.dayKills++;
-    if (e.asleep) run.stats.sleepersKilled++;
-    if (e.dire > 0.5) run.stats.direKilled++;
-    if (!e.noReward) {
-      if (e.xp > 0) {
-        // action-RPG: experience is granted on the kill (a soul wisp flies to the hero)
-        run.player.addXp(e.xp);
-        run.xpSoundBudget++;
-        if (run.fx.level() >= 1) run.fx.burst(e.x, 0.8, e.z, 0x8ad8ff, 3, 1.5, 0.1, 0.4, 'glow');
-      }
-      run.pickups.rollKillDrops(e);
+    if (!e.noReward && e.xp > 0) {
+      run.player.addXp(e.xp);
+      run.xpSoundBudget++;
     }
-    if (e.elite) {
-      run.stats.elites++;
-      // chests are rare, but an elite is likely to carry one once a weapon is ready to evolve
-      const chance = BALANCE.eliteChestChance;
-      if (Math.random() < chance * run.player.stats.luck) run.pickups.spawnChest(e.x, e.z, 0, 'elite');
-    }
-    if (def.id === 'treasure_sprite') {
-      run.stats.treasureSprites++;
-      run.pickups.treasureBurst(e.x, e.z);
-    }
-    // lifesteal
     if (run.player.stats.lifesteal > 0) run.player.heal(run.player.stats.lifesteal, true);
-    // splitting
-    const splitId = def.splitInto ?? (e.hasElite('splitting') ? def.id : undefined);
-    if (splitId && run.enemies.aliveCount < BALANCE.hardCap) {
-      const n = (def.p?.split as number) ?? 4;
-      const child = ENEMY_BY_ID[splitId];
-      for (let k = 0; k < n; k++) {
-        const a = (k / n) * TAU + Math.random();
-        const c = run.enemies.spawn(child, e.x + Math.cos(a) * 0.6, e.z + Math.sin(a) * 0.6);
-        if (c) {
-          c.kx = Math.cos(a) * 4;
-          c.kz = Math.sin(a) * 4;
-          if (e.hasElite('splitting')) c.xp = 1;
-        }
-      }
-    }
-    if (e.hasElite('volatile')) {
-      run.hazards.telegraph(e.x, e.z, 3, 0.7);
-      run.hazards.delayedExplosion(e.x, e.z, 3, e.damage, 0.7);
-    }
   }
 }

@@ -1,11 +1,11 @@
-import type { Zone } from './Hazards';
 import type { EnemyDef } from '../data/types';
-import type { DayKind } from '../config/dayNight';
-import type { EliteId } from '../data/enemies';
 import { MAX_SOURCES } from './types';
-import type { BossController } from './bosses/Boss';
 
-/** Pooled enemy instance. Plain mutable fields for speed; reset() on reuse. */
+/**
+ * A combat target: anything the hero's skills can hit (future monsters and bosses).
+ * Pooled; plain mutable fields for speed; reset() on reuse. It has no behaviour of its own:
+ * the creature that owns it decides how it moves and attacks.
+ */
 export class Enemy {
   index: number;
   active = false;
@@ -22,24 +22,17 @@ export class Enemy {
   yaw = 0;
   hp = 1;
   maxHp = 1;
-  damage = 1;
-  speed = 1;
+  damage = 0;
+  speed = 0;
   radius = 0.4;
   scale = 1;
-  xp = 1;
+  xp = 0;
   kbResist = 0;
   flying = false;
   flash = 0;
   anim = 0;
   /** 0 alive, >0 dying timer */
   dying = 0;
-  touchCd = 0;
-  state = 0;
-  stateT = 0;
-  cd = 0;
-  aux = 0;
-  dirX = 0;
-  dirZ = 0;
   slowT = 0;
   slowMul = 1;
   freezeT = 0;
@@ -47,77 +40,35 @@ export class Enemy {
   poisonDps = 0;
   burnT = 0;
   burnDps = 0;
-  /** Action-RPG statuses: stun (no actions), bleed (physical DoT), curse (+damage taken), weaken (−damage dealt), mark (hunter). */
+  /** Statuses: stun (no actions), bleed (physical DoT), curse (+damage taken), weaken (−damage dealt), mark (hunter). */
   stunT = 0;
   bleedT = 0;
   bleedDps = 0;
   curseT = 0;
   weakenT = 0;
   markT = 0;
-  /** Action-RPG role and attack state: wind-up time left, its hazard, cooldown, support haste. */
-  role: EnemyRole = 'melee';
-  atkT = 0;
-  atkCd = 0;
-  atkZone: Zone | null = null;
-  atkX = 0;
-  atkZ = 0;
-  hasteT = 0;
-  skillCd = 0;
   dotTick = 0;
   invuln = false;
   shieldT = 0;
-  elite: EliteId | null = null;
-  elite2: EliteId | null = null;
-  boss: BossController | null = null;
   isAlly = false;
   noReward = false;
-  /** Seconds left before the enemy leaves on its own (treasure sprite). */
-  ttl = 0;
   lastHit = new Float32Array(MAX_SOURCES);
-  /** Map-specific tint hook for frozen/poisoned visuals. */
-  tint = 0;
-  /** Day/night: how this type reacts, the multipliers currently applied, sleep and dire-form state. */
-  dayKind: DayKind = 'neutral';
-  todHp = 1;
-  todDmg = 1;
-  todSpd = 1;
-  asleep = false;
-  awakeT = 0;
-  /** 0..1 dire (night) form of shifters. */
-  dire = 0;
-  /** Part of a night elite pack. */
-  nightPack = false;
   /** Hit reaction (VFX): time left and the direction the last hit pushed toward. */
   hitT = 0;
   hitDx = 0;
   hitDz = 0;
-  /** Action combat stagger: accumulated stagger, bar size (0 = not computed yet), broken window, decay delay. */
+  /** Stagger: accumulated stagger, bar size (0 = not computed yet), broken window, decay delay. */
   stag = 0;
   stagMax = 0;
   brokenT = 0;
   stagIdle = 0;
-  /** Rooted (cannot move, can still attack) and knock-up height/time. */
+  /** Rooted (cannot move) and knock-up height/time. */
   rootT = 0;
   launchT = 0;
-  /** Monster level (0 = the zone level of the run; open-world mobs carry their own). */
-  level = 0;
-  /** Display name override (named elites); empty = the definition's name. */
+  /** Level of the creature. */
+  level = 1;
+  /** Display name override; empty = the definition's name. */
   name = '';
-  /** Open world: owning camp and member slot (-1 = a stray nobody owns), home point and temper. */
-  camp = -1;
-  member = -1;
-  homeX = 0;
-  homeZ = 0;
-  /** Attacks the hero on sight (false: passive, fights back only when hurt). */
-  aggressive = true;
-  /** In a fight with the hero (strays and wave-mode mobs always are). */
-  engaged = true;
-  /** Gave up the chase: walking home, healing, ignoring the hero. */
-  returning = false;
-  retT = 0;
-  wanderT = 0;
-  wx = 0;
-  wz = 0;
 
   constructor(index: number) {
     this.index = index;
@@ -131,86 +82,28 @@ export class Enemy {
     this.flash = 0;
     this.anim = Math.random() * 10;
     this.dying = 0;
-    this.touchCd = 0;
-    this.state = 0;
-    this.stateT = 0;
-    this.cd = 1 + Math.random() * 2;
-    this.aux = 0;
     this.slowT = this.freezeT = this.poisonT = this.burnT = 0;
     this.slowMul = 1;
     this.poisonDps = this.burnDps = 0;
     this.stunT = this.bleedT = this.bleedDps = this.curseT = this.weakenT = this.markT = 0;
-    this.atkT = this.hasteT = 0;
-    this.atkCd = 0.5 + Math.random();
-    this.skillCd = 3 + Math.random() * 3;
-    this.atkZone = null;
-    this.role = roleOf(def);
     this.dotTick = 0;
     this.invuln = false;
     this.shieldT = 0;
-    this.elite = null;
-    this.elite2 = null;
-    this.boss = null;
     this.isAlly = false;
     this.noReward = false;
-    this.ttl = 0;
     this.lastHit.fill(-99);
     this.radius = def.radius;
     this.scale = def.size;
     this.kbResist = def.kbResist;
     this.flying = !!def.flying;
-    this.tint = 0;
-    this.dayKind = 'neutral';
-    this.todHp = this.todDmg = this.todSpd = 1;
-    this.asleep = false;
-    this.awakeT = 0;
-    this.dire = 0;
-    this.nightPack = false;
-    this.hitT = 0;
-    this.hitDx = 0;
-    this.hitDz = 0;
+    this.hitT = this.hitDx = this.hitDz = 0;
     this.stag = this.stagMax = this.brokenT = this.stagIdle = 0;
     this.rootT = this.launchT = 0;
-    this.level = 0;
+    this.level = 1;
     this.name = '';
-    this.camp = this.member = -1;
-    this.aggressive = true;
-    this.engaged = true;
-    this.returning = false;
-    this.retT = this.wanderT = 0;
   }
 
   get alive(): boolean {
     return this.active && this.dying === 0;
-  }
-
-  hasElite(id: EliteId): boolean {
-    return this.elite === id || this.elite2 === id;
-  }
-}
-
-export type EnemyRole = 'melee' | 'ranged' | 'tank' | 'assassin' | 'support' | 'summoner' | 'bomber' | 'flyer' | 'special';
-
-/** Combat role from the enemy definition (p.role overrides the category). */
-export function roleOf(def: EnemyDef): EnemyRole {
-  const o = def.p?.role as EnemyRole | undefined;
-  if (o) return o;
-  switch (def.category) {
-    case 'fast':
-      return 'assassin';
-    case 'tank':
-      return 'tank';
-    case 'ranged':
-      return 'ranged';
-    case 'flying':
-      return 'flyer';
-    case 'summoner':
-      return 'summoner';
-    case 'exploder':
-      return 'bomber';
-    case 'special':
-      return def.behavior === 'teleporter' ? 'assassin' : 'special';
-    default:
-      return 'melee';
   }
 }

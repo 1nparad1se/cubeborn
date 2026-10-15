@@ -33,7 +33,6 @@ interface P {
 
 const EMIT_KIND: Record<EmitKind, number> = { glow: 0, debris: 1, smoke: 2, spark: 6, ember: 7, shard: 8, bubble: 9, wisp: 10, gather: 11, pixel: 12, flame: 13, puff: 2 };
 
-export type AmbientKind = 'spores' | 'fireflies' | 'dust' | 'embers' | 'snow' | 'motes' | 'rain';
 
 /**
  * Camera-facing square material (Minecraft Dungeons style pixel particles). Instances are pushed
@@ -85,11 +84,8 @@ export class Particles {
   private puff: InstancedBatch;
   private debris: InstancedBatch;
   private max: number;
-  private ambientAcc = 0;
-  /** Ambient map particles (the weapon viewer can switch them off). */
-  ambientOn = true;
 
-  constructor(scene: THREE.Scene, blockTex: THREE.Texture, _blobTex: THREE.Texture, quality: string, private ambient: AmbientKind, private ambientColor: number) {
+  constructor(scene: THREE.Scene, blockTex: THREE.Texture, _blobTex: THREE.Texture, quality: string) {
     this.max = quality === 'low' ? 900 : quality === 'medium' ? 1800 : 3000;
     for (let i = 0; i < this.max; i++) this.list.push({ x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, r: 1, g: 1, b: 1, r2: 1, g2: 1, b2: 1, size: 1, life: 0, max: 1, rot: 0, spin: 0, kind: 0 });
     this.glow = new InstancedBatch(new THREE.BoxGeometry(1, 1, 1), makeGlowMaterial(), scene, 256);
@@ -234,70 +230,7 @@ export class Particles {
     }
   }
 
-  private spawnAmbient(cx: number, cz: number, dt: number, blizzard: number) {
-    const rate = (this.ambient === 'snow' ? 40 : this.ambient === 'rain' ? 110 : 14) + blizzard * 160;
-    this.ambientAcc += dt * rate;
-    const c = this.ambientColor;
-    while (this.ambientAcc >= 1) {
-      this.ambientAcc--;
-      if (this.n >= this.max - 50) return;
-      const p = this.list[this.n++];
-      p.x = cx + (Math.random() - 0.5) * 40;
-      p.z = cz + (Math.random() - 0.5) * 34 - 2;
-      p.spin = (Math.random() - 0.5) * 2;
-      p.rot = Math.random() * 6;
-      if (this.ambient === 'rain' && Math.random() < 0.94) {
-        p.y = 9 + Math.random() * 5;
-        p.vx = -1.2;
-        p.vz = -1.2;
-        p.vy = -24 - Math.random() * 4;
-        p.size = 0.025;
-        p.life = p.max = 1.2;
-        p.kind = 5;
-        continue;
-      }
-      const snow = this.ambient === 'snow' || (blizzard > 0 && Math.random() < 0.85);
-      if (snow) {
-        p.y = 8 + Math.random() * 6;
-        p.vx = 1 + blizzard * 6 + Math.random();
-        p.vz = 0.5 + Math.random();
-        p.vy = -2 - Math.random() * 2;
-        p.r = p.g = p.b = 0.85;
-        p.size = 0.06 + Math.random() * 0.06;
-        p.life = p.max = 5;
-        p.kind = 4;
-        continue;
-      }
-      p.kind = 3;
-      p.r = ((c >> 16) & 255) / 255;
-      p.g = ((c >> 8) & 255) / 255;
-      p.b = (c & 255) / 255;
-      p.size = 0.05 + Math.random() * 0.07;
-      p.life = p.max = 3 + Math.random() * 4;
-      switch (this.ambient) {
-        case 'embers':
-          p.y = 0.2;
-          p.vx = (Math.random() - 0.5) * 0.6;
-          p.vz = (Math.random() - 0.5) * 0.6;
-          p.vy = 0.8 + Math.random() * 1.4;
-          break;
-        case 'dust':
-          p.y = 0.3 + Math.random() * 2;
-          p.vx = (Math.random() - 0.5) * 0.3;
-          p.vz = (Math.random() - 0.5) * 0.3;
-          p.vy = (Math.random() - 0.5) * 0.1;
-          break;
-        default:
-          p.y = 0.3 + Math.random() * 2.5;
-          p.vx = (Math.random() - 0.5) * 0.8;
-          p.vz = (Math.random() - 0.5) * 0.8;
-          p.vy = (Math.random() - 0.3) * 0.4;
-      }
-    }
-  }
-
-  update(dt: number, cx: number, cz: number, blizzard: number, _camYaw = 0) {
-    if (this.ambientOn) this.spawnAmbient(cx, cz, dt, blizzard);
+  update(dt: number) {
     this.glow.begin();
     this.glowSq.begin();
     this.solid.begin();

@@ -1,4 +1,3 @@
-import type { EquipPos, Item } from '../game/arpg/Gear';
 import type { Lang } from '../i18n';
 import { fixChar, type CharSave } from './Characters';
 
@@ -14,8 +13,8 @@ export type HealthBars = 'off' | 'elites' | 'all';
 export type BindAction =
   | 'up' | 'down' | 'left' | 'right' | 'jump'
   | 'skillQ' | 'skillW' | 'skillE' | 'skillR' | 'skillA' | 'skillS' | 'skillD' | 'skillF'
-  | 'ult' | 'identity' | 'special' | 'dodge' | 'attack' | 'attackHere' | 'stop' | 'potion' | 'inventory' | 'skills'
-  | 'pause' | 'zoomIn' | 'zoomOut' | 'map' | 'devPanel' | 'devDebug' | 'devGod';
+  | 'ult' | 'identity' | 'special' | 'dodge' | 'attack' | 'attackHere' | 'stop' | 'skills'
+  | 'pause' | 'zoomIn' | 'zoomOut' | 'map';
 
 /** Skill slot order on the bar (Q W E R A S D F). */
 export const SKILL_BINDS: BindAction[] = ['skillQ', 'skillW', 'skillE', 'skillR', 'skillA', 'skillS', 'skillD', 'skillF'];
@@ -43,16 +42,11 @@ export function defaultKeybinds(): Keybinds {
     attack: ['KeyC'],
     attackHere: ['ShiftLeft'],
     stop: ['KeyH'],
-    potion: ['Digit1'],
-    inventory: ['KeyI'],
     skills: ['KeyK'],
     pause: ['Escape', 'KeyP'],
     zoomIn: ['Equal', 'NumpadAdd'],
     zoomOut: ['Minus', 'NumpadSubtract'],
-    map: ['KeyM', 'Tab'],
-    devPanel: ['F1'],
-    devDebug: ['F2'],
-    devGod: ['F3'],
+    map: ['Tab'],
   };
 }
 
@@ -83,9 +77,7 @@ export interface Settings {
   damageNumbers: boolean;
   enemyHealthBars: HealthBars;
   showMinimap: boolean;
-  showWaveCounter: boolean;
   showFps: boolean;
-  showEnemyCount: boolean;
   autoPause: boolean;
   /** Day/night cycle length: 'off' | 'short' | 'normal' | 'long' (see DAY_NIGHT.lengths). */
   dayNight: string;
@@ -103,42 +95,20 @@ export const QUALITY_PRESETS: Record<Exclude<Quality, 'custom'>, Pick<Settings, 
   ultra: { shadows: 'high', effects: 'high', particles: 'high', viewDistance: 'max', antiAliasing: 'ssaa', textures: 'high', postProcessing: true },
 };
 
-/** Best result per map in Endless mode. */
-export interface EndlessRecord {
-  wave: number;
-  time: number;
-  kills: number;
-  gold: number;
-  level: number;
-  hero: string;
-}
-
 export interface SaveData {
   version: number;
-  gold: number;
-  perm: Record<string, number>;
-  unlocked: { heroes: string[]; weapons: string[]; passives: string[]; maps: string[] };
-  achievements: string[];
-  stats: Record<string, number>;
-  discovered: { weapons: string[]; passives: string[]; enemies: string[]; bosses: string[]; relics: string[] };
-  /** Highest difficulty index cleared per map (-1 none). */
-  mapClears: Record<string, number>;
   settings: Settings;
-  /** Endless best results per map id. */
-  endless: Record<string, EndlessRecord>;
-  seenIntro: boolean;
-  /** Gold actually paid for permanent upgrades (what a refund returns). */
-  permSpent: number;
-  last: { hero: string; map: string; diff: string; mode: 'campaign' | 'endless' | 'world' };
-  /** Action-RPG equipment: one shared bag, equipped sets per hero. */
-  gear: { bag: Item[]; equipped: Record<string, Partial<Record<EquipPos, Item>>>; shop?: Item[] };
-  /** Created characters (v6) and the one picked at the campfire. Old `gear` goes to the first one created. */
+  /** Created characters and the one played last. */
   chars: CharSave[];
   activeChar: string | null;
+  /** Creatures met in the world (bestiary); empty until creatures exist. */
+  bestiary: string[];
 }
 
 const KEY = 'cubeborn.save.v1';
-const VERSION = 6;
+/** Where the save as it was before the v7 rework is kept (written once, never overwritten). */
+export const BACKUP_KEY = 'cubeborn.save.backup.v6';
+const VERSION = 7;
 
 export function defaultSettings(): Settings {
   const lang: Lang = (navigator.language || 'ru').toLowerCase().startsWith('ru') ? 'ru' : 'en';
@@ -157,9 +127,7 @@ export function defaultSettings(): Settings {
     damageNumbers: true,
     enemyHealthBars: 'elites',
     showMinimap: true,
-    showWaveCounter: true,
     showFps: false,
-    showEnemyCount: false,
     autoPause: true,
     dayNight: 'normal',
     cameraZoom: 1,
@@ -169,30 +137,16 @@ export function defaultSettings(): Settings {
 }
 
 export function defaultSave(): SaveData {
-  return {
-    version: VERSION,
-    gold: 0,
-    perm: {},
-    unlocked: { heroes: [], weapons: [], passives: [], maps: [] },
-    achievements: [],
-    stats: {},
-    discovered: { weapons: [], passives: [], enemies: [], bosses: [], relics: [] },
-    mapClears: {},
-    settings: defaultSettings(),
-    endless: {},
-    seenIntro: false,
-    permSpent: 0,
-    last: { hero: 'berserker', map: 'blightwood', diff: 'normal', mode: 'campaign' },
-    gear: { bag: [], equipped: {} },
-    chars: [],
-    activeChar: null,
-  };
+  return { version: VERSION, settings: defaultSettings(), chars: [], activeChar: null, bestiary: [] };
 }
 
+/** Field names of saves before v7 that belonged to removed systems (gold, shop, achievements, maps...). */
+const DROPPED = ['gold', 'perm', 'unlocked', 'achievements', 'stats', 'discovered', 'mapClears', 'endless', 'seenIntro', 'permSpent', 'last', 'gear'];
+
 /**
- * Merges stored data over defaults so that new fields appear after updates.
- * v1 -> v2: graphics presets expand into sub-settings, screen shake becomes a level,
- * gold is re-denominated to the new economy (upgrade prices dropped 4x, so the balance does too).
+ * Brings stored data to the current format. Settings and characters are kept (characters are
+ * repaired by fixChar); data of removed systems is dropped. Before a pre-v7 save is changed the
+ * original is copied to BACKUP_KEY, so nothing is lost silently.
  */
 export function migrate(raw: any): SaveData {
   const d = defaultSave();
@@ -203,56 +157,49 @@ export function migrate(raw: any): SaveData {
     const q = rs.quality === 'low' || rs.quality === 'medium' || rs.quality === 'high' ? rs.quality : 'high';
     Object.assign(rs, { quality: q }, QUALITY_PRESETS[q as 'low' | 'medium' | 'high']);
     if (typeof rs.screenShake === 'boolean') rs.screenShake = rs.screenShake ? 1 : 0;
-    delete rs.vibration;
   }
   // v5 action combat: eight skill keys (Q W E R A S D F), Ultimate V, Identity Z — every old binding resets
   if (oldVersion < 5) delete rs.keybinds;
-  const settings: Settings = { ...d.settings, ...rs, keybinds: { ...defaultKeybinds(), ...(rs.keybinds || {}) } };
-  for (const k of Object.keys(settings.keybinds) as BindAction[]) if (!Array.isArray(settings.keybinds[k])) settings.keybinds[k] = defaultKeybinds()[k];
-  const out: SaveData = {
-    ...d,
-    ...raw,
-    unlocked: { ...d.unlocked, ...(raw.unlocked || {}) },
-    discovered: { ...d.discovered, ...(raw.discovered || {}) },
+  delete rs.vibration;
+  delete rs.showWaveCounter;
+  delete rs.showEnemyCount;
+  const binds: Record<string, unknown> = { ...(rs.keybinds || {}) };
+  // v7: the world map moved to Tab; developer keys, inventory and potion are gone
+  if (oldVersion < 7) for (const k of ['map', 'devPanel', 'devDebug', 'devGod', 'inventory', 'potion']) delete binds[k];
+  const kb = defaultKeybinds();
+  for (const k of Object.keys(kb) as BindAction[]) if (Array.isArray(binds[k])) kb[k] = (binds[k] as unknown[]).filter((c): c is string => typeof c === 'string');
+  const settings: Settings = { ...d.settings, ...rs, keybinds: kb };
+  for (const k of Object.keys(settings) as (keyof Settings)[]) if (!(k in d.settings)) delete settings[k];
+  const chars = Array.isArray(raw.chars) ? (raw.chars.map(fixChar).filter(Boolean) as CharSave[]) : [];
+  return {
+    version: VERSION,
     settings,
-    endless: { ...(raw.endless || {}) },
-    last: { ...d.last, ...(raw.last || {}) },
-    stats: { ...(raw.stats || {}) },
-    perm: { ...(raw.perm || {}) },
-    mapClears: { ...(raw.mapClears || {}) },
+    chars,
+    activeChar: chars.some((c) => c.id === raw.activeChar) ? raw.activeChar : (chars[0]?.id ?? null),
+    bestiary: Array.isArray(raw.bestiary) ? raw.bestiary.filter((x: unknown) => typeof x === 'string') : [],
   };
-  if (oldVersion < 2) out.gold = Math.floor((Number(raw.gold) || 0) / 4);
-  // v5: permanent upgrades are gone — the gold paid for them comes back
-  if (oldVersion < 5) {
-    out.gold += Number(raw.permSpent) || 0;
-    out.perm = {};
-    out.permSpent = 0;
-  }
-  // gear: keep only well-formed items (older saves have none)
-  const g = raw.gear && typeof raw.gear === 'object' ? raw.gear : {};
-  out.gear = { bag: Array.isArray(g.bag) ? g.bag.filter((x: any) => x && typeof x.slot === 'string') : [], equipped: g.equipped && typeof g.equipped === 'object' ? g.equipped : {}, shop: Array.isArray(g.shop) ? g.shop.filter((x: any) => x && typeof x.slot === 'string') : [] };
-  if (oldVersion < 5) {
-    // the nine new classes replace the old heroes: their equipment returns to the stash
-    const known = ['berserker', 'paladin', 'steelfist', 'ranger', 'deathblade', 'reaper', 'summoner', 'sorceress', 'templar'];
-    for (const [hero, set] of Object.entries(out.gear.equipped)) {
-      if (known.includes(hero)) continue;
-      for (const it of Object.values(set || {})) if (it && typeof (it as Item).slot === 'string') out.gear.bag.push(it as Item);
-      delete out.gear.equipped[hero];
-    }
-    if (!known.includes(out.last.hero)) out.last.hero = 'berserker';
-  }
-  out.chars = Array.isArray(raw.chars) ? (raw.chars.map(fixChar).filter(Boolean) as CharSave[]) : [];
-  out.activeChar = out.chars.some((c) => c.id === raw.activeChar) ? raw.activeChar : (out.chars[0]?.id ?? null);
-  out.version = VERSION;
-  return out;
+}
+
+/** True when a stored save has data of removed systems (it will be backed up before migration). */
+function needsBackup(raw: any): boolean {
+  return !!raw && typeof raw === 'object' && (typeof raw.version !== 'number' || raw.version < VERSION || DROPPED.some((k) => k in raw));
 }
 
 export function loadSave(): SaveData {
+  let s: string | null = null;
   try {
-    const s = localStorage.getItem(KEY);
+    s = localStorage.getItem(KEY);
     if (!s) return defaultSave();
-    return migrate(JSON.parse(s));
+    const raw = JSON.parse(s);
+    if (needsBackup(raw) && localStorage.getItem(BACKUP_KEY) === null) localStorage.setItem(BACKUP_KEY, s);
+    return migrate(raw);
   } catch {
+    // unreadable save: keep a copy instead of overwriting it with a fresh one
+    try {
+      if (s) localStorage.setItem(KEY + '.unreadable', s);
+    } catch {
+      /* storage unavailable */
+    }
     return defaultSave();
   }
 }

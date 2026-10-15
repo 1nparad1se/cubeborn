@@ -5,13 +5,12 @@ import { RU2, EN2 } from './extra';
 import { RU3, EN3 } from './v3';
 import { RU4, EN4 } from './v4';
 import { RU5, EN5 } from './v5';
-import { RU_DEV, EN_DEV } from './dev';
 import { RU_A, EN_A } from './arpg';
 import { RU_ACT, EN_ACT } from './action';
 import { RU_W, EN_W } from './world';
 
 export type Lang = 'ru' | 'en';
-const DICTS: Record<Lang, Record<string, string>> = { ru: { ...RU, ...RU2, ...RU3, ...RU4, ...RU5, ...RU_DEV, ...RU_A, ...RU_ACT, ...RU_W }, en: { ...EN, ...EN2, ...EN3, ...EN4, ...EN5, ...EN_DEV, ...EN_A, ...EN_ACT, ...EN_W } };
+const DICTS: Record<Lang, Record<string, string>> = { ru: { ...RU, ...RU2, ...RU3, ...RU4, ...RU5, ...RU_A, ...RU_ACT, ...RU_W }, en: { ...EN, ...EN2, ...EN3, ...EN4, ...EN5, ...EN_A, ...EN_ACT, ...EN_W } };
 let current: Lang = 'ru';
 
 export function setLang(lang: Lang) {

@@ -3,7 +3,6 @@ import { t, LANGS, setLang, type Lang } from '../i18n';
 import { keyName } from '../input/Input';
 import { QUALITY_PRESETS, SKILL_BINDS, defaultKeybinds, type BindAction, type Quality, type Settings } from '../meta/Save';
 import { confirmBox, type MenuApi } from './Menus';
-import { dev } from '../dev/DevMode';
 import './classSelect.css';
 import './mcd.css';
 
@@ -24,7 +23,7 @@ export function availableResolutions(): string[] {
   return out.length ? out : ['1280x720'];
 }
 
-type Tab = 'video' | 'graphics' | 'gameplay' | 'audio' | 'controls' | 'other' | 'developer';
+type Tab = 'video' | 'graphics' | 'gameplay' | 'audio' | 'controls' | 'other';
 let lastTab: Tab = 'video';
 
 const SUB_KEYS = ['shadows', 'effects', 'particles', 'viewDistance', 'antiAliasing', 'textures', 'postProcessing'] as const;
@@ -134,13 +133,12 @@ export function settingsPanel(api: MenuApi, rerender: () => void, inRun = false)
     return row(bindLabel(a), keys);
   };
   const BIND_GROUPS: [string, BindAction[]][] = [
-    ['combat', ['attack', 'attackHere', ...SKILL_BINDS, 'ult', 'identity', 'special', 'dodge', 'potion']],
+    ['combat', ['attack', 'attackHere', ...SKILL_BINDS, 'ult', 'identity', 'special', 'dodge']],
     ['move', ['up', 'down', 'left', 'right', 'stop', 'jump', 'zoomIn', 'zoomOut', 'map']],
-    ['ui', ['inventory', 'skills', 'pause']],
-    ['dev', ['devPanel', 'devDebug', 'devGod']],
+    ['ui', ['skills', 'pause']],
   ];
   /** Actions every class needs a key for (warned about when left without one). */
-  const ESSENTIAL: BindAction[] = [...SKILL_BINDS, 'ult', 'identity', 'dodge', 'potion', 'inventory', 'skills'];
+  const ESSENTIAL: BindAction[] = [...SKILL_BINDS, 'ult', 'identity', 'dodge', 'skills', 'map'];
 
   const renderTab = () => {
     clear(body);
@@ -202,9 +200,7 @@ export function settingsPanel(api: MenuApi, rerender: () => void, inRun = false)
             { id: 'all', name: t('hp_all') },
           ], () => s.enemyHealthBars, (v) => (s.enemyHealthBars = v)),
           toggle(t('set_minimap'), () => s.showMinimap, (v) => (s.showMinimap = v)),
-          toggle(t('set_wave_counter'), () => s.showWaveCounter, (v) => (s.showWaveCounter = v)),
           toggle(t('set_fps'), () => s.showFps, (v) => (s.showFps = v)),
-          toggle(t('set_enemy_count'), () => s.showEnemyCount, (v) => (s.showEnemyCount = v)),
           toggle(t('set_autopause'), () => s.autoPause, (v) => (s.autoPause = v)),
           seg(t('set_daynight'), [
             { id: 'off', name: t('off') },
@@ -241,7 +237,6 @@ export function settingsPanel(api: MenuApi, rerender: () => void, inRun = false)
         if (bindNote) body.append(h('div.bind-note', bindNote));
         for (const w of warns) body.append(h('div.bind-warn', '⚠ ' + w));
         for (const [g, acts] of BIND_GROUPS) {
-          if (g === 'dev' && !dev.available) continue;
           body.append(h('div.set-sub', t('bindgrp_' + g)));
           for (const a of acts) body.append(bindRow(a, clash));
         }
@@ -261,41 +256,9 @@ export function settingsPanel(api: MenuApi, rerender: () => void, inRun = false)
         );
         break;
       }
-      case 'developer': {
-        const on = dev.enabled;
-        body.append(
-          toggle(t('dev_mode'), () => dev.enabled, (v) => {
-            api.setDevMode(v);
-            renderTab();
-          }, t('dev_mode_hint')),
-        );
-        if (on) {
-          const k = s.keybinds;
-          body.append(
-            h('div.dev-enabled', '✓ ' + t('dv_enabled')),
-            h('div.set-hint', t('dev_test_note')),
-            h(
-              'div.dev-set-btns',
-              h('button.btn.small', { onclick: () => api.openDevPanel() }, `${t('dev_open_panel')} (${keyName(k.devPanel[0] ?? '')})`),
-              h('button.btn.small', { onclick: () => api.toggleDevDebug() }, `${t('dev_debug_info')} (${keyName(k.devDebug[0] ?? '')})`),
-              h('button.btn.small.danger', {
-                onclick: () => {
-                  dev.resetTestState();
-                  renderTab();
-                },
-              }, t('dv_reset_state')),
-            ),
-            h('div.set-sub', t('dev_hotkeys')),
-            bindRow('devPanel', new Set()),
-            bindRow('devDebug', new Set()),
-            bindRow('devGod', new Set()),
-          );
-        }
-        break;
-      }
       case 'other':
         body.append(
-          inRun ? h('div.set-hint', t('set_reset_in_run')) : row(t('set_reset'), h('button.btn.danger.small', { onclick: (e: MouseEvent) => confirmReset(e, api) }, t('btn_reset'))),
+          row(t('set_reset'), h('button.btn.danger.small', { onclick: (e: MouseEvent) => confirmReset(e, api) }, t('btn_reset'))),
           h('div.credits', t('credits'), h('br'), api.version),
         );
         break;
@@ -305,7 +268,6 @@ export function settingsPanel(api: MenuApi, rerender: () => void, inRun = false)
   const drawTabs = () => {
     clear(tabs);
     const ids: Tab[] = ['video', 'graphics', 'gameplay', 'audio', 'controls', 'other'];
-    if (dev.available) ids.push('developer');
     for (const id of ids)
       tabs.append(
         h('button.tab' + (lastTab === id ? '.sel' : ''), {
@@ -324,5 +286,5 @@ export function settingsPanel(api: MenuApi, rerender: () => void, inRun = false)
 }
 
 function confirmReset(e: MouseEvent, api: MenuApi) {
-  confirmBox(e.target as HTMLElement, t('reset_confirm'), () => api.resetProgress());
+  confirmBox(e.target as HTMLElement, t('reset_confirm'), () => api.resetSettings());
 }
