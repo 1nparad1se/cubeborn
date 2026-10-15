@@ -9,6 +9,8 @@ export class CameraRig {
   private trauma = 0;
   private tx = 0;
   private tz = 0;
+  /** Followed ground height (eased, so steps and cliffs glide). */
+  private ty = 0;
   /** Downward pitch of the view (radians from horizontal). */
   readonly pitch = (52 * Math.PI) / 180;
   /** Camera distance to the target at zoom 1. */
@@ -54,15 +56,17 @@ export class CameraRig {
     this.trauma = Math.min(1, this.trauma + amount * this.shake);
   }
 
-  snap(x: number, z: number) {
+  snap(x: number, z: number, y = this.ty) {
     this.tx = x;
     this.tz = z;
+    this.ty = y;
   }
 
-  update(dt: number, x: number, z: number, lead = { x: 0, z: 0 }) {
+  update(dt: number, x: number, z: number, lead = { x: 0, z: 0 }, y = 0) {
     const k = 1 - Math.exp(-8 * dt);
     this.tx += (x + lead.x - this.tx) * k;
     this.tz += (z + lead.z - this.tz) * k;
+    this.ty += (y - this.ty) * (1 - Math.exp(-4 * dt));
     this.trauma = Math.max(0, this.trauma - dt * 1.6);
     const s = this.trauma * this.trauma * 0.6;
     const ox = (Math.random() * 2 - 1) * s;
@@ -70,8 +74,8 @@ export class CameraRig {
     this.autoZoom += (this.autoTarget - this.autoZoom) * (1 - Math.exp(-1.5 * dt));
     const h = this.height * this.zoom * this.autoZoom;
     const b = this.back * this.zoom * this.autoZoom;
-    this.camera.position.set(this.tx + this.toCam.x * b + ox, h, this.tz + this.toCam.z * b + oz);
-    this.camera.lookAt(this.tx + ox * 0.5, 0, this.tz + oz * 0.5);
+    this.camera.position.set(this.tx + this.toCam.x * b + ox, this.ty + h, this.tz + this.toCam.z * b + oz);
+    this.camera.lookAt(this.tx + ox * 0.5, this.ty, this.tz + oz * 0.5);
   }
 
   /** Turns a screen-space input direction (x right, z down) into a world direction. */
@@ -90,7 +94,40 @@ export class CameraRig {
     return p ? [p.x, p.z] : null;
   }
 
-  get target(): { x: number; z: number } {
-    return { x: this.tx, z: this.tz };
+  /**
+   * World point on the terrain under a screen pixel: marches the view ray down to the first
+   * ground (plus `lift`) it meets, so clicks land on hill tops and cliff feet alike.
+   */
+  terrainPoint(px: number, py: number, w: number, h: number, ground: (x: number, z: number) => number, lift = 0): [number, number] | null {
+    this.ndc.set((px / w) * 2 - 1, -(py / h) * 2 + 1);
+    this.ray.setFromCamera(this.ndc, this.camera);
+    const o = this.ray.ray.origin;
+    const d = this.ray.ray.direction;
+    if (d.y >= -0.01) return this.groundPoint(px, py, w, h, this.ty + lift);
+    const step = 0.35;
+    let prev = 0;
+    for (let t = 0; t < 400; t += step) {
+      const x = o.x + d.x * t;
+      const y = o.y + d.y * t;
+      const z = o.z + d.z * t;
+      if (y <= ground(x, z) + lift) {
+        // refine between the last point above ground and this one
+        let a = prev;
+        let b = t;
+        for (let i = 0; i < 6; i++) {
+          const m = (a + b) / 2;
+          if (o.y + d.y * m <= ground(o.x + d.x * m, o.z + d.z * m) + lift) b = m;
+          else a = m;
+        }
+        return [o.x + d.x * b, o.z + d.z * b];
+      }
+      prev = t;
+      if (y < -2) break;
+    }
+    return this.groundPoint(px, py, w, h, lift);
+  }
+
+  get target(): { x: number; y: number; z: number } {
+    return { x: this.tx, y: this.ty, z: this.tz };
   }
 }

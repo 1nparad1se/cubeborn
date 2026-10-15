@@ -15,6 +15,13 @@ export const CELL = {
   wall: 5, // map border: blocks everything
 } as const;
 
+/** Height limits for walkers (world units): a step taken on foot, and a ledge caught mid-jump. */
+export const STEP = {
+  walk: 1.01,
+  /** Added to the feet height while airborne: the 1.35 jump apex reaches two-block ledges. */
+  air: 0.8,
+};
+
 export interface Block {
   x: number;
   y: number;
@@ -66,10 +73,12 @@ export class Terrain {
   /** Column height used for block culling and visuals. */
   readonly height: Uint8Array;
   /**
-   * Ground elevation in world units (0 = the walkable floor). Raised cells are grass-topped
-   * plateaus and cliffs: they are never walkable (solid or wall), so gameplay stays on y=0.
+   * Ground elevation in whole blocks (0 = the lowest floor). Every cell can be raised: walkers
+   * step up and down one block at a time, jump up two, and fall off anything taller (see STEP).
    */
   readonly elev: Uint8Array;
+  /** Cells the hero can reach from the spawn on foot or with jumps (1), set by the generator. */
+  reach: Uint8Array | null = null;
   readonly blocks: Block[] = [];
   readonly decor: Decor[] = [];
   readonly trees: TreeInst[] = [];
@@ -90,6 +99,23 @@ export class Terrain {
     const cx = Math.floor(x);
     const cz = Math.floor(z);
     return this.inBounds(cx, cz) ? this.elev[cz * this.size + cx] : 0;
+  }
+
+  /** Ground height (world y) under (x, z): the top of the cell's column. */
+  groundY(x: number, z: number): number {
+    return this.elevAt(x, z);
+  }
+
+  /** Whether a walker standing at height `feet` may move into cell (cx, cz). */
+  canEnter(cx: number, cz: number, feet: number, airborne = false): boolean {
+    if (this.blocksWalker(cx, cz)) return false;
+    return this.elev[cz * this.size + cx] <= feet + (airborne ? STEP.air : STEP.walk);
+  }
+
+  /** Ground creatures and paths: neighbouring cells at most one block apart, both ways. */
+  stepOk(ax: number, az: number, bx: number, bz: number): boolean {
+    if (!this.inBounds(ax, az) || !this.inBounds(bx, bz)) return false;
+    return Math.abs(this.elev[az * this.size + ax] - this.elev[bz * this.size + bx]) <= 1;
   }
 
   idx(cx: number, cz: number): number {
@@ -114,9 +140,11 @@ export class Terrain {
     return this.cell[cz * this.size + cx] === CELL.wall;
   }
   /** Cells that stop shots and sight lines (see WALLS): the border and tall solid obstacles. */
-  blocksShot(cx: number, cz: number): boolean {
+  blocksShot(cx: number, cz: number, y = Infinity): boolean {
     if (!this.inBounds(cx, cz)) return true;
     const i = cz * this.size + cx;
+    // terrain rising above the shot's height (a hill or cliff face) stops it
+    if (this.elev[i] > y) return true;
     const c = this.cell[i];
     if (c === CELL.wall) return true;
     if (c !== CELL.solid) return false;
@@ -129,7 +157,7 @@ export class Terrain {
    * before entering the first shot-blocking cell (1 = clear). The start cell never blocks, so
    * shooters standing or hovering in an obstacle cell can still fire out of it.
    */
-  shotRay(x0: number, z0: number, x1: number, z1: number, ignoreEnd = false): number {
+  shotRay(x0: number, z0: number, x1: number, z1: number, ignoreEnd = false, y = Infinity): number {
     let cx = Math.floor(x0);
     let cz = Math.floor(z0);
     const ex = Math.floor(x1);
@@ -157,7 +185,7 @@ export class Terrain {
       if (t > 1) return 1;
       const end = cx === ex && cz === ez;
       if (end && ignoreEnd) return 1;
-      if (this.blocksShot(cx, cz)) return t;
+      if (this.blocksShot(cx, cz, y)) return t;
       if (end) return 1;
     }
     return 1;
@@ -165,7 +193,9 @@ export class Terrain {
 
   /** True when nothing blocks a shot between the points; the target's own cell is ignored. */
   los(x0: number, z0: number, x1: number, z1: number): boolean {
-    return this.shotRay(x0, z0, x1, z1, true) >= 1;
+    // sight runs at chest height above the higher of the two ends
+    const y = Math.max(this.elevAt(x0, z0), this.elevAt(x1, z1)) + 1.5;
+    return this.shotRay(x0, z0, x1, z1, true, y) >= 1;
   }
 
   walkableAt(x: number, z: number): boolean {

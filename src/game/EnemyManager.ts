@@ -245,7 +245,12 @@ export class EnemyManager {
   private moveWithTerrain(e: Enemy, mx: number, mz: number) {
     if (!mx && !mz) return;
     const t = this.run.terrain;
-    const blocked = e.flying ? (cx: number, cz: number) => t.blocksFlyer(cx, cz) : (cx: number, cz: number) => t.blocksWalker(cx, cz);
+    // ground creatures climb or drop one block at most: cliffs stop them both ways
+    const ex = Math.floor(e.x);
+    const ez = Math.floor(e.z);
+    const blocked = e.flying
+      ? (cx: number, cz: number) => t.blocksFlyer(cx, cz)
+      : (cx: number, cz: number) => t.blocksWalker(cx, cz) || ((cx !== ex || cz !== ez) && !t.stepOk(ex, ez, cx, cz));
     const r = Math.min(e.radius, 0.45);
     const nx = e.x + mx;
     const nz = e.z + mz;

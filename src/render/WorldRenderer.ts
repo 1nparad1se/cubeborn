@@ -82,8 +82,9 @@ vec2 rel = vWPos.xz - uFocus.xz;
 float ahead = dot(rel, toCam);
 vec2 dd = vec2(dot(rel, vec2(-toCam.y, toCam.x)), (ahead - 2.2) * 0.75);
 float pd = length(dd);
-if (vWPos.y > 1.2 && pd < 5.0 && ahead > -0.6) {
-  float k = (1.0 - smoothstep(3.0, 5.0, pd)) * clamp((vWPos.y - 1.2) / 1.0, 0.0, 1.0) * 0.85;
+float relY = vWPos.y - uFocus.y;
+if (relY > 1.2 && pd < 5.0 && ahead > -0.6) {
+  float k = (1.0 - smoothstep(3.0, 5.0, pd)) * clamp((relY - 1.2) / 1.0, 0.0, 1.0) * 0.85;
   int ix = int(mod(gl_FragCoord.x, 4.0)); int iy = int(mod(gl_FragCoord.y, 4.0));
   float bayer = (ix == 0 ? (iy == 0 ? 0.0 : iy == 1 ? 12.0 : iy == 2 ? 3.0 : 15.0) : ix == 1 ? (iy == 0 ? 8.0 : iy == 1 ? 4.0 : iy == 2 ? 11.0 : 7.0) : ix == 2 ? (iy == 0 ? 2.0 : iy == 1 ? 14.0 : iy == 2 ? 1.0 : 13.0) : (iy == 0 ? 10.0 : iy == 1 ? 6.0 : iy == 2 ? 9.0 : 5.0)) / 16.0;
   if (bayer < k) discard;
@@ -122,6 +123,77 @@ export class WorldRenderer {
     this.buildBlocks(terrain, map, quality);
     this.buildDecor(terrain, quality);
     this.buildFoliage(terrain, map, quality);
+    this.buildFalls(terrain, quality);
+  }
+
+  /**
+   * Mist and spray where water drops off a ledge: puffs of white voxels rising and drifting out
+   * from the foot of every waterfall (animated on the GPU, one draw call).
+   */
+  private buildFalls(t: Terrain, quality: string) {
+    const n = t.size;
+    const level = this.level;
+    type Puff = { x: number; y: number; z: number; dx: number; dz: number; top: number };
+    const puffs: Puff[] = [];
+    const per = quality === 'low' ? 3 : quality === 'medium' ? 5 : 8;
+    for (let z = 1; z < n - 1; z++)
+      for (let x = 1; x < n - 1; x++) {
+        const i = z * n + x;
+        if (t.cell[i] !== CELL.liquid || !/water/.test(t.tileNames[t.tile[i]] ?? '')) continue;
+        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const j = (z + dz) * n + x + dx;
+          const foot = t.cell[j] === CELL.liquid ? level[j] : t.elev[j];
+          if (level[i] - foot < 1.5) continue;
+          for (let k = 0; k < per; k++) {
+            const r = (a: number) => hash2(x * 13 + k, z * 7 + k * 3, a);
+            const ex = x + 0.5 + dx * 0.5 + (dz ? r(1) - 0.5 : 0);
+            const ez = z + 0.5 + dz * 0.5 + (dx ? r(1) - 0.5 : 0);
+            puffs.push({ x: ex, y: foot, z: ez, dx, dz, top: level[i] });
+          }
+        }
+      }
+    if (!puffs.length) return;
+    const geo = unitCube();
+    const mesh = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, depthWrite: false }), puffs.length);
+    const ph = new Float32Array(puffs.length);
+    const dir = new Float32Array(puffs.length * 3);
+    const m4 = new THREE.Matrix4();
+    puffs.forEach((p, i) => {
+      m4.makeTranslation(p.x, p.y, p.z);
+      mesh.setMatrixAt(i, m4);
+      ph[i] = hash2(Math.floor(p.x * 31), Math.floor(p.z * 17), i);
+      dir[i * 3] = p.dx;
+      dir[i * 3 + 1] = p.top - p.y;
+      dir[i * 3 + 2] = p.dz;
+    });
+    geo.setAttribute('aPh', new THREE.InstancedBufferAttribute(ph, 1));
+    geo.setAttribute('aDir', new THREE.InstancedBufferAttribute(dir, 3));
+    const mat = mesh.material as THREE.MeshBasicMaterial;
+    const u = this.uniforms;
+    mat.onBeforeCompile = (sh) => {
+      sh.uniforms.uTime = u.uTime;
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nuniform float uTime;\nattribute float aPh;\nattribute vec3 aDir;\nvarying float vA;')
+        .replace(
+          '#include <begin_vertex>',
+          `#include <begin_vertex>
+float life = fract(uTime * 0.55 + aPh * 7.0);
+float sz = (0.18 + life * 0.42) * (0.7 + aPh * 0.6);
+transformed *= sz;
+// spray kicks out from the cliff and billows up, part way to the lip
+transformed.x += aDir.x * (0.2 + life * 1.3) + sin(aPh * 40.0) * life * 0.5 * (1.0 - abs(aDir.x));
+transformed.z += aDir.z * (0.2 + life * 1.3) + cos(aPh * 40.0) * life * 0.5 * (1.0 - abs(aDir.z));
+transformed.y += life * min(aDir.y * 0.6, 2.5) + 0.1;
+vA = (1.0 - life) * smoothstep(0.0, 0.15, life);`,
+        );
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying float vA;')
+        .replace('#include <opaque_fragment>', '#include <opaque_fragment>\ngl_FragColor.a *= vA;');
+    };
+    mesh.frustumCulled = false;
+    mesh.renderOrder = 4;
+    this.group.add(mesh);
+    this.disposables.push(geo, mat, mesh);
   }
 
   /** Runs a chunk builder now (small maps) or when the camera comes near (big worlds). */
@@ -147,7 +219,7 @@ export class WorldRenderer {
     const n = t.size;
     const level = new Float32Array(n * n);
     for (let i = 0; i < n * n; i++) {
-      if (t.cell[i] === CELL.liquid) level[i] = liquidLevel(t.tileNames[t.tile[i]] ?? '');
+      if (t.cell[i] === CELL.liquid) level[i] = t.elev[i] + liquidLevel(t.tileNames[t.tile[i]] ?? '');
       else level[i] = t.elev[i];
     }
     return level;
@@ -161,11 +233,12 @@ export class WorldRenderer {
     const q = new Int32Array(n * n);
     let qh = 0;
     let qt = 0;
+    const wet = (i: number) => t.cell[i] === CELL.liquid;
     for (let i = 0; i < n * n; i++) {
-      if (level[i] < 0) {
+      if (wet(i)) {
         const x = i % n;
         const z = (i / n) | 0;
-        const land = (cx: number, cz: number) => cx >= 0 && cz >= 0 && cx < n && cz < n && level[cz * n + cx] >= 0;
+        const land = (cx: number, cz: number) => cx >= 0 && cz >= 0 && cx < n && cz < n && !wet(cz * n + cx);
         if (land(x + 1, z) || land(x - 1, z) || land(x, z + 1) || land(x, z - 1)) {
           shore[i] = 1;
           q[qt++] = i;
@@ -182,7 +255,7 @@ export class WorldRenderer {
         const cz = z + dz;
         if (cx < 0 || cz < 0 || cx >= n || cz >= n) continue;
         const j = cz * n + cx;
-        if (level[j] < 0 && !shore[j]) {
+        if (wet(j) && !shore[j]) {
           shore[j] = shore[i] + 1;
           q[qt++] = j;
         }
@@ -195,8 +268,8 @@ export class WorldRenderer {
       const z = (i / n) | 0;
       data[i * 4] = t.tile[i];
       data[i * 4 + 1] = Math.floor(hash2(x, z, 5) * ATLAS_VARIANTS);
-      data[i * 4 + 2] = level[i] < 0 ? 40 * Math.max(1, shore[i] || 5) : 0;
-      data[i * 4 + 3] = Math.min(255, t.elev[i] * 32);
+      data[i * 4 + 2] = wet(i) ? 40 * Math.max(1, shore[i] || 5) : 0;
+      data[i * 4 + 3] = Math.min(255, t.elev[i] * 16);
     }
     const cells = new THREE.DataTexture(data, n, n, THREE.RGBAFormat);
     cells.magFilter = cells.minFilter = THREE.NearestFilter;
@@ -206,8 +279,8 @@ export class WorldRenderer {
     const top = new Float32Array(n * n);
     for (let i = 0; i < n * n; i++) {
       const c = t.cell[i];
-      top[i] = Math.max(0, level[i]);
-      if ((c === CELL.solid || c === CELL.wall) && !t.elev[i]) top[i] = t.height[i] ? Math.min(2, t.height[i]) : 0;
+      top[i] = t.elev[i];
+      if (c === CELL.solid || c === CELL.wall) top[i] += t.height[i] ? Math.min(2, t.height[i]) : 0;
     }
     const aoData = new Uint8Array(n * n * 4);
     for (let z = 0; z < n; z++)
@@ -295,7 +368,22 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
   float anim = animOf(tile);
   vec2 local = fract(xz);
   vec3 col;
-  if (side) {
+  float elev = cd.a * 255.0 / 16.0;
+  if (side && liquid && anim == 1.0) {
+    // waterfall: pixel lanes of water rushing down with bright streaks
+    float along = dot(vWPos.xz, vec2(-vN.z, vN.x));
+    float lx = floor(along * 16.0);
+    float py = floor(vWPos.y * 16.0) / 16.0;
+    float lane = h21(vec2(lx, 3.0));
+    float sp = 2.6 + lane * 1.6;
+    vec3 base = atlasAt(tile, variant, fract(vec2(along * 2.0, py * 2.0 + uTime * sp)));
+    col = base * (1.05 + lane * 0.15);
+    float streak = fract(py * 0.8 + uTime * sp * 0.5 + lane * 5.0);
+    if (streak > 0.78) col = mix(col, vec3(0.88, 0.95, 1.0), 0.7);
+    float lip = clamp(1.0 - (vTop - vWPos.y) * 3.0, 0.0, 1.0);
+    col = mix(col, vec3(0.9, 0.97, 1.0), lip * 0.6);
+    gEmit = col * 0.25;
+  } else if (side) {
     // cliff face: block-aligned rim (top layer hanging over), soil, then stone deeper down
     float along = dot(vWPos.xz, vec2(-vN.z, vN.x));
     float d = max(0.0, vTop - vWPos.y);
@@ -307,7 +395,11 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
     float row;
     if (bk.y < 0.5) row = ${ROW_RIM.toFixed(1)};
     else row = h21(bk * 1.31 + cell) < smoothstep(1.0, 3.5, d) ? ${ROW_STONE.toFixed(1)} : ${ROW_SOIL.toFixed(1)} + step(0.5, hb);
+    // high peaks are bare rock all the way up
+    if (vTop > 7.5) row = ${ROW_STONE.toFixed(1)};
     col = atlasAt(tile, row, sl);
+    // snow caps hang over the rim of the highest cliffs
+    if (vTop > 10.5 && d < 0.5 - h21(vec2(bk.x, 9.0)) * 0.3) col = vec3(0.9, 0.94, 0.98) * (0.94 + hb * 0.06);
     col *= 0.94 + h21(bk + 17.0) * 0.08;
     col *= mix(1.0, 0.72, clamp(d / 6.0, 0.0, 1.0));
     col *= 0.8 + 0.2 * smoothstep(-0.2, 0.9, vWPos.y);
@@ -322,6 +414,12 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
     if (isLand(cell + vec2(0.0, -1.0))) ed = min(ed, lp.y);
     if (isLand(cell + vec2(0.0, 1.0))) ed = min(ed, 1.0 - lp.y);
     float depth = clamp((shore - 1.0 + ed) / 2.5, 0.0, 1.0);
+    // churning foam at the foot of a waterfall (a neighbouring water cell high above)
+    float fallEd = 1.0;
+    if (cellAt(cell + vec2(-1.0, 0.0)).a > cd.a + 0.05) fallEd = min(fallEd, lp.x);
+    if (cellAt(cell + vec2(1.0, 0.0)).a > cd.a + 0.05) fallEd = min(fallEd, 1.0 - lp.x);
+    if (cellAt(cell + vec2(0.0, -1.0)).a > cd.a + 0.05) fallEd = min(fallEd, lp.y);
+    if (cellAt(cell + vec2(0.0, 1.0)).a > cd.a + 0.05) fallEd = min(fallEd, 1.0 - lp.y);
     vec2 bp = xz * 2.0;
     vec2 flow = fract(bp);
     if (anim == 1.0 || anim == 2.0) flow = fract(bp + vec2(floor(uTime * (anim == 2.0 ? 5.0 : 9.0)) / 16.0, 0.0));
@@ -333,6 +431,8 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
       float foamW = 0.06 + 0.04 * (0.5 + 0.5 * sin(uTime * 2.2 + (pxc.x - pxc.y) * 4.0));
       if (ed < foamW) col = mix(col, vec3(0.9, 0.96, 1.0), 0.75);
       else if (ed < foamW + 0.07 && h21(floor(pxc * 16.0) + floor(uTime * 3.0)) > 0.6) col = mix(col, vec3(0.85, 0.92, 1.0), 0.4);
+      float churn = (1.0 - smoothstep(0.0, 1.6, fallEd + h21(floor(pxc * 16.0) + floor(uTime * 8.0)) * 0.9));
+      col = mix(col, vec3(0.92, 0.97, 1.0), churn * 0.9);
       gEmit = col * 0.16;
     } else if (anim == 2.0) {
       col = base * (1.0 - depth * 0.15);
@@ -372,12 +472,14 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
       l = fract(l + vec2(floor(uTime * sp) / 16.0, floor(uTime * sp * 0.5) / 16.0));
     }
     col = atlasAt(ut, v, l);
+    // the high peaks: bare stone, then snow
+    if (elev > 7.5) col = atlasAt(ut, ${ROW_STONE.toFixed(1)}, l) * 1.05;
+    if (elev > 10.5) col = vec3(0.9, 0.94, 0.98) * (0.93 + h21(floor(xz * 16.0)) * 0.07);
     col *= 0.97 + h21(blk + 11.0) * 0.05;
     // broad painted patches of lighter and darker ground
     float m = vnoise(xz * 0.07) * 0.6 + vnoise(xz * 0.23) * 0.4;
     col *= 0.9 + m * 0.2;
-    vec2 aoUv = vWPos.y > 0.1 ? (cell + 0.5) / uSize : xz / uSize;
-    col *= texture2D(uAO, aoUv).r;
+    col *= texture2D(uAO, xz / uSize).r;
     float spark = step(0.985, h21(floor(pxc * 16.0) + cell * 17.0 + floor(uTime * 2.0)));
     if (ua == 2.0) gEmit = col * (0.85 + 0.15 * sin(uTime * 2.0 + cell.x * 0.7)) + vec3(1.0, 0.8, 0.3) * spark * 0.6;
     if (ua == 3.0) {
@@ -597,12 +699,15 @@ diffuseColor.rgb *= mix(0.72, 1.0, smoothstep(0.0, 1.0, vWPos.y));`);
     for (let z = 0; z < n; z++)
       for (let x = 0; x < n; x++) {
         const i = z * n + x;
-        if (this.level[i] !== -0.62 || !/water/.test(t.tileNames[t.tile[i]] ?? '')) continue;
+        if (t.cell[i] !== CELL.liquid || !/water/.test(t.tileNames[t.tile[i]] ?? '')) continue;
+        // calm water only: no lilies where a waterfall churns
+        if (Math.max(this.level[i - 1] ?? 0, this.level[i + 1] ?? 0, this.level[i - n] ?? 0, this.level[i + n] ?? 0) > this.level[i] + 1) continue;
+        const ly = this.level[i];
         if (hash2(x, z, 77) < 0.93) continue;
         const ox = hash2(x, z, 78) * 0.5 + 0.25;
         const oz = hash2(x, z, 79) * 0.5 + 0.25;
-        lilies.push({ x: x + ox, z: z + oz, y: -0.6, size: 0.42, h: 0.04, color: 0x4a9a3a });
-        if (hash2(x, z, 80) > 0.5) lilies.push({ x: x + ox + 0.05, z: z + oz, y: -0.56, size: 0.14, h: 0.1, color: 0xc89aff });
+        lilies.push({ x: x + ox, z: z + oz, y: ly + 0.02, size: 0.42, h: 0.04, color: 0x4a9a3a });
+        if (hash2(x, z, 80) > 0.5) lilies.push({ x: x + ox + 0.05, z: z + oz, y: ly + 0.06, size: 0.14, h: 0.1, color: 0xc89aff });
       }
     list = list.concat(lilies);
     if (!list.length) return;
@@ -735,8 +840,9 @@ diffuseColor.rgb *= 0.78 + 0.22 * vH;`,
         if (!rule) continue;
         const c = t.cell[i];
         const e = t.elev[i];
-        if (!e && c !== CELL.floor && c !== CELL.hazard && c !== CELL.ice) continue;
-        if (e && c === CELL.wall && Math.min(x, z, n - 1 - x, n - 1 - z) < 3) continue;
+        if (c !== CELL.floor && c !== CELL.hazard && c !== CELL.ice) continue;
+        // nothing grows on the bare rock and snow of the peaks
+        if (e >= 8) continue;
         const dens = rule.density * q;
         let count = Math.floor(dens);
         if (hash2(x, z, 91) < dens - count) count++;

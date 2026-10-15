@@ -1322,8 +1322,7 @@ export class ActionSystem {
     if (ev.kind === 'blink' || ev.kind === 'behind') {
       const a = this.fx.add('blink', p.x, p.z, 0.4, color);
       a.r = 1.2;
-      p.x = ex;
-      p.z = ez;
+      p.placeAt(ex, ez);
       p.vx = p.vz = 0;
       const b = this.fx.add('blink', ex, ez, 0.4, color);
       b.r = 1.4;

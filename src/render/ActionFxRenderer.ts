@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { groundAt } from './ground';
 import type { Run } from '../game/Run';
 import type { ActFx } from '../game/action/vfx';
 import type { Shape } from '../game/action/types';
@@ -98,6 +99,7 @@ export class ActionFxRenderer {
   private ribPos: Float32Array;
   private ribCol: Float32Array;
   private ribN = 0;
+  private lift = false;
   private L: EmitLayer = { kind: 'pixel', count: 1, color: WHITE, speed: 1, size: 0.1, life: 0.3, spread: Math.PI };
 
   /** Class-specific look for the hero's own effects (null: the shared look). */
@@ -117,6 +119,9 @@ export class ActionFxRenderer {
     this.sqG.mesh.renderOrder = 7;
     this.blk = new InstancedBatch(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ color: 0xffffff }), parent, 64);
     this.blk.mesh.renderOrder = 2;
+    // in the world (not the skill sandbox) effects sit on the terrain under them
+    this.lift = b.glowBox.lift;
+    this.sqS.lift = this.sqG.lift = this.blk.lift = this.lift;
     const g = new THREE.BufferGeometry();
     this.ribPos = new Float32Array(RIB_MAX * 3);
     this.ribCol = new Float32Array(RIB_MAX * 3);
@@ -132,7 +137,7 @@ export class ActionFxRenderer {
   private vtx(x: number, y: number, z: number, r: number, g: number, b: number) {
     const i = this.ribN++ * 3;
     this.ribPos[i] = x;
-    this.ribPos[i + 1] = y;
+    this.ribPos[i + 1] = this.lift ? y + groundAt(x, z) : y;
     this.ribPos[i + 2] = z;
     this.ribCol[i] = r;
     this.ribCol[i + 1] = g;

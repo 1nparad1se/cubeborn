@@ -75,17 +75,35 @@ export function zoneLevel(x: number, z: number): number {
 export function buildCamps(t: Terrain): Camp[] {
   const camps: Camp[] = [];
   const rng = new Rng(7331);
+  // open, nearly level ground (one block of relief at most) the hero can walk to
   const open = (x: number, z: number) => {
-    for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) if (!t.walkableAt(x + dx, z + dz)) return false;
-    return true;
+    let lo = 99;
+    let hi = -1;
+    for (let dz = -2; dz <= 2; dz++)
+      for (let dx = -2; dx <= 2; dx++) {
+        const cx = Math.floor(x + dx);
+        const cz = Math.floor(z + dz);
+        if (!t.walkableAt(cx, cz)) return false;
+        if (t.reach && !t.reach[cz * t.size + cx]) return false;
+        const e = t.elev[cz * t.size + cx];
+        lo = Math.min(lo, e);
+        hi = Math.max(hi, e);
+      }
+    return hi - lo <= 1;
   };
   for (const c of CREATURES) {
     const s = creatureStats(c);
     const region = regionOf(c);
     const want = c.category === 'bosses' ? 1 : 3;
     let made = 0;
-    for (let k = 0; k < 400 && made < want; k++) {
-      const [x, z] = region.sample(rng);
+    for (let k = 0; k < 1200 && made < want; k++) {
+      let [x, z] = region.sample(rng);
+      // a region mostly on cliffs or peaks: later tries drift toward the meadow
+      if (k >= 400) {
+        const f = (k - 400) / 800;
+        x += (SPAWN.x - x) * f * 0.6;
+        z += (SPAWN.z - z) * f * 0.6;
+      }
       if (x < 8 || z < 8 || x > t.size - 8 || z > t.size - 8) continue;
       if (Math.hypot(x - SPAWN.x, z - SPAWN.z) < SAFE_RADIUS) continue;
       if (!open(x, z)) continue;

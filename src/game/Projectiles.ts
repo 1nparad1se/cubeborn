@@ -9,6 +9,8 @@ export class Projectile {
   x = 0;
   y = 0.8;
   z = 0;
+  /** Ground height where it was launched: flight heights (y) are measured from here. */
+  gy = 0;
   vx = 0;
   vz = 0;
   vy = 0;
@@ -65,6 +67,7 @@ export class Projectiles {
     p.x = x;
     p.z = z;
     p.y = 0.8;
+    p.gy = this.run.terrain.groundY(x, z);
     p.vx = vx;
     p.vz = vz;
     p.vy = 0;
@@ -124,7 +127,7 @@ export class Projectiles {
       }
       p.yaw += p.spin * dt;
       if (p.active && p.collide && !p.passWalls && (p.x !== ox || p.z !== oz) && true) {
-        const t = run.terrain.shotRay(ox, oz, p.x, p.z);
+        const t = run.terrain.shotRay(ox, oz, p.x, p.z, false, p.gy + 1.6);
         if (t < 1) this.hitWall(p, ox, oz, Math.max(0, t - 0.03));
       }
       if (p.active && p.life <= 0) this.kill(p);

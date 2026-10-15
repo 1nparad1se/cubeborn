@@ -1,3 +1,4 @@
+import { groundAt } from './ground';
 import * as THREE from 'three';
 import type { Run } from '../game/Run';
 import { getLang } from '../i18n';
@@ -68,7 +69,7 @@ export class Overlay {
     if (v <= 0) return;
     this.nums.push({
       x: x + (Math.random() - 0.5) * 0.5,
-      y: 1.6,
+      y: 1.6 + groundAt(x, z),
       z,
       text: String(v),
       color: color !== undefined ? hex(color) : crit ? '#ffd23d' : '#f0ecf8',
@@ -81,7 +82,7 @@ export class Overlay {
   }
 
   text(x: number, z: number, text: string, color: number) {
-    this.nums.push({ x, y: 2.4, z, text, color: hex(color), size: 12, life: 1.2, max: 1.2, vx: 0, big: true });
+    this.nums.push({ x, y: 2.4 + groundAt(x, z), z, text, color: hex(color), size: 12, life: 1.2, max: 1.2, vx: 0, big: true });
   }
 
   clear() {
@@ -110,7 +111,7 @@ export class Overlay {
         const named = !!e.name && d2 < LABEL_R * LABEL_R;
         if (!all && !named && e.hp >= e.maxHp) continue;
         if (d2 > 30 * 30) continue;
-        if (!this.project(camera, e.x, 1.2 + e.scale * 1.4 + e.y, e.z)) continue;
+        if (!this.project(camera, e.x, 1.2 + e.scale * 1.4 + e.y + groundAt(e.x, e.z), e.z)) continue;
         if (named) {
           const diff = e.level - run.player.level;
           ctx.font = '600 11px "Russo One", sans-serif';

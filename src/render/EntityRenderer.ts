@@ -18,6 +18,7 @@ import { getSkinMaterial, packAnim, skinOf } from './creatureSkins';
 import { SUMMON_MODELS } from '../models/summons';
 import { MobRenderer } from './MobRenderer';
 import { MobWorld } from '../game/MobWorld';
+import { groundAt } from './ground';
 
 const TAU = Math.PI * 2;
 
@@ -115,6 +116,8 @@ export class EntityRenderer {
     const darkMat = new THREE.MeshBasicMaterial({ color: 0xffffff, map: blobTex, transparent: true, depthWrite: false, blending: THREE.MultiplyBlending, premultipliedAlpha: true });
     this.darkDisc = new InstancedBatch(flatPlane(), darkMat, this.group, 16);
     for (const b of [this.glowBox, this.glowDisc, this.glowRing, this.glowRingThin, this.glowPlane]) b.mesh.renderOrder = 5;
+    // everything here is placed relative to the terrain under it
+    for (const b of [this.shadows, this.glowBox, this.glowBoxTop, this.glowDisc, this.glowRing, this.glowRingThin, this.glowPlane, this.darkDisc]) b.lift = true;
     this.glowBoxTop.mesh.renderOrder = 6;
     this.actFx = new ActionFxRenderer(run, this, lights);
     this.mobs = new MobRenderer(this.group, run, this.shadows, this.glowBoxTop, quality === 'high');
@@ -130,13 +133,16 @@ export class EntityRenderer {
       // pixel-skinned creature: one instanced batch per model, limbs animated on the GPU
       const g = buildVoxelGeometry(model, { skin: true, anim: true });
       list.push(new InstancedBatch(g, skinMat, this.group, 32, true, this.enemyShadows));
+      list[0].lift = true;
       b = { frames: list, skinned: true };
       this.models.set(id, b);
       return b;
     }
     for (let f = 0; f < frames; f++) {
       const g = buildVoxelGeometry(model, { frame: frames > 1 ? f : -1 });
-      list.push(new InstancedBatch(g, this.voxMat, this.group, 32, true, this.enemyShadows));
+      const ib = new InstancedBatch(g, this.voxMat, this.group, 32, true, this.enemyShadows);
+      ib.lift = true;
+      list.push(ib);
     }
     b = { frames: list };
     this.models.set(id, b);
@@ -174,7 +180,7 @@ export class EntityRenderer {
       const h = this.hero;
       const sp = Math.hypot(p.vx, p.vz);
       this.heroWalk += dt * (4 + sp * 2.2);
-      h.root.position.set(p.x, p.jumpY, p.z);
+      h.root.position.set(p.x, p.y, p.z);
       const yaw = Math.atan2(p.fx, p.fz);
       h.root.rotation.y += angleDelta(h.root.rotation.y, yaw) * Math.min(1, dt * 14);
       const blink = p.invulnT > 0 && Math.floor(time * 20) % 2 === 0;
@@ -185,7 +191,7 @@ export class EntityRenderer {
     // hero-coloured ring keeps the hero easy to find in a crowd
     if (!p.dead) this.glowRingThin.push(p.x, 0.04, p.z, 0, 0.78, 1, 0.78, this.run.hero.color, 0, 0, 0, 0.55);
     // the blob shadow stays on the ground and shrinks as the hero rises
-    const shS = 1.3 * (1 - Math.min(0.45, (this.heroY / BALANCE.jump.height) * 0.4));
+    const shS = 1.3 * (1 - Math.min(0.45, (Math.max(0, this.heroY - p.ground) / BALANCE.jump.height) * 0.4));
     this.shadows.push(p.x, 0.03, p.z, 0, shS, 1, shS);
     // buffs
     if (p.buffs.aegis > 0) this.glowRing.push(p.x, 0.9, p.z, time * 2, 1.2, 1, 1.2, 0xffe080, 0, 0, 0, 0.6);
@@ -207,7 +213,7 @@ export class EntityRenderer {
     // the hero keeps near real-time pace through the slow-motion ending so death and victory read
     const adt = dt;
     // jump height; a hero who dies mid-air falls to the ground
-    this.heroY = p.dead ? Math.max(0, this.heroY - 14 * adt) : p.jumpY;
+    this.heroY = p.dead ? Math.max(p.ground, this.heroY - 14 * adt) : p.y;
     rig.root.position.set(p.x, this.heroY, p.z);
     const J = BALANCE.jump;
     a.air = p.jumpPhase === 'air' && !p.dead;
@@ -280,6 +286,8 @@ export class EntityRenderer {
     const col = run.hero.color;
     this.rig!.tip.getWorldPosition(this.tipPos);
     const t = this.tipPos;
+    // the tip is in world space; bursts are placed relative to the ground
+    t.y -= groundAt(t.x, t.z);
     if (ev === 'impulse') run.fx.burst(t.x, t.y, t.z, col, 6, 2.5, 0.1, 0.25, 'glow');
     else if (ev === 'charge') run.fx.burst(t.x, t.y, t.z, col, 3, 0.8, 0.08, 0.3, 'glow');
     else if (ev === 'levelup') {
@@ -434,6 +442,8 @@ export class EntityRenderer {
       const model = PROJECTILE_MODELS[p.vis];
       const fadeIn = Math.min(1, p.age * 12);
       const s = p.scale * (0.4 + fadeIn * 0.6);
+      // shots fly level from where they were launched, whatever the ground below does
+      const py = p.y + p.gy - groundAt(p.x, p.z);
       if (model) {
         const mb = this.batchesFor('p:' + p.vis, model, 1)!;
         const ground = p.vis === 'pool' || p.vis === 'firepool' || p.vis === 'firepatch' || p.vis === 'mine';
@@ -441,7 +451,7 @@ export class EntityRenderer {
         let yaw = p.yaw;
         if (p.vis === 'saw' || p.vis === 'glaive' || p.vis === 'tornado' || p.vis === 'wisp') yaw = time * 10 + p.a;
         if (p.vis === 'pool' || p.vis === 'firepool' || p.vis === 'firepatch') yaw = p.a * 3;
-        const y = ground ? 0.02 : p.y - 0.15;
+        const y = ground ? 0.02 : py - 0.15;
         mb.frames[0].pushFast(p.x, y, p.z, yaw, s * fade, s * (ground ? 1 : fade), 1, 1, 1, 0);
         if (!ground) this.shadows.push(p.x, 0.02, p.z, 0, 0.5 * s, 1, 0.5 * s);
         if (p.vis === 'pool' || p.vis === 'firepool' || p.vis === 'firepatch') {
@@ -449,10 +459,10 @@ export class EntityRenderer {
         }
         if (p.vis === 'mine' && p.a > 0) this.glowDisc.push(p.x, 0.08, p.z, 0, 2.5, 1, 2.5, 0xff5470, 0, 0, 0, 0.8);
         if (p.vis === 'cloud') this.shadows.push(p.x, 0.03, p.z, 0, 2.2 * s, 1, 2.2 * s);
-        if (p.vis === 'meteor') this.glowBox.push(p.x, p.y + 0.3, p.z, time * 3, 0.9 * s, 0.9 * s, 0.9 * s, 0xff8a2a, 0, 0, 0, 0.8);
+        if (p.vis === 'meteor') this.glowBox.push(p.x, py + 0.3, p.z, time * 3, 0.9 * s, 0.9 * s, 0.9 * s, 0xff8a2a, 0, 0, 0, 0.8);
       } else {
         const c = p.color;
-        this.glowBox.push(p.x, p.y, p.z, time * 5, 0.32 * s, 0.32 * s, 0.32 * s, c);
+        this.glowBox.push(p.x, py, p.z, time * 5, 0.32 * s, 0.32 * s, 0.32 * s, c);
       }
       // trail glow for bright projectiles (kept faint: many shots must not wash the ground out)
       if (p.glow > 0 || p.vis === 'fireball' || p.vis === 'bolt' || p.vis === 'wisp' || p.vis === 'shard') {
@@ -474,8 +484,8 @@ export class EntityRenderer {
             const len = Math.min(p.age * sp, tv * s);
             if (len > 0.05) {
               const yaw = Math.atan2(ux, uz);
-              this.glowPlane.push(p.x - ux * len * 0.5, p.y, p.z - uz * len * 0.5, yaw, 0.16 * s, 1, len, p.color, 0, 0, 0, 0.55 * fadeIn);
-              this.glowPlane.push(p.x - ux * len * 0.35, p.y + 0.01, p.z - uz * len * 0.35, yaw, 0.05 * s, 1, len * 0.7, 0xffffff, 0, 0, 0, 0.5 * fadeIn);
+              this.glowPlane.push(p.x - ux * len * 0.5, py, p.z - uz * len * 0.5, yaw, 0.16 * s, 1, len, p.color, 0, 0, 0, 0.55 * fadeIn);
+              this.glowPlane.push(p.x - ux * len * 0.35, py + 0.01, p.z - uz * len * 0.35, yaw, 0.05 * s, 1, len * 0.7, 0xffffff, 0, 0, 0, 0.5 * fadeIn);
             }
           }
           const flame = FLAME_VIS[p.vis];
@@ -486,7 +496,7 @@ export class EntityRenderer {
               const jit = Math.sin(time * 37 + i * 2.3 + p.serial) * 0.08 * u * s;
               const sz = 0.3 * s * (1 - u * 0.7);
               const c = u < 0.5 ? mixHex(flame[0], flame[1], u * 2) : mixHex(flame[1], flame[2], (u - 0.5) * 2);
-              this.actFx.square(p.x - ux * u * 0.9 * s + uz * jit, p.y + u * 0.15 + jit, p.z - uz * u * 0.9 * s - ux * jit, sz, c, 1.15 - u * 0.2);
+              this.actFx.square(p.x - ux * u * 0.9 * s + uz * jit, py + u * 0.15 + jit, p.z - uz * u * 0.9 * s - ux * jit, sz, c, 1.15 - u * 0.2);
             }
           }
         }
@@ -496,7 +506,7 @@ export class EntityRenderer {
         const F = ELEMENT_FX[this.run.vfx.elementOf(p.dmg.weaponId)];
         // smoke would smear the screen behind fast shots: trails use the light layers only
         const L = F.residue.find((l) => l.kind !== 'smoke' && l.kind !== 'puff') ?? F.release;
-        this.run.fx.emit(p.x, p.y, p.z, L, 0, 0, 0.3);
+        this.run.fx.emit(p.x, py, p.z, L, 0, 0, 0.3);
       }
     }
   }

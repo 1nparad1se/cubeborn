@@ -84,6 +84,7 @@ export class Minimap {
       }
     }
     const walk = (x: number, z: number) => x >= 0 && z >= 0 && x < n && z < n && !blocked[z * n + x];
+    const cliff = (i: number, x: number, z: number) => x >= 0 && z >= 0 && x < n && z < n && t.elev[i] - t.elev[z * n + x] >= 2;
     const tint = (hexc: number, base: [number, number, number], f: number): [number, number, number] => [
       base[0] + (((hexc >> 16) & 255) - base[0]) * f,
       base[1] + (((hexc >> 8) & 255) - base[1]) * f,
@@ -96,7 +97,10 @@ export class Minimap {
         const open = !blocked[i];
         let rgba: [number, number, number, number];
         if (open) {
-          const c3 = cell === CELL.hazard ? tint(0xc04030, [44, 48, 54], 0.35) : tint(tileCol[t.tile[i]] ?? 0x666666, [38, 54, 58], 0.12);
+          const el = t.elev[i];
+          // height shading: higher ground is lighter, peaks turn to rock and snow
+          const base = el >= 11 ? 0xe8eef4 : el >= 8 ? 0x8a8c90 : tileCol[t.tile[i]] ?? 0x666666;
+          const c3 = cell === CELL.hazard ? tint(0xc04030, [44, 48, 54], 0.35) : tint(base, [38, 54, 58], 0.12 + Math.min(10, el) * 0.05);
           rgba = small[i] ? [c3[0] * 0.55, c3[1] * 0.62, c3[2] * 0.55, 220] : [c3[0], c3[1], c3[2], 200];
         } else if (cell === CELL.liquid) {
           const c3 = tint(tileCol[t.tile[i]] ?? 0x2255aa, [30, 44, 66], 0.25);
@@ -107,6 +111,8 @@ export class Minimap {
             let c4 = rgba;
             // thin bright contour on the walkable side of every edge
             if (open && ((px === 0 && !walk(x - 1, z)) || (px === PX - 1 && !walk(x + 1, z)) || (py === 0 && !walk(x, z - 1)) || (py === PX - 1 && !walk(x, z + 1)))) c4 = [236, 240, 244, 255];
+            // dark line at the top of every cliff (a drop of two blocks or more)
+            else if (open && ((px === 0 && cliff(i, x - 1, z)) || (px === PX - 1 && cliff(i, x + 1, z)) || (py === 0 && cliff(i, x, z - 1)) || (py === PX - 1 && cliff(i, x, z + 1)))) c4 = [30, 34, 40, 230];
             const o = ((z * PX + py) * W + x * PX + px) * 4;
             data.data[o] = c4[0];
             data.data[o + 1] = c4[1];

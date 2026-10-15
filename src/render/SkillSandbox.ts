@@ -170,7 +170,7 @@ export class SkillSandbox {
       },
     };
     // Particles and LightPool only call add() on their parent: the stage group keeps them in local space
-    this.particles = new Particles(g as unknown as THREE.Scene, this.blockTex, this.blobTex, 'medium');
+    this.particles = new Particles(g as unknown as THREE.Scene, this.blockTex, this.blobTex, 'medium', false);
     this.lights = new LightPool(g as unknown as THREE.Scene, 4);
     this.reset();
   }
@@ -254,6 +254,10 @@ export class SkillSandbox {
         h.z += dz;
       },
       cancelJump() {},
+      placeAt(x: number, z: number) {
+        h.x = x;
+        h.z = z;
+      },
       clearPath() {},
       heal() {},
     });
@@ -286,7 +290,7 @@ export class SkillSandbox {
       },
       enemies: soft({ nearest: () => null, forEachInRadius() {}, randomInRadius: () => null, list: [] }),
       combat: soft({ hit() {} }),
-      terrain: soft({ blocksWalker: () => false, los: () => true, height: () => 0 }),
+      terrain: soft({ blocksWalker: () => false, los: () => true, height: () => 0, groundY: () => 0, elevAt: () => 0, canEnter: () => true, stepOk: () => true }),
       loot: soft({ powers: new Set<string>(), totals: soft({ resMax: 0, resRegen: 0, atkSpeed: 0, skillDmg: 0, elem: {} } as Record<string, unknown>) }),
       stats: soft({ dodges: 0, gold: 0, lastHurt: -99, skillsCast: 0 }),
       projectiles: {

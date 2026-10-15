@@ -30,6 +30,9 @@ export class Mob {
   /** Home spot inside the camp. */
   hx = 0;
   hz = 0;
+  /** Seconds spent walking home without getting closer (cliffs): then it is put back at home. */
+  stuckT = 0;
+  bestD = 1e9;
   constructor(readonly camp: Camp, readonly s: CreatureStats, readonly def: EnemyDef) {}
 }
 
@@ -40,6 +43,8 @@ export interface MobShot {
   vx: number;
   vz: number;
   life: number;
+  /** Flight height (world y). */
+  y: number;
   dmg: number;
   color: number;
   src: Enemy | null;
@@ -153,6 +158,8 @@ export class MobWorld {
 
   private goHome(m: Mob) {
     m.state = 'return';
+    m.stuckT = 0;
+    m.bestD = 1e9;
     m.atkT = 0;
     m.tx = m.hx;
     m.tz = m.hz;
@@ -247,6 +254,14 @@ export class MobWorld {
         e.hp = Math.min(e.maxHp, e.hp + e.maxHp * 0.25 * dt);
         m.lastHp = e.hp;
         e.invuln = true;
+        // blocked by terrain on the way back: after a while it simply turns up at home
+        if (wd < m.bestD - 0.3) {
+          m.bestD = wd;
+          m.stuckT = 0;
+        } else if ((m.stuckT += dt) > 4) {
+          e.x = m.hx;
+          e.z = m.hz;
+        }
         if (wd < 0.5) {
           e.invuln = false;
           e.hp = e.maxHp;
@@ -278,9 +293,9 @@ export class MobWorld {
       const dz = p.z - e.z;
       const l = Math.hypot(dx, dz) || 1;
       const sp = 9;
-      this.shots.push({ x: e.x + (dx / l) * 0.5, z: e.z + (dz / l) * 0.5, vx: (dx / l) * sp, vz: (dz / l) * sp, life: (m.s.range + 3) / sp, dmg, color: m.s.shot, src: e });
+      this.shots.push({ x: e.x + (dx / l) * 0.5, z: e.z + (dz / l) * 0.5, vx: (dx / l) * sp, vz: (dz / l) * sp, life: (m.s.range + 3) / sp, y: run.terrain.groundY(e.x, e.z) + 0.9, dmg, color: m.s.shot, src: e });
       run.fx.sound(m.s.shot === 0xffe0a0 ? 'bow' : 'magic', 0.3);
-    } else if (dist <= reach + 0.5) {
+    } else if (dist <= reach + 0.5 && Math.abs(p.y - run.terrain.groundY(e.x, e.z)) < 1.6) {
       p.hurt(dmg, e);
     }
   }
@@ -294,10 +309,10 @@ export class MobWorld {
       s.life -= dt;
       s.x += s.vx * dt;
       s.z += s.vz * dt;
-      if (s.life <= 0 || t.blocksShot(Math.floor(s.x), Math.floor(s.z))) continue;
-      if (!p.dead && (s.x - p.x) ** 2 + (s.z - p.z) ** 2 < (p.radius + 0.3) ** 2) {
+      if (s.life <= 0 || t.blocksShot(Math.floor(s.x), Math.floor(s.z), s.y + 0.7)) continue;
+      if (!p.dead && (s.x - p.x) ** 2 + (s.z - p.z) ** 2 < (p.radius + 0.3) ** 2 && Math.abs(p.y + 0.9 - s.y) < 1.8) {
         p.hurt(s.dmg, s.src && s.src.alive ? s.src : null);
-        run.fx.burst(s.x, 0.9, s.z, s.color, 8, 3, 0.12, 0.35, 'glow');
+        run.fx.burst(s.x, s.y - t.groundY(s.x, s.z), s.z, s.color, 8, 3, 0.12, 0.35, 'glow');
         continue;
       }
       this.shots[w++] = s;

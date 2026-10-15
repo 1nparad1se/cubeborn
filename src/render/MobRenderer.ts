@@ -6,6 +6,7 @@ import { MOB_DEFS } from '../models/mobs';
 import { MobRig } from './rig/MobRig';
 import { makeHeroTexture } from './Textures';
 import type { InstancedBatch } from './InstancedBatch';
+import { groundAt } from './ground';
 
 /** Creatures are drawn only this close to the camera focus (rigs are pooled and reused). */
 const VIEW_R = 34;
@@ -15,6 +16,8 @@ interface Slot {
   uid: number;
   walk: number;
   used: boolean;
+  /** Eased ground height (steps up and down a block read as a hop, not a snap). */
+  gy: number;
 }
 
 /**
@@ -48,12 +51,13 @@ export class MobRenderer {
     if (!pool) this.pools.set(def.id, (pool = []));
     s = pool.find((x) => x.uid === 0);
     if (!s) {
-      s = { rig: new MobRig(def, this.tex, { shadows: this.castShadows, rim: 0.3 }), uid: 0, walk: 0, used: false };
+      s = { rig: new MobRig(def, this.tex, { shadows: this.castShadows, rim: 0.3 }), uid: 0, walk: 0, used: false, gy: 0 };
       pool.push(s);
       this.group.add(s.rig.root);
     }
     s.uid = e.uid;
     s.walk = Math.random() * 6;
+    s.gy = groundAt(e.x, e.z);
     s.rig.root.visible = true;
     this.byUid.set(e.uid, s);
     return s;
@@ -84,7 +88,10 @@ export class MobRenderer {
       rig.pose(time + e.index * 0.37, { walk: s.walk, move: Math.min(1, sp / 1.5), attack: atk, hit: hitK, flash: Math.min(0.8, e.flash * 6 + (e.dying > 0 ? 0.6 : 0)), flap: e.flying });
       let x = e.x;
       let z = e.z;
-      let y = e.y;
+      const g = groundAt(e.x, e.z);
+      s.gy += (g - s.gy) * Math.min(1, dt * 12);
+      if (Math.abs(g - s.gy) > 2) s.gy = g;
+      let y = e.y + s.gy;
       if (e.launchT > 0) y += Math.sin((1 - e.launchT / 0.6) * Math.PI) * 1.4;
       // lunge toward the target at the strike
       const lunge = atk * atk * 0.35;
@@ -118,7 +125,7 @@ export class MobRenderer {
     // creature shots: small glowing bolts
     for (const sh of world.shots) {
       const yaw = Math.atan2(sh.vx, sh.vz);
-      this.glow.push(sh.x, 0.9, sh.z, yaw + time * 6, 0.22, 0.22, 0.42, sh.color, 0, 0, 0, 0.95);
+      this.glow.push(sh.x, sh.y - groundAt(sh.x, sh.z), sh.z, yaw + time * 6, 0.22, 0.22, 0.42, sh.color, 0, 0, 0, 0.95);
     }
   }
 

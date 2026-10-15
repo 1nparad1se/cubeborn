@@ -3,7 +3,7 @@ import { BALANCE } from '../config/balance';
 import { clamp } from '../core/math';
 import type { Enemy } from './Enemy';
 import type { Run } from './Run';
-import { CELL } from './Terrain';
+import { CELL, STEP } from './Terrain';
 import type { DamageInfo } from './types';
 import { clearLine, findPath } from './arpg/Path';
 import type { PlayerStats } from './Stats';
@@ -41,6 +41,11 @@ export class Player {
   attackPulse = 0;
   /** Animation cues for the renderer: each counter ticks when the event happens. */
   cues = { attack: 0, aim: false, aimX: 0, aimZ: 1, hit: 0, hitX: 0, hitZ: 0, ability: 0, jump: 0, land: 0 };
+  /** Feet height in the world (ground height when standing). */
+  y = 0;
+  /** Jump / fall: start height and launch speed of the current flight. */
+  private airY0 = 0;
+  private airV0 = 0;
   /** Jump: height above ground, vertical speed, phase and time in phase. */
   jumpY = 0;
   jumpV = 0;
@@ -77,6 +82,30 @@ export class Player {
   constructor(private run: Run, x: number, z: number) {
     this.x = x;
     this.z = z;
+    this.y = run.terrain.groundY(x, z);
+  }
+
+  /** Puts the hero on the ground at (x, z) at once (spawn, respawn, teleports). */
+  placeAt(x: number, z: number) {
+    this.x = x;
+    this.z = z;
+    this.cancelJump();
+  }
+
+  /**
+   * Ground height the hero stands on: the highest walkable cell under its feet, so it keeps
+   * its footing until mostly over an edge and lands on a ledge it only partly reached.
+   */
+  get ground(): number {
+    const t = this.run.terrain;
+    const f = 0.2;
+    let g = t.groundY(this.x, this.z);
+    for (let k = 0; k < 4; k++) {
+      const x = this.x + (k & 1 ? f : -f);
+      const z = this.z + (k & 2 ? f : -f);
+      if (!t.blocksWalker(Math.floor(x), Math.floor(z))) g = Math.max(g, t.groundY(x, z));
+    }
+    return g;
   }
 
   get airborne(): boolean {
@@ -98,6 +127,12 @@ export class Player {
     // the buffer only runs down in the air, so a press just before touching down survives the landing lag
     if (this.jumpBuf > 0 && this.jumpPhase !== 'land') this.jumpBuf -= dt;
     this.jumpT += dt;
+    const g = this.ground;
+    if (this.run.action?.mover?.kind === 'leap') {
+      // a leap skill flies the hero (it sets jumpY above the ground it passes over)
+      this.y = g + this.jumpY;
+      return;
+    }
     switch (this.jumpPhase) {
       case 'ground':
         if (this.jumpBuf > 0) {
@@ -110,20 +145,20 @@ export class Player {
         break;
       case 'windup':
         if (this.jumpT >= J.windup) {
-          this.jumpPhase = 'air';
-          this.jumpT = 0;
           // ballistic arc reaching `height` at airTime / 2
-          this.jumpV = (4 * J.height) / J.airTime;
+          this.takeOff((4 * J.height) / J.airTime);
           this.run.fx.sound('jump', 0.5);
         }
         break;
       case 'air': {
-        // exact parabola: apex `height` at airTime / 2
-        const u = this.jumpT / J.airTime;
-        if (u >= 1) this.land();
-        else {
-          this.jumpY = 4 * J.height * u * (1 - u);
-          this.jumpV = ((4 * J.height) / J.airTime) * (1 - 2 * u);
+        // exact parabola from the take-off point (gravity puts the apex `height` at airTime / 2)
+        const grav = (8 * J.height) / (J.airTime * J.airTime);
+        const t = this.jumpT;
+        this.y = this.airY0 + this.airV0 * t - 0.5 * grav * t * t;
+        this.jumpV = this.airV0 - grav * t;
+        if (this.jumpV <= 0 && this.y <= g) {
+          this.y = g;
+          this.land();
         }
         break;
       }
@@ -131,6 +166,26 @@ export class Player {
         if (this.jumpT >= J.landLag) this.jumpPhase = 'ground';
         break;
     }
+    if (this.jumpPhase !== 'air') {
+      if (g > this.y) {
+        // stepping up a block (eased), or pushed into a cliff: straight on top
+        this.y = g - this.y > STEP.walk + 0.05 ? g : Math.min(g, this.y + dt * 9);
+      } else if (this.y > g) {
+        // one block down is a step; anything taller is a fall
+        if (this.y - g > STEP.walk) this.takeOff(0);
+        else this.y = Math.max(g, this.y - dt * 9);
+      }
+    }
+    this.jumpY = this.jumpPhase === 'air' ? Math.max(0, this.y - g) : 0;
+  }
+
+  /** Starts a flight from the current feet height (a jump, or 0 to drop off a ledge). */
+  private takeOff(v0: number) {
+    this.jumpPhase = 'air';
+    this.jumpT = 0;
+    this.airY0 = this.y;
+    this.airV0 = v0;
+    this.jumpV = v0;
   }
 
   private land() {
@@ -152,6 +207,7 @@ export class Player {
   /** Drops out of a jump at once (death, revive, teleport). */
   cancelJump() {
     this.jumpPhase = 'ground';
+    this.y = this.ground;
     this.jumpY = 0;
     this.jumpV = 0;
     this.jumpBuf = 0;
@@ -268,17 +324,21 @@ export class Player {
   private moveWithTerrain(mx: number, mz: number) {
     const t = this.run.terrain;
     const r = this.radius;
+    // terrain taller than a step (two while jumping) blocks like a wall; drops are free
+    const air = this.jumpPhase === 'air';
+    const feet = air ? this.y : Math.max(this.y, this.ground);
+    const ok = (cx: number, cz: number) => t.canEnter(cx, cz, feet, air);
     const nx = this.x + mx;
     const cx0 = Math.floor(this.z - r * 0.8);
     const cx1 = Math.floor(this.z + r * 0.8);
     const edgeX = Math.floor(nx + (mx > 0 ? r : -r));
-    if (!t.blocksWalker(edgeX, cx0) && !t.blocksWalker(edgeX, cx1)) this.x = nx;
+    if (ok(edgeX, cx0) && ok(edgeX, cx1)) this.x = nx;
     else this.vx = 0;
     const nz = this.z + mz;
     const r0 = Math.floor(this.x - r * 0.8);
     const r1 = Math.floor(this.x + r * 0.8);
     const edgeZ = Math.floor(nz + (mz > 0 ? r : -r));
-    if (!t.blocksWalker(r0, edgeZ) && !t.blocksWalker(r1, edgeZ)) this.z = nz;
+    if (ok(r0, edgeZ) && ok(r1, edgeZ)) this.z = nz;
     else this.vz = 0;
     this.x = clamp(this.x, 1, t.size - 1);
     this.z = clamp(this.z, 1, t.size - 1);
@@ -320,8 +380,7 @@ export class Player {
     }
     if (t.blocksWalker(Math.floor(tx), Math.floor(tz))) return;
     run.fx.burst(this.x, 1, this.z, color, 18, 4, 0.16, 0.5, 'glow');
-    this.x = tx;
-    this.z = tz;
+    this.placeAt(tx, tz);
     this.vx = this.vz = 0;
     this.clearPath();
     this.invulnT = Math.max(this.invulnT, 0.25);

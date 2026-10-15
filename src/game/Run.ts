@@ -95,7 +95,8 @@ export class Run {
     this.terrain = worldTerrain(o.map);
     const ch = o.char ?? null;
     const pos = ch?.pos;
-    const start = pos && this.terrain.walkableAt(pos.x, pos.z) ? pos : SPAWN;
+    const reach = this.terrain.reach;
+    const start = pos && this.terrain.walkableAt(pos.x, pos.z) && (!reach || reach[Math.floor(pos.z) * this.terrain.size + Math.floor(pos.x)]) ? pos : SPAWN;
     this.player = new Player(this, start.x, start.z);
     if (ch) {
       this.player.level = ch.level;
@@ -181,8 +182,7 @@ export class Run {
 
   private respawn() {
     const p = this.player;
-    p.x = SPAWN.x;
-    p.z = SPAWN.z;
+    p.placeAt(SPAWN.x, SPAWN.z);
     p.dead = false;
     p.hp = p.stats.maxHp;
     p.invulnT = 2;

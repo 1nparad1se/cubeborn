@@ -444,7 +444,8 @@ export class App implements MenuApi {
     const w = this.view.clientWidth || 1;
     const hgt = this.view.clientHeight || 1;
     if (inp.mx >= 0) {
-      const g = rig.groundPoint(inp.mx, inp.my, w, hgt, 0);
+      const ground = (x: number, z: number) => run.terrain.groundY(x, z);
+      const g = rig.terrainPoint(inp.mx, inp.my, w, hgt, ground, 0);
       if (g) {
         c.aimX = g[0];
         c.aimZ = g[1];
@@ -453,7 +454,7 @@ export class App implements MenuApi {
     // enemy under the cursor: test at body height so tall foes are easy to pick
     let hover: Enemy | null = null;
     if (inp.mx >= 0) {
-      const g = rig.groundPoint(inp.mx, inp.my, w, hgt, 0.7);
+      const g = rig.terrainPoint(inp.mx, inp.my, w, hgt, (x, z) => run.terrain.groundY(x, z), 0.7);
       if (g) {
         let best = 1e9;
         run.enemies.forEachInRadius(g[0], g[1], 2.5, (e) => {

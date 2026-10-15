@@ -1,3 +1,4 @@
+import { groundAt } from './ground';
 import * as THREE from 'three';
 
 interface Req {
@@ -50,7 +51,7 @@ export class LightPool {
     if (d2 > 26 * 26) return;
     const r = this.reqs[this.nReq++];
     r.x = x;
-    r.y = y;
+    r.y = y + groundAt(x, z);
     r.z = z;
     r.color = color;
     r.intensity = intensity;

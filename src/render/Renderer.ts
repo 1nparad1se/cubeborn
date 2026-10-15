@@ -5,6 +5,7 @@ import type { FxSink, ParticleKind } from '../game/types';
 import type { Terrain } from '../game/Terrain';
 import { CameraRig } from './CameraRig';
 import { WorldRenderer } from './WorldRenderer';
+import { GROUND } from './ground';
 import { EntityRenderer } from './EntityRenderer';
 import { Particles } from './Particles';
 import { Overlay } from './Overlay';
@@ -419,7 +420,7 @@ export class Renderer {
 
   /** Cuts the camera to a point (open-world respawn / teleport) and builds the streamed world around it at once. */
   snapTo(x: number, z: number) {
-    this.rig.snap(x, z);
+    this.rig.snap(x, z, this.run ? this.run.terrain.groundY(x, z) : 0);
     this.world?.cull(x, z, 70, 0);
   }
 
@@ -429,12 +430,14 @@ export class Renderer {
     this.clearShowcase();
     this.clearCamp();
     this.run = run;
+    const terrain = run.terrain;
+    GROUND.fn = (x, z) => terrain.groundY(x, z);
     this.buildWorld(run.terrain, run.map);
     this.entities = new EntityRenderer(this.scene, run, this.blockTex, this.blobTex, this.detail === 'high' && this.s.shadows !== 'low' ? 'high' : this.detail === 'low' ? 'low' : 'medium', this.lights);
     this.particles = new Particles(this.scene, this.blockTex, this.blobTex, this.s.particles);
     this.ambient = new AmbientFx(this.scene, run.map.generator, this.quality, this.particleMul);
     this.overlay.clear();
-    this.rig.snap(run.player.x, run.player.z);
+    this.rig.snap(run.player.x, run.player.z, run.player.y);
     // streamed (big) worlds: build everything around the start before the first frame
     this.world?.cull(run.player.x, run.player.z, 70, 0);
     return this.makeFx(hooks);
@@ -480,6 +483,7 @@ export class Renderer {
     this.ambient = null;
     this.disposeWorld();
     this.run = null;
+    GROUND.fn = null;
     this.overlay.clear();
   }
 
@@ -666,7 +670,7 @@ export class Renderer {
     const p = run.player;
     const lead = { x: p.vx * 0.18, z: p.vz * 0.18 };
     this.rig.zoom += (this.zoomLevel - this.rig.zoom) * (1 - Math.exp(-10 * Math.max(dt, 1 / 120)));
-    this.rig.update(dt, p.x, p.z, lead);
+    this.rig.update(dt, p.x, p.z, lead, p.jumpPhase === 'air' ? Math.min(p.y, p.ground + 0.5) : p.ground);
     const zoom = this.rig.zoom;
     const t = this.rig.target;
     const pal = run.map.palette;
@@ -721,9 +725,9 @@ export class Renderer {
     const elev = 26 - Math.abs(arc) * 6;
     const cx = t.x - this.rig.toCam.x * 3;
     const cz = t.z - this.rig.toCam.z * 3;
-    this.sun.position.set(cx + Math.cos(ang) * 17, elev, cz + Math.sin(ang) * 17);
-    this.sun.target.position.set(cx, 0, cz);
-    this.world?.uniforms.uFocus.value.set(p.x, 0, p.z);
+    this.sun.position.set(cx + Math.cos(ang) * 17, t.y + elev, cz + Math.sin(ang) * 17);
+    this.sun.target.position.set(cx, t.y, cz);
+    this.world?.uniforms.uFocus.value.set(p.x, p.y, p.z);
     this.world?.uniforms.uCamDir.value.set(this.rig.toCam.x, this.rig.toCam.z);
     // a warm light pool follows the hero on dark maps
     if (pal.heroLight) this.lights.request(p.x, 2.6, p.z, pal.heroLight, 1.6 + nightK * 0.4, 9, t.x, t.z);
@@ -732,7 +736,7 @@ export class Renderer {
     this.particles!.update(dt);
     const cam = this.rig.camera;
     const px = (this.h * this.gl.getPixelRatio()) / (2 * Math.tan((cam.fov * Math.PI) / 360));
-    this.ambient?.update(dt, t.x, t.z, nightK, px, 0);
+    this.ambient?.update(dt, t.x, t.z, nightK, px, 0, t.y);
   }
 
   dispose() {

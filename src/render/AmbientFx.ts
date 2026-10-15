@@ -73,7 +73,7 @@ void main() {
   // wrap height and the horizontal box around the camera target
   float hy = uY.y - uY.x;
   float fy = fract((p.y - uY.x) / hy);
-  p.y = uY.x + fy * hy;
+  p.y = uY.x + fy * hy + uCenter.y;
   vec2 rel = mod(p.xz - uCenter.xz + 0.5 * uBox, uBox) - 0.5 * uBox;
   p.xz = uCenter.xz + rel;
   float edge = 1.0 - smoothstep(0.32 * uBox, 0.5 * uBox, length(rel));
@@ -189,14 +189,14 @@ export class AmbientFx {
    * cx/cz: camera target; night: 0 day .. 1 night; pxPerUnit: drawing-buffer pixels per world
    * unit at view distance 1 (height / (2 tan(fov/2))); dim: weather darkness 0..1.
    */
-  update(dt: number, cx: number, cz: number, night: number, pxPerUnit: number, dim = 0) {
+  update(dt: number, cx: number, cz: number, night: number, pxPerUnit: number, dim = 0, cy = 0) {
     this.time += dt;
     // keep the float time small so the shader math stays precise in long runs
     const t = this.time % 3600;
     for (const l of this.layers) {
       const u = l.mat.uniforms;
       u.uTime.value = t;
-      u.uCenter.value.set(cx, 0, cz);
+      u.uCenter.value.set(cx, cy, cz);
       u.uPx.value = pxPerUnit;
       const d = l.def;
       let a = Math.max(0, Math.min(1, d.alpha + d.night * night));

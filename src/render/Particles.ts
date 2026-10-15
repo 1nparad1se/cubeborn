@@ -85,7 +85,7 @@ export class Particles {
   private debris: InstancedBatch;
   private max: number;
 
-  constructor(scene: THREE.Scene, blockTex: THREE.Texture, _blobTex: THREE.Texture, quality: string) {
+  constructor(scene: THREE.Scene, blockTex: THREE.Texture, _blobTex: THREE.Texture, quality: string, onTerrain = true) {
     this.max = quality === 'low' ? 900 : quality === 'medium' ? 1800 : 3000;
     for (let i = 0; i < this.max; i++) this.list.push({ x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, r: 1, g: 1, b: 1, r2: 1, g2: 1, b2: 1, size: 1, life: 0, max: 1, rot: 0, spin: 0, kind: 0 });
     this.glow = new InstancedBatch(new THREE.BoxGeometry(1, 1, 1), makeGlowMaterial(), scene, 256);
@@ -99,6 +99,8 @@ export class Particles {
     this.puff.mesh.renderOrder = 4;
     const cube = buildVoxelGeometry({ boxes: [[0, -5, 0, 10, 10, 10, 0xffffff]], scale: 0.1 }, { round: 0 });
     this.debris = new InstancedBatch(cube, makeVoxelMaterial({ map: blockTex, instanced: true }), scene, 256, true);
+    // particles live in ground-relative space (floor bounces at y = 0), drawn on the terrain
+    for (const b of [this.glow, this.glowSq, this.solid, this.puff, this.debris]) b.lift = onTerrain;
   }
 
   private take(): P | null {

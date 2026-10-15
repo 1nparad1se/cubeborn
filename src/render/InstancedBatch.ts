@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { groundAt } from './ground';
 
 const m4 = new THREE.Matrix4();
 const q = new THREE.Quaternion();
@@ -16,6 +17,8 @@ export class InstancedBatch {
   private flash: THREE.InstancedBufferAttribute | null = null;
   count = 0;
   private cap: number;
+  /** Instances are placed relative to the terrain under them (see ground.ts). */
+  lift = false;
 
   constructor(
     private geometry: THREE.BufferGeometry,
@@ -67,6 +70,7 @@ export class InstancedBatch {
 
   /** Adds an instance with yaw/roll rotation and non-uniform scale. */
   push(x: number, y: number, z: number, yaw: number, sx: number, sy: number, sz: number, color = 0xffffff, flash = 0, roll = 0, pitch = 0, bright = 1) {
+    if (this.lift) y += groundAt(x, z);
     this.ensure();
     const i = this.count++;
     pos.set(x, y, z);
@@ -85,6 +89,7 @@ export class InstancedBatch {
 
   /** Fast path: yaw only + uniform scale + raw rgb multiplier. */
   pushFast(x: number, y: number, z: number, yaw: number, s: number, sy: number, r: number, g: number, b: number, flash = 0) {
+    if (this.lift) y += groundAt(x, z);
     this.ensure();
     const i = this.count++;
     const a = this.mesh.instanceMatrix.array as Float32Array;
@@ -116,6 +121,7 @@ export class InstancedBatch {
 
   /** Yaw-only instance with independent scale per axis (streaks and shards). */
   pushAxis(x: number, y: number, z: number, yaw: number, sx: number, sy: number, sz: number, r: number, g: number, b: number) {
+    if (this.lift) y += groundAt(x, z);
     this.ensure();
     const i = this.count++;
     const a = this.mesh.instanceMatrix.array as Float32Array;
