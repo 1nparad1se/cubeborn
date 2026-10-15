@@ -20,7 +20,7 @@ import { GREENVALE } from './data/maps';
 import { buildMenuGround, RIVER } from './game/map/greenvale';
 import { tr } from './ui/ClassPreview';
 
-export const VERSION = 'v5.1.0';
+export const VERSION = 'v5.2.0';
 
 /** Discrete camera zoom steps for the mouse wheel (camera distance multipliers). */
 const ZOOM_STEPS = [0.75, 0.88, 1, 1.15, 1.35];
