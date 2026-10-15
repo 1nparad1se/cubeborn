@@ -1,6 +1,7 @@
 import { Rng, hash2 } from '../../core/Rng';
 import { CELL, type Terrain } from '../../game/Terrain';
-import type { RoadKind } from '../textures/groundTiles';
+import { GROUND_TILES, roadBase, type RoadKind } from '../textures/groundTiles';
+import { ROAD_EDGE_DECOR, ROAD_SURFACE_DECOR } from './roads';
 import { PROPS } from './index';
 import { PX, type BuildCtx, type PropDef, type PropInstance, type PropModel } from './types';
 
@@ -178,10 +179,30 @@ function segDist(px: number, pz: number, ax: number, az: number, bx: number, bz:
  * Paints a road surface (a terrain tile kind, see textures/groundTiles.ts) along a polyline:
  * every land cell whose centre lies within width/2 of the line, with a ragged edge. Returns the
  * cells painted. Water, walls and deck cells are left alone.
+ * - `ruined` / `overgrown` (0..1): share of cells (in clumps) switched to the kind's sheet variant
+ *   (`<kind>_ruined`, `<kind>_overgrown`, or the closest one it has), overgrown also frays the edge.
+ * - `decor` (default 0.35, 0 = off): density of detail props scattered along the edges (grass,
+ *   stones, flowers, reeds... per kind, see ROAD_EDGE_DECOR) and, sparser, on the surface.
  */
-export function paintRoad(t: Terrain, kind: RoadKind | string, pts: [number, number][], width = 3, o: { ragged?: number; seed?: number; skip?: (cx: number, cz: number) => boolean } = {}): number {
+export function paintRoad(
+  t: Terrain,
+  kind: RoadKind | string,
+  pts: [number, number][],
+  width = 3,
+  o: { ragged?: number; seed?: number; skip?: (cx: number, cz: number) => boolean; ruined?: number; overgrown?: number; decor?: number } = {},
+): number {
   const ragged = o.ragged ?? 0.6;
   const r = width / 2 + ragged;
+  const seed = o.seed ?? 515;
+  const base = roadBase(kind);
+  const alt = (want: string[]): string | null => {
+    if (!base) return null;
+    for (const w of want) if (GROUND_TILES[`${base}_${w}`]) return `${base}_${w}`;
+    return null;
+  };
+  const ruinTile = alt(['ruined', 'puddles', 'stones', 'scree', 'mud', 'drift']);
+  const growTile = alt(['overgrown', 'narrow', 'old', 'stones']);
+  const painted = new Map<number, [number, number]>();
   let n = 0;
   for (let k = 0; k + 1 < pts.length || (pts.length === 1 && k === 0); k++) {
     const [ax, az] = pts[k];
@@ -194,23 +215,84 @@ export function paintRoad(t: Terrain, kind: RoadKind | string, pts: [number, num
         if (c === CELL.liquid || c === CELL.wall || t.under.has(i)) continue;
         if (o.skip?.(cx, cz)) continue;
         const d = segDist(cx + 0.5, cz + 0.5, ax, az, bx, bz);
-        const edge = width / 2 + (hash2(cx, cz, o.seed ?? 515) - 0.5) * 2 * ragged;
+        let edge = width / 2 + (hash2(cx, cz, seed) - 0.5) * 2 * ragged;
+        if (o.overgrown) edge -= o.overgrown * hash2(cx, cz, seed + 7) * 0.8;
         if (d > edge) continue;
-        if (t.tileNames[t.tile[i]] !== kind) n++;
-        t.setTile(cx, cz, kind);
+        let tile = kind;
+        const clump = (s: number) => hash2(cx >> 1, cz >> 1, seed + s) * 0.6 + hash2(cx, cz, seed + s + 1) * 0.4;
+        if (o.overgrown && growTile && clump(11) < o.overgrown) tile = growTile;
+        else if (o.ruined && ruinTile && clump(21) < o.ruined) tile = ruinTile;
+        if (t.tileNames[t.tile[i]] !== tile) n++;
+        t.setTile(cx, cz, tile);
+        painted.set(i, [bx - ax, bz - az]);
       }
     if (pts.length === 1) break;
   }
+  const dens = o.decor ?? 0.35;
+  if (base && dens > 0) scatterRoadDecor(t, base, painted, dens, seed);
   return n;
 }
 
+/** Detail props along the edge (just outside the road) and sparsely on the surface. */
+function scatterRoadDecor(t: Terrain, base: RoadKind, painted: Map<number, [number, number]>, dens: number, seed: number) {
+  const edgeIds = ROAD_EDGE_DECOR[base];
+  const surfIds = ROAD_SURFACE_DECOR[base];
+  const used = new Set<number>();
+  for (const [i, dir] of painted) {
+    const cx = i % t.size;
+    const cz = Math.floor(i / t.size);
+    const h = (s: number) => hash2(cx, cz, seed + s);
+    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nx = cx + dx;
+      const nz = cz + dz;
+      if (!t.inBounds(nx, nz)) continue;
+      const j = t.idx(nx, nz);
+      if (painted.has(j) || used.has(j) || t.cell[j] !== CELL.floor || t.under.has(j)) continue;
+      if (hash2(nx, nz, seed + 31) > dens * 0.5) continue;
+      used.add(j);
+      const id = edgeIds[Math.floor(hash2(nx, nz, seed + 32) * edgeIds.length)];
+      const def = PROPS[id];
+      // sit on the seam, leaning a little onto the road
+      placeProp(t, id, nx + 0.5 - dx * 0.35, nz + 0.5 - dz * 0.35, { noCollide: true, yaw: h(33) * 6.283, variant: Math.floor(hash2(nx, nz, seed + 34) * (def?.variants ?? 1)), scale: 0.8 + h(35) * 0.35 });
+    }
+    if (surfIds.length && !used.has(i) && h(41) < dens * 0.08) {
+      used.add(i);
+      const id = surfIds[Math.floor(h(42) * surfIds.length)];
+      placeProp(t, id, cx + 0.5, cz + 0.5, { noCollide: true, rot: rotFor(dir[0], dir[1]), variant: Math.floor(h(43) * (PROPS[id]?.variants ?? 1)) });
+    }
+  }
+}
+
 /**
- * Places a parametric bridge from a to b (its local +x runs along the span): the prop receives
- * `params.length` (cells between the end points, rounded) and is centred between them.
+ * Places a parametric bridge between two end cells a and b (integer cell coordinates, both
+ * inclusive: put them on the banks so the bridge ends rest on land). The span is snapped to the
+ * dominant axis (local +x runs from a to b), `params.length` = cells from a to b inclusive, and
+ * the footprint covers the cell rows a-line .. a-line + width - 1 across the span (whatever the
+ * direction, so the deck cells always match the drawn model). The base height defaults to the
+ * higher bank (the end cells), not the water. Note the local z side of asymmetric bridges (the
+ * pier's water row) turns with the direction.
  */
 export function placeBridge(t: Terrain, id: string, a: [number, number], b: [number, number], o: PlaceOpts = {}): PropInstance | null {
-  const dx = b[0] - a[0];
-  const dz = b[1] - a[1];
-  const length = Math.max(1, Math.round(Math.hypot(dx, dz)));
-  return placeProp(t, id, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, { ...o, rot: o.rot ?? rotFor(dx, dz), params: { length, ...o.params } });
+  const def = PROPS[id];
+  if (!def) throw new Error(`unknown prop: ${id}`);
+  const ax = Math.floor(a[0]);
+  const az = Math.floor(a[1]);
+  const bx = Math.floor(b[0]);
+  const bz = Math.floor(b[1]);
+  const alongX = Math.abs(bx - ax) >= Math.abs(bz - az);
+  const length = (alongX ? Math.abs(bx - ax) : Math.abs(bz - az)) + 1;
+  const params = { length, ...o.params };
+  const [, w] = footprintSize(def, params);
+  // centre along the span: middle of the inclusive cell run; across: the a-line, snapped to the grid
+  const mid = (u: number, v: number) => (Math.min(u, v) + Math.max(u, v) + 1) / 2;
+  const across = (c: number) => c + w / 2; // the a-line is the first row across, the rest follow on +x/+z
+  const x = alongX ? mid(ax, bx) : across(ax);
+  const z = alongX ? across(az) : mid(az, bz);
+  const rot = o.rot ?? (alongX ? (bx >= ax ? 0 : 2) : bz >= az ? 3 : 1);
+  let y = o.y;
+  if (y === undefined) {
+    y = 0;
+    for (const [cx, cz] of [[ax, az], alongX ? [bx, az] : [ax, bz]]) if (t.inBounds(cx, cz)) y = Math.max(y, t.under.get(t.idx(cx, cz))?.elev ?? t.elev[t.idx(cx, cz)]);
+  }
+  return placeProp(t, id, x, z, { ...o, rot, y, params });
 }
