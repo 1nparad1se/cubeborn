@@ -311,9 +311,10 @@ vA = (1.0 - life) * smoothstep(0.0, 0.15, life);`,
 
     // ambient occlusion on the ground from taller neighbours: cliff feet, walls, tree trunks
     const top = new Float32Array(n * n);
+    const C0 = t.corner;
     for (let i = 0; i < n * n; i++) {
       const c = t.cell[i];
-      top[i] = t.elev[i];
+      top[i] = C0 ? t.centerY(i) : t.elev[i];
       if (c === CELL.solid || c === CELL.wall) top[i] += t.height[i] ? Math.min(2, t.height[i]) : 0;
     }
     const aoData = new Uint8Array(n * n * 4);
@@ -328,7 +329,8 @@ vA = (1.0 - life) * smoothstep(0.0, 0.15, life);`,
             const cx = Math.min(n - 1, Math.max(0, x + dx));
             const cz = Math.min(n - 1, Math.max(0, z + dz));
             const w = Math.abs(dx) <= 1 && Math.abs(dz) <= 1 ? 1 : 0.45;
-            occ += Math.min(2.2, Math.max(0, top[cz * n + cx] - me)) * w;
+            // only real rises shade the ground (cliffs, walls, trunks), not the gentle slope itself
+            occ += Math.min(2.2, Math.max(0, top[cz * n + cx] - me - (C0 ? 0.45 * Math.max(Math.abs(dx), Math.abs(dz)) : 0))) * w;
           }
         const v = Math.round(255 * (1 - Math.min(0.5, (occ / 15.2) * 0.75)));
         aoData[i * 4] = aoData[i * 4 + 1] = aoData[i * 4 + 2] = v;
@@ -367,8 +369,8 @@ vA = (1.0 - life) * smoothstep(0.0, 0.15, life);`,
       sh.uniforms.uSize = { value: n };
       sh.uniforms.uTiles = { value: tileCount };
       sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nattribute float aTop;\nvarying vec3 vWPos;\nvarying vec3 vN;\nvarying float vTop;')
-        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWPos = (modelMatrix * vec4(position, 1.0)).xyz;\nvN = normal;\nvTop = aTop;');
+        .replace('#include <common>', '#include <common>\nattribute float aTop;\nattribute float aSide;\nvarying vec3 vWPos;\nvarying vec3 vN;\nvarying float vTop;\nvarying float vSide;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWPos = (modelMatrix * vec4(position, 1.0)).xyz;\nvN = normal;\nvTop = aTop;\nvSide = aSide;');
       sh.fragmentShader = sh.fragmentShader
         .replace(
           '#include <common>',
@@ -376,6 +378,7 @@ vA = (1.0 - life) * smoothstep(0.0, 0.15, life);`,
 varying vec3 vWPos;
 varying vec3 vN;
 varying float vTop;
+varying float vSide;
 uniform sampler2D uCells;
 uniform sampler2D uAtlas;
 uniform sampler2D uAO;
@@ -402,7 +405,7 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
         .replace(
           '#include <map_fragment>',
           `{
-  bool side = abs(vN.y) < 0.5;
+  bool side = vSide > 0.5;
   vec2 xz = side ? vWPos.xz - vN.xz * 0.05 : vWPos.xz;
   vec2 cell = floor(xz);
   vec4 cd = cellAt(cell);
@@ -439,12 +442,12 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
     if (hb > 0.5) sl.x = 1.0 - sl.x;
     float row;
     if (bk.y < 0.5) row = ${ROW_RIM.toFixed(1)};
-    else row = h21(bk * 1.31 + cell) < smoothstep(1.0, 3.5, d) ? ${ROW_STONE.toFixed(1)} : ${ROW_SOIL.toFixed(1)} + step(0.5, hb);
+    else row = h21(bk * 1.31 + cell) < smoothstep(0.3, 1.6, d) ? ${ROW_STONE.toFixed(1)} : ${ROW_SOIL.toFixed(1)} + step(0.5, hb);
     // high peaks are bare rock all the way up
-    if (vTop > 7.5) row = ${ROW_STONE.toFixed(1)};
+    if (elev > 7.5) row = ${ROW_STONE.toFixed(1)};
     col = atlasAt(tile, row, sl);
     // snow caps hang over the rim of the highest cliffs
-    if (vTop > 10.5 && d < 0.5 - h21(vec2(bk.x, 9.0)) * 0.3) col = vec3(0.9, 0.94, 0.98) * (0.94 + hb * 0.06);
+    if (elev > 10.5 && d < 0.5 - h21(vec2(bk.x, 9.0)) * 0.3) col = vec3(0.9, 0.94, 0.98) * (0.94 + hb * 0.06);
     col *= 0.94 + h21(bk + 17.0) * 0.08;
     col *= mix(1.0, 0.72, clamp(d / 6.0, 0.0, 1.0));
     col *= 0.8 + 0.2 * smoothstep(-0.2, 0.9, vWPos.y);
@@ -533,7 +536,14 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
       l = fract(l + vec2(floor(uTime * sp) / 16.0, floor(uTime * sp * 0.5) / 16.0));
     }
     col = atlasAt(ut, v, l);
-    // the high peaks: bare stone, then snow
+    // slopes: worn earth where the ground tilts, bare stone where it is steep (pixel-dithered)
+    float tilt = 1.0 - normalize(vN).y;
+    float dith = h21(clump + 23.0);
+    if (!liquid && ua < 0.5) {
+      if (dith < smoothstep(0.1, 0.2, tilt) * 0.85) col = atlasAt(ut, ${ROW_SOIL.toFixed(1)} + step(0.5, bh), l);
+      if (dith < smoothstep(0.24, 0.36, tilt)) col = atlasAt(ut, ${ROW_STONE.toFixed(1)}, l);
+    }
+    // the high peaks (by block tier, not by the height of the rolling hills): bare stone, then snow
     if (elev > 7.5) col = atlasAt(ut, ${ROW_STONE.toFixed(1)}, l) * 1.05;
     if (elev > 10.5) col = vec3(0.9, 0.94, 0.98) * (0.93 + h21(floor(xz * 16.0)) * 0.07);
     col *= 0.97 + h21(blk + 11.0) * 0.05;
@@ -558,53 +568,131 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
     };
     this.disposables.push(mat, cells, atlas, ao);
 
-    // merged quads per chunk: tops (row runs of equal height) and vertical banks and cliffs;
-    // raised geometry goes into its own mesh so it can cast shadows
+    // merged geometry per chunk: the sloped ground surface (two triangles per cell, flat runs
+    // merged), flat water, and vertical rock faces where neighbouring surfaces do not meet (cliffs,
+    // banks, waterfalls); raised geometry goes into its own mesh so it can cast shadows
     const per = Math.ceil(n / GCHUNK);
-    const lv = (x: number, z: number) => (x < 0 || z < 0 || x >= n || z >= n ? SKIRT : level[z * n + x]);
+    const C = t.corner;
+    const liq = (i: number) => t.cell[i] === CELL.liquid;
+    /** Height of corner k (dx + 2 dz) of cell (x, z): water flat at its level, the edge skirt below. */
+    const ch = (x: number, z: number, k: number) => {
+      if (x < 0 || z < 0 || x >= n || z >= n) return SKIRT;
+      const i = z * n + x;
+      return liq(i) || !C ? level[i] : C[i * 4 + k];
+    };
+    // per-cell surface gradient, for smooth vertex normals across linked cells
+    const grad = new Float32Array(n * n * 2);
+    if (C)
+      for (let i = 0; i < n * n; i++) {
+        if (liq(i)) continue;
+        grad[i * 2] = (C[i * 4 + 1] - C[i * 4] + C[i * 4 + 3] - C[i * 4 + 2]) * 0.5;
+        grad[i * 2 + 1] = (C[i * 4 + 2] - C[i * 4] + C[i * 4 + 3] - C[i * 4 + 1]) * 0.5;
+      }
+    const vnorm = (x: number, z: number, k: number, out: number[]) => {
+      const h = ch(x, z, k);
+      const vx = x + (k & 1);
+      const vz = z + (k >> 1);
+      let gx = 0;
+      let gz = 0;
+      let c = 0;
+      for (let j = 0; j < 4; j++) {
+        const ax = vx - 1 + (j & 1);
+        const az = vz - 1 + (j >> 1);
+        if (ax < 0 || az < 0 || ax >= n || az >= n) continue;
+        const a = az * n + ax;
+        if (liq(a) || Math.abs(ch(ax, az, 3 - j) - h) > 1e-3) continue;
+        gx += grad[a * 2];
+        gz += grad[a * 2 + 1];
+        c++;
+      }
+      if (c) {
+        gx /= c;
+        gz /= c;
+      }
+      const l = Math.hypot(gx, 1, gz);
+      out.push(-gx / l, 1 / l, -gz / l);
+    };
     const castShadows = quality !== 'low';
     for (let cz = 0; cz < per; cz++)
       for (let cx = 0; cx < per; cx++) this.defer((cx + 0.5) * GCHUNK, (cz + 0.5) * GCHUNK, () => {
-        const parts = [0, 1].map(() => ({ pos: [] as number[], nor: [] as number[], top: [] as number[], idx: [] as number[] }));
-        const quad = (p: number[], nx: number, ny: number, nz: number, h: number) => {
-          const part = parts[h > 0.01 ? 1 : 0];
+        const parts = [0, 1].map(() => ({ pos: [] as number[], nor: [] as number[], top: [] as number[], side: [] as number[], idx: [] as number[] }));
+        const nrm: number[] = [];
+        /** A ground quad: 4 corners (x, y, z) in the order (0,0) (1,0) (1,1) (0,1), split along the flatter diagonal. */
+        const surf = (p: number[], ns: number[], raised: boolean) => {
+          const part = parts[raised ? 1 : 0];
+          const b = part.pos.length / 3;
+          part.pos.push(...p);
+          part.nor.push(...ns);
+          for (let k = 0; k < 4; k++) {
+            part.top.push(p[k * 3 + 1]);
+            part.side.push(0);
+          }
+          // counter-clockwise seen from above (+y)
+          if (Math.abs(p[1] - p[7]) <= Math.abs(p[4] - p[10])) part.idx.push(b, b + 2, b + 1, b, b + 3, b + 2);
+          else part.idx.push(b, b + 3, b + 1, b + 1, b + 3, b + 2);
+        };
+        /** A rock face quad: top edge (p0, p1), bottom edge (p2, p3), facing (nx, nz). */
+        const wall = (p: number[], nx: number, nz: number, t0: number, t1: number) => {
+          const part = parts[1];
           const b = part.pos.length / 3;
           part.pos.push(...p);
           for (let k = 0; k < 4; k++) {
-            part.nor.push(nx, ny, nz);
-            part.top.push(h);
+            part.nor.push(nx, 0, nz);
+            part.side.push(1);
           }
-          // pick the winding whose face normal matches the requested one
+          part.top.push(t0, t1, t1, t0);
           const ax = p[3] - p[0], ay = p[4] - p[1], az = p[5] - p[2];
           const bx = p[6] - p[0], by = p[7] - p[1], bz = p[8] - p[2];
-          const fx = ay * bz - az * by, fy = az * bx - ax * bz, fz = ax * by - ay * bx;
-          if (fx * nx + fy * ny + fz * nz >= 0) part.idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
+          const fx = ay * bz - az * by, fz = ax * by - ay * bx;
+          if (fx * nx + fz * nz >= 0) part.idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
           else part.idx.push(b, b + 2, b + 1, b, b + 3, b + 2);
         };
         const x0 = cx * GCHUNK;
         const z0 = cz * GCHUNK;
         const x1 = Math.min(n, x0 + GCHUNK);
         const z1 = Math.min(n, z0 + GCHUNK);
+        const flatH = (x: number, z: number) => {
+          const h = ch(x, z, 0);
+          return ch(x, z, 1) === h && ch(x, z, 2) === h && ch(x, z, 3) === h ? h : NaN;
+        };
         for (let z = z0; z < z1; z++) {
-          let run = x0;
-          for (let x = x0; x <= x1; x++) {
-            if (x < x1 && lv(x, z) === lv(run, z)) continue;
-            const y = lv(run, z);
-            quad([run, y, z, run, y, z + 1, x, y, z + 1, x, y, z], 0, 1, 0, y);
-            run = x;
+          let x = x0;
+          while (x < x1) {
+            const h = flatH(x, z);
+            if (!Number.isNaN(h)) {
+              // a run of flat cells at one height (meadows, water): one quad
+              let e = x + 1;
+              while (e < x1 && flatH(e, z) === h) e++;
+              surf([x, h, z, e, h, z, e, h, z + 1, x, h, z + 1], [0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0], h > 0.01);
+              x = e;
+              continue;
+            }
+            nrm.length = 0;
+            vnorm(x, z, 0, nrm);
+            vnorm(x, z, 1, nrm);
+            vnorm(x, z, 3, nrm);
+            vnorm(x, z, 2, nrm);
+            const a = ch(x, z, 0), b = ch(x, z, 1), c = ch(x, z, 3), d = ch(x, z, 2);
+            surf([x, a, z, x + 1, b, z, x + 1, c, z + 1, x, d, z + 1], nrm.slice(), Math.max(a, b, c, d) > 0.01);
+            x++;
           }
           for (let x = x0; x < x1; x++) {
-            const y = lv(x, z);
-            const sides: [number, number, number[]][] = [
-              [1, 0, [x + 1, 0, z, x + 1, 0, z + 1]],
-              [-1, 0, [x, 0, z + 1, x, 0, z]],
-              [0, 1, [x + 1, 0, z + 1, x, 0, z + 1]],
-              [0, -1, [x, 0, z, x + 1, 0, z]],
+            // each side: my edge corners (k1, k2) against the neighbour's matching corners
+            const sides: [number, number, number, number, number, number, number[]][] = [
+              [1, 0, 1, 3, 0, 2, [x + 1, z, x + 1, z + 1]],
+              [-1, 0, 2, 0, 3, 1, [x, z + 1, x, z]],
+              [0, 1, 3, 2, 1, 0, [x + 1, z + 1, x, z + 1]],
+              [0, -1, 0, 1, 2, 3, [x, z, x + 1, z]],
             ];
-            for (const [dx, dz, e] of sides) {
-              const ny = lv(x + dx, z + dz);
-              if (ny >= y) continue;
-              quad([e[0], y, e[2], e[3], y, e[5], e[3], ny, e[5], e[0], ny, e[2]], dx, 0, dz, y);
+            for (const [dx, dz, k1, k2, m1, m2, e] of sides) {
+              const a1 = ch(x, z, k1);
+              const a2 = ch(x, z, k2);
+              const b1 = ch(x + dx, z + dz, m1);
+              const b2 = ch(x + dx, z + dz, m2);
+              if (a1 <= b1 + 1e-3 && a2 <= b2 + 1e-3) continue;
+              const l1 = Math.min(a1, b1);
+              const l2 = Math.min(a2, b2);
+              wall([e[0], a1, e[1], e[2], a2, e[3], e[2], l2, e[3], e[0], l1, e[1]], dx, dz, a1, a2);
             }
           }
         }
@@ -614,6 +702,7 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
           geo.setAttribute('position', new THREE.Float32BufferAttribute(part.pos, 3));
           geo.setAttribute('normal', new THREE.Float32BufferAttribute(part.nor, 3));
           geo.setAttribute('aTop', new THREE.Float32BufferAttribute(part.top, 1));
+          geo.setAttribute('aSide', new THREE.Float32BufferAttribute(part.side, 1));
           geo.setIndex(part.idx);
           geo.computeBoundingSphere();
           const mesh = new THREE.Mesh(geo, mat);
@@ -702,7 +791,7 @@ diffuseColor.rgb *= mix(0.72, 1.0, smoothstep(0.0, 1.0, vWPos.y));`);
         const list: Vox[] = [];
         treeVoxels(tr, map, list);
         // trees on plateaus stand on the raised ground
-        const lift = t.elev[tr.z * n + tr.x];
+        const lift = t.minCorner(tr.z * n + tr.x) - (t.corner ? 0.05 : 0);
         if (lift) for (const v of list) v.y += lift;
         for (const v of list) out.push(v);
       }
@@ -905,6 +994,9 @@ diffuseColor.rgb *= 0.78 + 0.22 * vH;`,
         if (t.under.has(i)) continue;
         // nothing grows on the bare rock and snow of the peaks
         if (e >= 8) continue;
+        // nor on rock-steep slopes
+        const [sgx, sgz] = t.slopeAt(x + 0.5, z + 0.5);
+        if (Math.hypot(sgx, sgz) > 0.75) continue;
         const dens = rule.density * q;
         let count = Math.floor(dens);
         if (hash2(x, z, 91) < dens - count) count++;
@@ -913,7 +1005,9 @@ diffuseColor.rgb *= 0.78 + 0.22 * vH;`,
           const r = (a: number) => hash2(x * 3 + k, z * 5 + k * 7, a);
           const sp = pickSprite(rule.sprites, r(1));
           const tint = SPRITE_COLORED.has(sp) ? 0xffffff : rule.tint ?? col.setHex(base).multiplyScalar(1.12 + r(2) * 0.22).getHex();
-          put({ x: x + 0.12 + r(3) * 0.76, y: e, z: z + 0.12 + r(4) * 0.76, s: 0.6 * (0.8 + r(5) * 0.5), sp, c: tint, a: r(6) });
+          const fx = x + 0.12 + r(3) * 0.76;
+          const fz = z + 0.12 + r(4) * 0.76;
+          put({ x: fx, y: t.groundY(fx, fz) - 0.03, z: fz, s: 0.6 * (0.8 + r(5) * 0.5), sp, c: tint, a: r(6) });
         }
         // a fringe of tall grass along cliff rims, hanging over the edge
         if (e && rule.sprites.some(([sp]) => sp === SPRITE.grass) && q > 0.5) {
@@ -921,13 +1015,16 @@ diffuseColor.rgb *= 0.78 + 0.22 * vH;`,
           for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
             const nx = x + dx;
             const nz = z + dz;
-            if (nx < 0 || nz < 0 || nx >= n || nz >= n || lvl[nz * n + nx] >= e) continue;
+            if (nx < 0 || nz < 0 || nx >= n || nz >= n) continue;
+            // only over a real rim: the neighbour's surface well below this cell's
+            const nb = nz * n + nx;
+            if ((t.cell[nb] === CELL.liquid ? lvl[nb] : t.centerY(nb)) > t.centerY(i) - 0.9) continue;
             for (let k = 0; k < 2; k++) {
               const r = (a: number) => hash2(x * 7 + k + dx * 3, z * 11 + k + dz * 5, a);
               const along = 0.15 + (k + r(1)) * 0.35;
               const px = dx ? x + (dx > 0 ? 0.92 : 0.08) : x + along;
               const pz = dz ? z + (dz > 0 ? 0.92 : 0.08) : z + along;
-              put({ x: px, y: e - 0.04, z: pz, s: 0.62 * (0.85 + r(2) * 0.4), sp: r(3) < 0.6 ? SPRITE.tallGrass : SPRITE.grass, c: col.setHex(base).multiplyScalar(1.1 + r(4) * 0.2).getHex(), a: r(5) });
+              put({ x: px, y: t.groundY(px, pz) - 0.04, z: pz, s: 0.62 * (0.85 + r(2) * 0.4), sp: r(3) < 0.6 ? SPRITE.tallGrass : SPRITE.grass, c: col.setHex(base).multiplyScalar(1.1 + r(4) * 0.2).getHex(), a: r(5) });
             }
           }
         }

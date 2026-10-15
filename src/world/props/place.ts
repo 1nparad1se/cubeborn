@@ -107,8 +107,10 @@ export function placeProp(t: Terrain, id: string, x: number, z: number, o: Place
   if (o.ifFree && cells.some((c) => solidAt(c.fx, c.fz) && !t.isFree(c.cx, c.cz))) return null;
   let base = 0;
   for (const c of cells) base = Math.max(base, t.elev[t.idx(c.cx, c.cz)]);
+  if (t.corner && o.y === undefined) base = surfaceBase(t, def, cells.map((c) => t.idx(c.cx, c.cz)), x, z, !!o.noCollide);
   inst.y = o.y ?? base;
   const model = def.build(ctx);
+  let decked = false;
   if (!o.noCollide) {
     const hgt = Math.max(1, Math.ceil(def.height ?? modelTop(model) * PX * (inst.scale ?? 1)));
     for (const c of cells) {
@@ -118,12 +120,24 @@ export function placeProp(t: Terrain, id: string, x: number, z: number, o: Place
       if (dk !== undefined && dk !== null) {
         if (!t.under.has(i)) t.under.set(i, { cell: t.cell[i], elev: t.elev[i] });
         t.elev[i] = Math.max(0, Math.round(inst.y + dk));
+        t.deckY.set(i, inst.y + dk);
         t.cell[i] = CELL.floor;
+        decked = true;
       } else if (solidAt(c.fx, c.fz)) {
         t.cell[i] = CELL.solid;
         t.height[i] = Math.max(t.height[i], hgt);
       }
     }
+  }
+  if (decked) {
+    let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+    for (const c of cells) {
+      x0 = Math.min(x0, c.cx);
+      z0 = Math.min(z0, c.cz);
+      x1 = Math.max(x1, c.cx);
+      z1 = Math.max(z1, c.cz);
+    }
+    t.rebuildDecks(x0 - 1, z0 - 1, x1 + 1, z1 + 1);
   }
   for (const l of model.lights ?? []) {
     const [wx, wy, wz] = toWorld(inst, l.x, l.y, l.z);
@@ -131,6 +145,29 @@ export function placeProp(t: Terrain, id: string, x: number, z: number, o: Place
   }
   t.props.push(inst);
   return inst;
+}
+
+/**
+ * Base height of a prop on the sloped ground. Plants, rocks, trees and small things sit on the
+ * lowest corner under them (sunk slightly, never floating). Flat-based structures (camps, cargo,
+ * buildings, ruins, decks) get a level pad: the ground under the footprint is flattened to the
+ * mean height there and the slope around it meets the pad.
+ */
+function surfaceBase(t: Terrain, def: PropDef, cells: number[], x: number, z: number, deco: boolean): number {
+  if (!cells.length) return t.groundY(x, z);
+  const natural = deco || def.category === 'trees' || def.category === 'vegetation' || (def.tags ?? []).some((g) => g === 'rock' || g === 'tree' || g === 'grass');
+  const land = cells.filter((i) => t.cell[i] !== CELL.liquid && !t.under.has(i));
+  if (natural || cells.length < 2 || !land.length) {
+    let lo = Infinity;
+    for (const i of land.length ? land : cells) lo = Math.min(lo, t.minCorner(i));
+    // a small thing sits right on the slope under its centre; bigger ones on the lowest corner
+    return cells.length === 1 && land.length ? Math.min(t.groundY(x, z), lo + 0.15) - 0.03 : lo - 0.03;
+  }
+  let sum = 0;
+  for (const i of land) sum += t.centerY(i);
+  const h = sum / land.length;
+  t.flattenPad(land, h);
+  return h;
 }
 
 /** Quarter turn whose local +x axis points along (dx, dz). */
@@ -292,7 +329,11 @@ export function placeBridge(t: Terrain, id: string, a: [number, number], b: [num
   let y = o.y;
   if (y === undefined) {
     y = 0;
-    for (const [cx, cz] of [[ax, az], alongX ? [bx, az] : [ax, bz]]) if (t.inBounds(cx, cz)) y = Math.max(y, t.under.get(t.idx(cx, cz))?.elev ?? t.elev[t.idx(cx, cz)]);
+    for (const [cx, cz] of [[ax, az], alongX ? [bx, az] : [ax, bz]]) if (t.inBounds(cx, cz)) {
+        const i = t.idx(cx, cz);
+        // on sloped ground: the bank's surface height (decks join it without a step)
+        y = Math.max(y, t.corner && t.cell[i] !== CELL.liquid && !t.under.has(i) ? t.centerY(i) : t.under.get(i)?.elev ?? t.elev[i]);
+      }
   }
   return placeProp(t, id, x, z, { ...o, rot, y, params });
 }

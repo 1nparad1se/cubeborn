@@ -3,7 +3,7 @@ import { BALANCE } from '../config/balance';
 import { clamp } from '../core/math';
 import type { Enemy } from './Enemy';
 import type { Run } from './Run';
-import { CELL, STEP } from './Terrain';
+import { CELL, SLOPE } from './Terrain';
 import type { DamageInfo } from './types';
 import { clearLine, findPath } from './arpg/Path';
 import type { PlayerStats } from './Stats';
@@ -93,17 +93,21 @@ export class Player {
   }
 
   /**
-   * Ground height the hero stands on: the highest walkable cell under its feet, so it keeps
-   * its footing until mostly over an edge and lands on a ledge it only partly reached.
+   * Ground height the hero stands on: the sloped surface right under its feet. At a cliff rim the
+   * hero keeps its footing on the higher side until mostly over the edge (a rock face in reach of
+   * the feet, taller than a lip, holds the hero up).
    */
   get ground(): number {
     const t = this.run.terrain;
     const f = 0.2;
     let g = t.groundY(this.x, this.z);
+    const c = g;
     for (let k = 0; k < 4; k++) {
       const x = this.x + (k & 1 ? f : -f);
       const z = this.z + (k & 2 ? f : -f);
-      if (!t.blocksWalker(Math.floor(x), Math.floor(z))) g = Math.max(g, t.groundY(x, z));
+      if (t.blocksWalker(Math.floor(x), Math.floor(z))) continue;
+      const h = t.groundY(x, z);
+      if (h - c > SLOPE.lip && h <= this.y + 0.05) g = Math.max(g, h);
     }
     return g;
   }
@@ -168,12 +172,12 @@ export class Player {
     }
     if (this.jumpPhase !== 'air') {
       if (g > this.y) {
-        // stepping up a block (eased), or pushed into a cliff: straight on top
-        this.y = g - this.y > STEP.walk + 0.05 ? g : Math.min(g, this.y + dt * 9);
+        // the feet follow the slope; a small lip (deck edge) is eased over
+        this.y = g - this.y <= 0.12 || g - this.y > SLOPE.lip + 0.3 ? g : Math.min(g, this.y + dt * 6);
       } else if (this.y > g) {
-        // one block down is a step; anything taller is a fall
-        if (this.y - g > STEP.walk) this.takeOff(0);
-        else this.y = Math.max(g, this.y - dt * 9);
+        // down a slope the feet stay on the ground; off a rock face it is a fall
+        if (this.y - g > SLOPE.fall) this.takeOff(0);
+        else this.y = this.y - g <= 0.12 ? g : Math.max(g, this.y - dt * 8);
       }
     }
     this.jumpY = this.jumpPhase === 'air' ? Math.max(0, this.y - g) : 0;
@@ -324,22 +328,22 @@ export class Player {
   private moveWithTerrain(mx: number, mz: number) {
     const t = this.run.terrain;
     const r = this.radius;
-    // terrain taller than a step (two while jumping) blocks like a wall; drops are free
+    // a rock face taller than a lip (two blocks while jumping) or a slope too steep blocks like a
+    // wall; drops are free. The body is probed at its leading edge on both sides.
     const air = this.jumpPhase === 'air';
     const feet = air ? this.y : Math.max(this.y, this.ground);
-    const ok = (cx: number, cz: number) => t.canEnter(cx, cz, feet, air);
+    const ok = (x: number, z: number) => t.canWalk(this.x, this.z, x, z, feet, air);
     const nx = this.x + mx;
-    const cx0 = Math.floor(this.z - r * 0.8);
-    const cx1 = Math.floor(this.z + r * 0.8);
-    const edgeX = Math.floor(nx + (mx > 0 ? r : -r));
-    if (ok(edgeX, cx0) && ok(edgeX, cx1)) this.x = nx;
+    if (mx === 0 || (ok(nx + (mx > 0 ? r : -r), this.z - r * 0.8) && ok(nx + (mx > 0 ? r : -r), this.z + r * 0.8) && ok(nx, this.z))) this.x = nx;
     else this.vx = 0;
     const nz = this.z + mz;
-    const r0 = Math.floor(this.x - r * 0.8);
-    const r1 = Math.floor(this.x + r * 0.8);
-    const edgeZ = Math.floor(nz + (mz > 0 ? r : -r));
-    if (ok(r0, edgeZ) && ok(r1, edgeZ)) this.z = nz;
+    if (mz === 0 || (ok(this.x - r * 0.8, nz + (mz > 0 ? r : -r)) && ok(this.x + r * 0.8, nz + (mz > 0 ? r : -r)) && ok(this.x, nz))) this.z = nz;
     else this.vz = 0;
+    // feet stay on the slope under the new spot (no lag of a frame on inclines)
+    if (this.jumpPhase !== 'air' && this.run.action?.mover?.kind !== 'leap') {
+      const g = this.ground;
+      if (Math.abs(g - this.y) <= 0.12) this.y = g;
+    }
     this.x = clamp(this.x, 1, t.size - 1);
     this.z = clamp(this.z, 1, t.size - 1);
   }

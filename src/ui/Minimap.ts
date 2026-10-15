@@ -5,19 +5,25 @@ import { h } from './dom';
 
 /** Pixels per map cell in the baked terrain image (outlines stay one pixel thin). */
 const PX_SMALL = 3;
-/** World units visible across the corner minimap. */
-const LOCAL_SPAN = 64;
+/** World units across the round minimap at each zoom step (+ zooms in, − zooms out). */
+const ROUND_SPANS = [36, 52, 72, 100, 140];
+/** Pixels per map cell in the round minimap's image. */
+const PX_ROUND = 2;
 
 /**
- * Dungeon-crawler style minimap: muted terrain with thin white outlines along walls and
- * water, rotated to match the diagonal camera. The corner view follows the hero; the big
- * view (Tab) shows the whole map.
+ * Minimaps. The corner one is a round compass map, north up (north is world −Z, east +X, the
+ * convention of the map generators): coloured terrain with height shading, roads, rivers and
+ * creatures, the hero's arrow pointing where they face, and +/− zoom. The big view (Tab) shows
+ * the whole map in the muted dungeon-crawler style, rotated to match the diagonal camera.
  */
 export class Minimap {
   readonly root: HTMLElement;
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   private base: HTMLCanvasElement | null = null;
+  /** Colour image for the round corner map. */
+  private round: HTMLCanvasElement | null = null;
+  private zoomI = 2;
   private run: Run | null = null;
   private acc = 1;
   private yaw = Math.PI / 4;
@@ -31,11 +37,27 @@ export class Minimap {
     this.root = h('div.minimap', this.canvas);
   }
 
+  /** Zooms the round map in (+1) or out (−1). */
+  zoom(dir: number) {
+    this.zoomI = Math.max(0, Math.min(ROUND_SPANS.length - 1, this.zoomI - dir));
+    this.acc = 1;
+  }
+
+  get canZoomIn(): boolean {
+    return this.zoomI > 0;
+  }
+
+  get canZoomOut(): boolean {
+    return this.zoomI < ROUND_SPANS.length - 1;
+  }
+
   /** Bakes the terrain into an image for this run. */
   setRun(run: Run | null) {
     this.run = run;
     this.base = null;
+    this.round = null;
     if (!run) return;
+    this.round = this.bakeRound(run);
     const t = run.terrain;
     const n = t.size;
     const PX = n > 500 ? 2 : PX_SMALL;
@@ -126,6 +148,155 @@ export class Minimap {
     this.acc = 1;
   }
 
+  /**
+   * Colour image for the round map: the ground's own tile colours lit by height (higher is
+   * lighter, slopes facing north-west catch the light), dark rock for walls and cliffs, water in
+   * its own colour and trees / props as darker green specks.
+   */
+  private bakeRound(run: Run): HTMLCanvasElement {
+    const t = run.terrain;
+    const n = t.size;
+    const PX = PX_ROUND;
+    const W = n * PX;
+    const img = document.createElement('canvas');
+    img.width = W;
+    img.height = W;
+    const c = img.getContext('2d')!;
+    const data = c.createImageData(W, W);
+    const pal = run.map.palette;
+    const tileCol = t.tileNames.map((name) => (pal.tiles[name] ?? groundTile(name)?.colors ?? [0x555555])[0]);
+    const hgt = new Float32Array(n * n);
+    let lo = 1e9;
+    let hi = -1e9;
+    for (let z = 0; z < n; z++)
+      for (let x = 0; x < n; x++) {
+        const y = t.groundY(x + 0.5, z + 0.5);
+        hgt[z * n + x] = y;
+        if (y < lo) lo = y;
+        if (y > hi) hi = y;
+      }
+    const span = Math.max(1, hi - lo);
+    const H = (x: number, z: number) => hgt[Math.max(0, Math.min(n - 1, z)) * n + Math.max(0, Math.min(n - 1, x))];
+    for (let z = 0; z < n; z++)
+      for (let x = 0; x < n; x++) {
+        const i = z * n + x;
+        const cell = t.cell[i];
+        const y = hgt[i];
+        const tc = tileCol[t.tile[i]] ?? 0x5a8a3a;
+        let r = (tc >> 16) & 255;
+        let g = (tc >> 8) & 255;
+        let b = tc & 255;
+        if (cell === CELL.liquid) {
+          // water: its tile colour pulled toward a clear blue
+          r = r * 0.35 + 40 * 0.65;
+          g = g * 0.35 + 110 * 0.65;
+          b = b * 0.35 + 190 * 0.65;
+        } else if (cell === CELL.hazard) {
+          r = r * 0.5 + 190 * 0.5;
+          g = g * 0.5 + 70 * 0.5;
+          b = b * 0.5 + 40 * 0.5;
+        } else if (cell !== CELL.floor && cell !== CELL.ice) {
+          // walls and obstacles: trees and props keep a dark green, big rock masses turn grey
+          const rock = H(x, z) - Math.min(H(x - 1, z), H(x + 1, z), H(x, z - 1), H(x, z + 1)) > 1.5;
+          if (rock) {
+            r = 92;
+            g = 88;
+            b = 80;
+          } else {
+            r = r * 0.45;
+            g = g * 0.6;
+            b = b * 0.4;
+          }
+        }
+        // height: lighter up high; a simple hill-shade from the north-west
+        const lift = 0.82 + ((y - lo) / span) * 0.4;
+        const shade = Math.max(-0.35, Math.min(0.35, (H(x - 1, z - 1) - H(x + 1, z + 1)) * 0.18));
+        const k = lift * (1 - shade);
+        r = Math.min(255, r * k);
+        g = Math.min(255, g * k);
+        b = Math.min(255, b * k);
+        for (let py = 0; py < PX; py++)
+          for (let px = 0; px < PX; px++) {
+            const o = ((z * PX + py) * W + x * PX + px) * 4;
+            data.data[o] = r;
+            data.data[o + 1] = g;
+            data.data[o + 2] = b;
+            data.data[o + 3] = 255;
+          }
+      }
+    c.putImageData(data, 0, 0);
+    return img;
+  }
+
+  /** The round corner map, north up, centred on the hero. */
+  private drawRound(run: Run, cw: number, ch: number, dpr: number) {
+    const ctx = this.ctx;
+    const p = run.player;
+    const R = Math.min(cw, ch) / 2;
+    const scale = (R * 2) / ROUND_SPANS[this.zoomI];
+    ctx.clearRect(0, 0, cw, ch);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cw / 2, ch / 2, R, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.fillStyle = '#1d2a1c';
+    ctx.fillRect(0, 0, cw, ch);
+    if (this.round) {
+      ctx.save();
+      ctx.translate(cw / 2, ch / 2);
+      ctx.scale(scale / PX_ROUND, scale / PX_ROUND);
+      ctx.translate(-p.x * PX_ROUND, -p.z * PX_ROUND);
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(this.round, 0, 0);
+      ctx.restore();
+    }
+    const toScreen = (x: number, z: number): [number, number] => [cw / 2 + (x - p.x) * scale, ch / 2 + (z - p.z) * scale];
+    // creatures: red dots (brighter when hunting the hero)
+    const reach = (ROUND_SPANS[this.zoomI] * 0.75) ** 2;
+    const r = 2.2 * dpr;
+    for (const e of run.enemies.list) {
+      if (!e.alive || (e.x - p.x) ** 2 + (e.z - p.z) ** 2 > reach) continue;
+      const [ex, ey] = toScreen(e.x, e.z);
+      ctx.beginPath();
+      ctx.arc(ex, ey, r + dpr, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(0,0,0,0.75)';
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(ex, ey, r, 0, Math.PI * 2);
+      ctx.fillStyle = run.mobs.mobOf(e)?.state === 'chase' ? '#ff4a3a' : '#d0584c';
+      ctx.fill();
+    }
+    // soft vignette toward the rim
+    const vg = ctx.createRadialGradient(cw / 2, ch / 2, R * 0.6, cw / 2, ch / 2, R);
+    vg.addColorStop(0, 'rgba(0,0,0,0)');
+    vg.addColorStop(1, 'rgba(0,0,0,0.38)');
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, cw, ch);
+    ctx.restore();
+    // the hero: a gold arrowhead pointing where they face (x right = east, z down = south)
+    const a = Math.atan2(p.fz, p.fx);
+    const s = 7.5 * dpr;
+    ctx.save();
+    ctx.translate(cw / 2, ch / 2);
+    ctx.rotate(a + Math.PI / 2);
+    ctx.beginPath();
+    ctx.moveTo(0, -s * 1.25);
+    ctx.lineTo(s * 0.85, s * 0.85);
+    ctx.lineTo(0, s * 0.4);
+    ctx.lineTo(-s * 0.85, s * 0.85);
+    ctx.closePath();
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 2.4 * dpr;
+    ctx.strokeStyle = 'rgba(20,12,0,0.9)';
+    ctx.stroke();
+    const gr = ctx.createLinearGradient(0, -s, 0, s);
+    gr.addColorStop(0, '#ffe680');
+    gr.addColorStop(1, '#f08a10');
+    ctx.fillStyle = gr;
+    ctx.fill();
+    ctx.restore();
+  }
+
   setBig(on: boolean) {
     this.big = on;
     this.root.classList.toggle('big', on);
@@ -145,13 +316,17 @@ export class Minimap {
       this.canvas.width = cw;
       this.canvas.height = ch;
     }
+    if (!this.big) {
+      this.drawRound(run, cw, ch, dpr);
+      return;
+    }
     const ctx = this.ctx;
     const n = run.terrain.size;
     const p = run.player;
     // view: centre (world) and scale (canvas px per world unit)
-    const cx = this.big ? n / 2 : p.x;
-    const cz = this.big ? n / 2 : p.z;
-    const scale = this.big ? Math.min(cw, ch) / (n * Math.SQRT2) : cw / LOCAL_SPAN;
+    const cx = n / 2;
+    const cz = n / 2;
+    const scale = Math.min(cw, ch) / (n * Math.SQRT2);
     const yaw = this.yaw;
     const cos = Math.cos(yaw);
     const sin = Math.sin(yaw);
@@ -181,7 +356,7 @@ export class Minimap {
       ctx.fill();
     };
     // creatures: small red dots (brighter when hunting the hero)
-    const span = this.big ? 1e9 : (LOCAL_SPAN * 0.75) ** 2;
+    const span = 1e9;
     const r = (this.big ? 1.6 : 2.2) * dpr;
     for (const e of run.enemies.list) {
       if (!e.alive || (e.x - p.x) ** 2 + (e.z - p.z) ** 2 > span) continue;

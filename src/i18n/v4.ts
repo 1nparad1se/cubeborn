@@ -4,9 +4,6 @@ export const RU4: Record<string, string> = {
   set_daynight: 'Цикл дня и ночи',
   set_daynight_hint: 'Длина полного цикла: рассвет, день, закат, ночь',
   set_daynight_next: 'Применится со следующего забега',
-  dn_len_short: '3 мин',
-  dn_len_normal: '5 мин',
-  dn_len_long: '8 мин',
   dn_dawn: 'Рассвет: ночные твари слабеют',
   dn_dusk: 'Закат: скоро стемнеет',
   dn_night: 'Наступила ночь',
@@ -14,8 +11,6 @@ export const RU4: Record<string, string> = {
   period_day: 'День',
   period_dusk: 'Закат',
   period_night: 'Ночь',
-  period_blood: 'Кровавая луна',
-  period_next: 'до смены',
 };
 
 export const EN4: Record<string, string> = {
@@ -23,9 +18,6 @@ export const EN4: Record<string, string> = {
   set_daynight: 'Day/night cycle',
   set_daynight_hint: 'Length of a full cycle: dawn, day, dusk, night',
   set_daynight_next: 'Applies from the next run',
-  dn_len_short: '3 min',
-  dn_len_normal: '5 min',
-  dn_len_long: '8 min',
   dn_dawn: 'Dawn: night creatures weaken',
   dn_dusk: 'Dusk: darkness is coming',
   dn_night: 'Night has fallen',
@@ -33,6 +25,4 @@ export const EN4: Record<string, string> = {
   period_day: 'Day',
   period_dusk: 'Dusk',
   period_night: 'Night',
-  period_blood: 'Blood moon',
-  period_next: 'until change',
 };

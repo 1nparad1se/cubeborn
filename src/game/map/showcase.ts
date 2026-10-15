@@ -304,13 +304,18 @@ function boardwalk(t: Terrain, p: Placer) {
         const cz = Math.floor(z + dz - 0.5);
         if (!t.inBounds(cx, cz)) continue;
         const i = cx + cz * N;
-        if (t.cell[i] === CELL.liquid) t.elev[i] = 0;
+        if (t.cell[i] === CELL.liquid) {
+          t.elev[i] = 0;
+          if (t.surf) t.surf[i] = 0;
+        }
         // old and broken planks show up along the way
         const v = hash2(cx, cz, 61);
         t.setTile(cx, cz, v < 0.15 ? 'boardwalk_ruined' : v < 0.35 ? 'boardwalk_old' : 'boardwalk', CELL.floor);
       }
     }
   }
+  // the planks are dry ground now: rejoin the surface around them
+  t.recomputeCorners(8, 136, 46, 170);
   for (const [x, z] of [[30, 146], [20, 149], [14, 158]]) p.deco('road_boardwalk_bracketed', x, z, { yaw: 0, variant: (x + z) % 2 });
   p.put('road_boardwalk_steps', 42, 140.5, { rot: 2, variant: 1 });
   p.put('road_boardwalk_steps', 12, 165, { rot: 1 });
@@ -689,30 +694,67 @@ function roadSamples(t: Terrain, p: Placer) {
   for (const [id, x, z] of decals) p.deco(id, x + 0.5, z + 0.5, { yaw: 0 });
 }
 
-/** Cells reachable from the spawn on foot (one block up or down per step). */
-function reachable(t: Terrain): Uint8Array {
-  const seen = new Uint8Array(N * N);
-  const q = new Int32Array(N * N);
-  let qh = 0;
-  let qt = 0;
-  const s = Math.floor(SHOWCASE_SPAWN.z) * N + Math.floor(SHOWCASE_SPAWN.x);
-  seen[s] = 1;
-  q[qt++] = s;
-  while (qh < qt) {
-    const i = q[qh++];
+/**
+ * Rolling hills between the districts: broad swells several blocks high over the forest and the
+ * open country, fading to nothing at the water and at the flat working areas of the districts
+ * (village, camps, swamp, ruins, the mountain massif and highland with their fixed-height props,
+ * the coast).
+ */
+function rollingHills(t: Terrain): Float32Array {
+  const out = new Float32Array(N * N);
+  // distance to the nearest water cell (BFS, capped)
+  const wd = new Float32Array(N * N).fill(99);
+  const q: number[] = [];
+  for (let i = 0; i < N * N; i++)
+    if (t.cell[i] === CELL.liquid) {
+      wd[i] = 0;
+      q.push(i);
+    }
+  for (let h = 0; h < q.length; h++) {
+    const i = q[h];
+    if (wd[i] >= 20) continue;
     const x = i % N;
     const z = (i / N) | 0;
     for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      const nx = x + dx;
-      const nz = z + dz;
-      if (nx < 0 || nz < 0 || nx >= N || nz >= N) continue;
-      const j = nz * N + nx;
-      if (seen[j] || t.blocksWalker(nx, nz) || Math.abs(t.elev[j] - t.elev[i]) > 1) continue;
-      seen[j] = 1;
-      q[qt++] = j;
+      const cx = x + dx;
+      const cz = z + dz;
+      if (cx < 0 || cz < 0 || cx >= N || cz >= N) continue;
+      const j = cz * N + cx;
+      if (wd[j] > wd[i] + 1) {
+        wd[j] = wd[i] + 1;
+        q.push(j);
+      }
     }
   }
-  return seen;
+  const s01 = (v: number) => {
+    const k = Math.max(0, Math.min(1, v));
+    return k * k * (3 - 2 * k);
+  };
+  /** 0 inside a box (plus margin), 1 beyond margin + fade. */
+  const box = (x: number, z: number, x0: number, z0: number, x1: number, z1: number, fade = 10) => {
+    const dx = Math.max(x0 - x, 0, x - x1);
+    const dz = Math.max(z0 - z, 0, z - z1);
+    return s01(Math.hypot(dx, dz) / fade);
+  };
+  const disc = (x: number, z: number, cx: number, cz: number, r: number, fade = 12) => s01((Math.hypot(x - cx, z - cz) - r) / fade);
+  for (let z = 0; z < N; z++)
+    for (let x = 0; x < N; x++) {
+      const i = z * N + x;
+      let m = s01((wd[i] - 2) / 12);
+      m = Math.min(m, disc(x, z, 10, 10, 56, 8)); // mountain massif
+      m = Math.min(m, box(x, z, SHELF.x0 - 2, SHELF.z0 - 4, SHELF.x1 + 6, SHELF.z1 + 2));
+      m = Math.min(m, box(x, z, RUINS.x0 - 2, RUINS.z0, RUINS.x1 + 2, RUINS.z1 + 2, 8));
+      m = Math.min(m, box(x, z, 0, HI.z0 - 3, HI.x2 + 4, HI.z1 + 3));
+      m = Math.min(m, disc(x, z, SHOWCASE_SPAWN.x, SHOWCASE_SPAWN.z, 20)); // village
+      m = Math.min(m, box(x, z, 56, 122, 134, 176)); // camps
+      m = Math.min(m, disc(x, z, 25, 150, 18)); // swamp
+      m = Math.min(m, box(x, z, 145, 0, N, N, 8)); // coast
+      if (m <= 0) continue;
+      const broad = noise(x / 30, z / 30, SEED + 71);
+      const ridge = 1 - Math.abs(noise(x / 21, z / 21, SEED + 73) * 2 - 1);
+      out[i] = (Math.max(0, broad - 0.25) * 7 + ridge * ridge * 2.5) * m;
+    }
+  return out;
 }
 
 /** Builds «Витрина мира». Deterministic: the same on every launch. */
@@ -722,6 +764,7 @@ export function buildShowcase(map: MapDef): Terrain {
   heightmap(t);
   paintGround(t);
   water(t);
+  t.buildSurface({ relief: rollingHills(t), iters: 6 });
   roads(t);
   const p = new Placer(t);
   riverBridges(t, p);
@@ -737,7 +780,7 @@ export function buildShowcase(map: MapDef): Terrain {
   roadSamples(t, p);
   // a fence along the village gardens and a palisade sample by the yard
   placeAlong(t, 'camp_palisade', [[64, 79], [64, 84]], { variant: 1, ifFree: true });
-  t.reach = reachable(t);
+  t.reach = t.computeReach(SHOWCASE_SPAWN.x, SHOWCASE_SPAWN.z);
   return t;
 }
 

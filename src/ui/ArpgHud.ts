@@ -4,10 +4,10 @@ import { SLOT_SPECIAL, SLOT_ULT } from '../game/action/ActionSystem';
 import { keyName } from '../input/Input';
 import type { Keybinds } from '../meta/Save';
 import { h, clear, hex } from './dom';
-import { iconImg } from './icons';
 import { t, L } from '../i18n';
 import { fmtNum } from './format';
 import { SLOT_BASIC, SLOT_DODGE, SLOT_IDENTITY, costBadge, skillImg, slotDetails, slotKey, slotMeta } from './SkillsScreen';
+import { tr } from './ClassPreview';
 
 interface Slot {
   i: number;
@@ -18,6 +18,13 @@ interface Slot {
   key: HTMLElement;
   cost: HTMLElement;
   sub: HTMLElement;
+}
+
+/** Bottom bar scale from the window size (the layout is drawn for a 1350×900 reference box). */
+function barScale(): number {
+  const w = window.innerWidth || 1280;
+  const hh = window.innerHeight || 720;
+  return Math.max(0.6, Math.min(1.5, Math.min(w / 1350, hh / 900)));
 }
 
 /** Effects shown on an enemy (hover panel, boss bar). */
@@ -37,35 +44,38 @@ export function enemyEffects(e: Enemy): { key: string; color: string; t: number 
 }
 
 const cdText = (cd: number) => (cd > 0 ? (cd < 1 ? cd.toFixed(1) : String(Math.ceil(cd))) : '');
-/** Cooldown overlay: a dark curtain over the top `k` of the slot with a bright recharge edge (MCD-style). */
-const sweep = (k: number, c = 'rgba(8,10,14,0.78)') => {
+/** Cooldown overlay: a dark clockwise sweep over the remaining part `k` of the cooldown. */
+const sweep = (k: number, c = 'rgba(6,8,12,0.74)') => {
   if (k <= 0) return 'none';
-  const p = (k * 100).toFixed(1);
-  return `linear-gradient(to bottom, ${c} 0 ${p}%, rgba(236,240,244,0.55) ${p}% calc(${p}% + 2px), transparent 0)`;
+  const d = (k * 360).toFixed(1);
+  return `conic-gradient(${c} 0 ${d}deg, rgba(255,240,220,0.5) ${d}deg calc(${d}deg + 1.5deg), transparent 0)`;
 };
 
 /**
- * Action-combat HUD (Lost-Ark-like): health with shield, the class resource / Identity gauge (Z), eight
- * skill slots on Q W E R / A S D F, basic attack, dodge charges, the class special (X) and the round
- * Awakening gauge (V); a charge / cast bar, active buffs, unspent skill points, slot tooltips, and the
+ * Bottom action bar (reference layout): Identity (Z) far left, skills Q W E R over a red HP bar,
+ * a centre cluster of diamonds (basic attack, dodge, and the level below them), skills A S D F
+ * over the class-resource (MP) bar, the Ultimate (V) far right; a thin full-width XP bar under
+ * everything. Also the charge / cast bar, active buffs, unspent skill points, slot tooltips and the
  * info panel for the enemy under the cursor (with its stagger bar).
  */
 export class ArpgHud {
   readonly root: HTMLElement;
   readonly hoverBox: HTMLElement;
-  private hpFill = h('div.ah-fill');
-  private hpShield = h('div.ah-shield');
-  private hpText = h('div.ah-heart-num');
-  private shText = h('div.ah-heart-sh');
-  private heart: HTMLElement;
-  private xpLv = h('div.ah-xp-lv');
+  private wrap: HTMLElement;
+  private hpBar: HTMLElement;
+  private hpFill = h('div.bh-fill');
+  private hpShield = h('div.bh-shield');
+  private hpNum = h('span.bh-num');
   private resBar: HTMLElement;
-  private resFill = h('div.ah-fill');
-  private resText = h('div.ah-text');
-  private resName = h('div.ah-label');
-  private orbs = h('div.ah-orbs');
-  private xpFill = h('div.ah-xp-fill');
-  private xpText = h('div.ah-xp-text');
+  private resFill = h('div.bh-fill');
+  private resSegs = h('div.bh-segs');
+  private resNum = h('span.bh-num');
+  private lvNum = h('div.bh-lv-n');
+  private xpFill = h('div.bh-xp-fill');
+  private xpText = h('div.bh-xp-text');
+  private xpShown = -1;
+  private xpLevel = -1;
+  private lastT = 0;
   private slots: Slot[] = [];
   private castBox = h('div.ah-cast.hidden');
   private castName = h('div.ah-cast-name');
@@ -83,22 +93,22 @@ export class ArpgHud {
   private runRef: Run | null = null;
   binds: Keybinds | null = null;
   onLearn: (slot: number) => void = () => {};
-  /** Opens the skills screen (the K button on the bar and the skill-points badge). */
+  /** Opens the skills screen (the skill-points badge). */
   onSkills: () => void = () => {};
   private pointsBox = h('div.ah-points.hidden');
   private tip = h('div.sk-tip.hidden');
   private tipSlot = -1;
   private tipT = 0;
   private lastRun: Run | null = null;
-  private skKey = h('span.key');
   private specialWrap: HTMLElement;
+  private scale = 1;
 
   constructor() {
     const mk = (i: number, extra = ''): Slot => {
-      const s: Slot = { i, root: h('div.sk' + extra), icon: h('div.sk-icon'), cd: h('div.sk-cd'), timer: h('div.sk-timer'), key: h('div.sk-key'), cost: h('div.sk-cost'), sub: h('div.sk-sub') };
+      const s: Slot = { i, root: h('div.bs' + extra), icon: h('div.bs-icon'), cd: h('div.bs-cd'), timer: h('div.bs-timer'), key: h('div.bs-key'), cost: h('div.bs-cost'), sub: h('div.bs-sub') };
       s.root.append(s.icon, s.cd, s.timer, s.key, s.cost, s.sub);
       if (i < 8) {
-        const plus = h('div.sk-plus', '+');
+        const plus = h('div.bs-plus', '+');
         plus.addEventListener('mousedown', (e) => {
           e.stopPropagation();
           e.preventDefault();
@@ -125,86 +135,80 @@ export class ArpgHud {
       this.slots[i] = s;
       return s;
     };
-    const grid = h('div.ah-grid');
-    for (let i = 0; i < 8; i++) grid.append(mk(i).root);
-    const ult = mk(SLOT_ULT, '.ult');
-    // hexagonal soul-gauge: dark hex with a fill that rises with the Awakening charge
-    ult.root.prepend(h('div.sk-gauge', h('i')));
-    const special = mk(SLOT_SPECIAL, '.small');
-    const dodge = mk(SLOT_DODGE, '.dodge.small');
-    const ident = mk(SLOT_IDENTITY, '.ident');
-    const basic = mk(SLOT_BASIC, '.basic.small');
-    basic.key.classList.add('mouse');
+    const left = h('div.bh-slots');
+    const right = h('div.bh-slots');
+    for (let i = 0; i < 8; i++) (i < 4 ? left : right).append(mk(i).root);
+    const ident = mk(SLOT_IDENTITY, '.side.ident');
+    const ult = mk(SLOT_ULT, '.side.ult');
+    ult.root.prepend(h('div.bs-gauge'));
+    const special = mk(SLOT_SPECIAL, '.mini');
+    const basic = mk(SLOT_BASIC, '.dia.basic');
+    const dodge = mk(SLOT_DODGE, '.dia.dodge');
+    basic.icon.append(h('span.bs-dia-t', tr('Атк', 'Atk')));
+    dodge.icon.append(h('span.bs-dia-t', tr('Рывок', 'Dash')));
     this.specialWrap = special.root;
-    this.resBar = h('div.ah-bar.res', this.resName, h('div.ah-track', this.resFill, this.orbs), this.resText);
-    // faceted pixel heart: grey bevelled rim, red fill draining from the top, silver shield layer above it
-    this.heart = h(
-      'div.ah-heart',
-      { title: t('hud_hp') },
-      h('div.ah-heart-rim'),
-      h('div.ah-heart-in', this.hpShield, this.hpFill, h('div.ah-heart-gloss')),
-      this.shText,
-      this.hpText,
-    );
+    this.hpBar = h('div.bh-bar.hp', h('div.bh-track', this.hpShield, this.hpFill, h('div.bh-gloss')), h('div.bh-label', h('span.bh-name', 'HP'), this.hpNum));
+    this.resBar = h('div.bh-bar.mp', h('div.bh-track', this.resFill, this.resSegs, h('div.bh-gloss')), h('div.bh-label', h('span.bh-name', 'MP'), this.resNum));
     this.castBox.append(this.castName, h('div.ah-cast-track', this.castFill));
     this.pointsBox.addEventListener('mousedown', (e) => {
       e.stopPropagation();
       this.onSkills();
     });
-    this.root = h(
-      'div.arpg-hud',
-      this.castBox,
-      h('div.ah-toprow', this.buffRow, this.pointsBox),
+    this.wrap = h(
+      'div.bh-wrap',
+      h('div.bh-above', this.castBox, h('div.ah-toprow', this.buffRow, this.pointsBox)),
       this.tip,
+      h('div.bh-plate'),
       h(
-        'div.ah-plate',
-        h(
-          'div.ah-main',
-          h('div.ah-left', ident.root),
-          this.heart,
-          h('div.ah-center', grid, this.resBar),
-          h('div.ah-extra', basic.root, dodge.root, special.root),
-          ult.root,
-          h(
-            'div.ah-side',
-            h('button.ah-bag.ah-skb', { title: t('ak_skills_btn'), onclick: () => this.onSkills() }, iconImg('rune', 0x9ad0ff, 'icon'), this.skKey),
-          ),
-        ),
-        h('div.ah-xp', this.xpLv, h('div.ah-xp-track', this.xpFill, h('div.ah-xp-seg')), this.xpText),
+        'div.bh-row',
+        h('div.bh-side', ident.root),
+        h('div.bh-group.l', left, this.hpBar),
+        h('div.bh-center', basic.root, dodge.root, h('div.bh-lv', h('div.bh-lv-in', h('div.bh-lv-t', 'LVL'), this.lvNum))),
+        h('div.bh-group.r', right, this.resBar),
+        h('div.bh-side', ult.root, special.root),
       ),
     );
+    this.root = h('div.arpg-hud', this.wrap, h('div.bh-xp', h('div.bh-xp-track', this.xpFill), this.xpText));
     this.hStagBox = h('div.hv-stag', this.hStag);
     this.hoverBox = h('div.hover-info.hidden', this.hName, this.hMeta, h('div.hv-track', this.hFill, this.hHp), this.hStagBox, this.hFx);
+    const fit = () => {
+      this.scale = barScale();
+      this.root.style.setProperty('--hs', this.scale.toFixed(4));
+    };
+    fit();
+    window.addEventListener('resize', fit);
   }
 
   reset(run: Run | null) {
     this.last = {};
     this.hover = null;
     this.runRef = run;
+    this.xpShown = -1;
+    this.xpLevel = -1;
     this.hoverBox.classList.add('hidden');
     this.tip.classList.add('hidden');
     this.tipSlot = -1;
     if (!run) return;
     const a = run.action;
     const c = a.cls;
-    this.resName.textContent = L(c.res.name);
+    this.resBar.title = L(c.res.name);
     this.root.style.setProperty('--res', c.res.color);
     this.root.style.setProperty('--cls', hex(c.color));
-    this.resBar.classList.toggle('orb', !!c.res.orbs);
-    clear(this.orbs);
-    for (let i = 0; i < (c.res.orbs ?? 0); i++) this.orbs.append(h('i', h('b')));
+    clear(this.resSegs);
+    for (let i = 1; i < (c.res.orbs ?? 0); i++) this.resSegs.append(h('i', { style: `left:${((i / c.res.orbs!) * 100).toFixed(2)}%` }));
     this.specialWrap.classList.toggle('hidden', !c.special);
     for (const s of this.slots) {
       if (!s) continue;
+      if (s.i === SLOT_BASIC || s.i === SLOT_DODGE) continue;
       clear(s.icon);
       const m = slotMeta(a, s.i);
       if (m) s.icon.append(skillImg(m.icon, m.color, 'icon'));
-      // press-and-hold skills (hold channels and charge-ups) carry a hand badge
+      // press-and-hold skills (hold channels and charge-ups) carry a badge
       const def = a.skill(s.i);
       const hold = !!def && (def.type === 'hold' || def.type === 'charge');
       s.root.classList.toggle('hold', hold);
-      s.root.querySelector('.sk-hold')?.remove();
-      if (hold) s.root.append(h('div.sk-hold', { title: L({ ru: 'Зажмите клавишу', en: 'Hold the key' }) }, def!.type === 'charge' ? L({ ru: 'ЗАР', en: 'CHG' }) : L({ ru: 'ЗАЖ', en: 'HOLD' })));
+      s.root.querySelector('.bs-hold')?.remove();
+      if (hold) s.root.append(h('div.bs-hold', { title: L({ ru: 'Зажмите клавишу', en: 'Hold the key' }) }, def!.type === 'charge' ? L({ ru: 'ЗАР', en: 'CHG' }) : L({ ru: 'ЗАЖ', en: 'HOLD' })));
     }
   }
 
@@ -226,7 +230,7 @@ export class ArpgHud {
 
   private cool(s: Slot, cd: number, max: number) {
     const k = cd > 0 ? Math.min(1, cd / Math.max(0.01, max)) : 0;
-    this.set('cd' + s.i, Math.round(k * 120), () => (s.cd.style.background = sweep(k)));
+    this.set('cd' + s.i, Math.round(k * 240), () => (s.cd.style.background = sweep(k)));
     const tx = cdText(cd);
     this.set('tm' + s.i, tx, () => (s.timer.textContent = tx));
   }
@@ -243,60 +247,52 @@ export class ArpgHud {
   update(run: Run) {
     this.lastRun = run;
     if (run !== this.runRef) this.reset(run);
+    const now = performance.now();
+    const dt = this.lastT ? Math.min(0.25, (now - this.lastT) / 1000) : 0;
+    this.lastT = now;
     const p = run.player;
     const a = run.action;
     const c = a.cls;
     // health + shield
     const maxHp = Math.max(1, p.stats.maxHp);
-    const hpk = Math.max(0, p.hp / maxHp);
-    this.set('hp', Math.round(hpk * 400), () => {
-      this.hpFill.style.transform = `scaleY(${Math.min(1, hpk)})`;
-      this.heart.classList.toggle('low', hpk < 0.3);
+    const hpk = Math.max(0, Math.min(1, p.hp / maxHp));
+    this.set('hp', Math.round(hpk * 600), () => {
+      this.hpFill.style.transform = `scaleX(${hpk})`;
+      this.hpBar.classList.toggle('low', hpk < 0.3);
     });
     const shk = Math.min(1, a.shield / maxHp);
     const shTop = Math.min(1, hpk + shk);
-    this.set('sh', Math.round(shTop * 400) + (shk > 0 ? 1000 : 0), () => {
-      this.hpShield.style.transform = `scaleY(${shTop})`;
-      this.heart.classList.toggle('shielded', shk > 0);
+    this.set('sh', Math.round(shTop * 600) + (shk > 0 ? 1000 : 0), () => {
+      this.hpShield.style.transform = `scaleX(${shk > 0 ? shTop : 0})`;
+      this.hpBar.classList.toggle('shielded', shk > 0);
     });
-    const hpTxt = `${Math.ceil(Math.max(0, p.hp))}/${Math.round(maxHp)}`;
-    this.set('hpt', hpTxt, () => (this.hpText.textContent = hpTxt));
-    const shTxt = a.shield > 0 ? `+${Math.ceil(a.shield)}` : '';
-    this.set('sht', shTxt, () => (this.shText.textContent = shTxt));
-    // class resource / identity gauge
+    const hpTxt = `${Math.ceil(Math.max(0, p.hp))} / ${Math.round(maxHp)}` + (a.shield > 0 ? ` (+${Math.ceil(a.shield)})` : '');
+    this.set('hpt', hpTxt, () => (this.hpNum.textContent = hpTxt));
+    // class resource (MP bar) and the identity state
     const resMax = Math.max(1, a.resMax);
     const rk = Math.min(1, a.res / resMax);
-    if (c.res.orbs) {
-      const per = c.res.max / c.res.orbs;
-      const ok = Math.round((a.res / per) * 20);
-      this.set('orbs', ok, () => {
-        const kids = this.orbs.children;
-        for (let i = 0; i < kids.length; i++) {
-          const f = Math.max(0, Math.min(1, a.res / per - i));
-          kids[i].classList.toggle('on', f >= 0.999);
-          (kids[i].firstChild as HTMLElement).style.transform = `scaleY(${f})`;
-        }
-      });
-      this.set('rest', a.orbs, () => (this.resText.textContent = `${a.orbs} / ${c.res.orbs}`));
-    } else {
-      this.set('res', Math.round(rk * 400), () => (this.resFill.style.transform = `scaleX(${rk})`));
-      this.set('rest', Math.floor(a.res) + '/' + resMax, () => (this.resText.textContent = `${Math.floor(a.res)} / ${Math.round(resMax)}`));
-    }
+    this.set('res', Math.round(rk * 600), () => (this.resFill.style.transform = `scaleX(${rk})`));
+    const resTxt = c.res.orbs ? `${a.orbs} / ${c.res.orbs}` : `${Math.floor(a.res)} / ${Math.round(resMax)}`;
+    this.set('rest', resTxt, () => (this.resNum.textContent = resTxt));
     const idReady = a.identityReady;
     this.set('idr', (idReady ? 1 : 0) + (a.identityT > 0 ? 2 : 0), () => {
       this.resBar.classList.toggle('ready', idReady);
       this.resBar.classList.toggle('active', a.identityT > 0);
     });
-    // xp
-    const capped = p.level >= a.maxLevel;
-    const xpk = p.xpNext > 0 ? Math.min(1, p.xp / p.xpNext) : 0;
-    this.set('xp', Math.round(xpk * 500), () => (this.xpFill.style.transform = `scaleX(${xpk})`));
-    this.set('xpt', `${p.level}|${capped}|${Math.floor(p.xp)}`, () => {
-      this.xpLv.textContent = String(p.level);
-      this.xpText.textContent = capped ? t('arpg_lv_max', { n: p.level }) : t('arpg_lv', { n: p.level, max: a.maxLevel }) + ` · ${Math.floor(p.xp)} / ${p.xpNext}`;
-    });
+    // level (no cap shown) and experience: the bar and its percentage glide toward the real value
+    this.set('lv', p.level, () => (this.lvNum.textContent = String(p.level)));
+    const xpk = p.xpNext > 0 ? Math.max(0, Math.min(1, p.xp / p.xpNext)) : 0;
+    if (this.xpShown < 0 || p.level !== this.xpLevel) {
+      // first frame or a new level: start from the real value without sweeping backwards
+      this.xpShown = this.xpLevel >= 0 && p.level > this.xpLevel ? 0 : xpk;
+      this.xpLevel = p.level;
+    } else this.xpShown += (xpk - this.xpShown) * (1 - Math.exp(-6 * dt));
+    if (Math.abs(this.xpShown - xpk) < 0.00002) this.xpShown = xpk;
+    const xs = this.xpShown;
+    this.set('xp', Math.round(xs * 4000), () => (this.xpFill.style.transform = `scaleX(${xs})`));
+    const pct = (Math.floor(xs * 10000) / 100).toFixed(2) + '%';
+    this.set('xpt', pct, () => (this.xpText.textContent = pct));
     const kk = this.binds?.skills?.[0] ?? 'KeyK';
-    this.set('skk', kk, () => (this.skKey.textContent = keyName(kk)));
     this.set('pts', a.points + kk, () => {
       this.pointsBox.classList.toggle('hidden', a.points <= 0);
       this.pointsBox.textContent = t('ak_points_hud', { n: a.points, k: keyName(kk) });
@@ -322,15 +318,12 @@ export class ArpgHud {
       const cost = costBadge(a, i);
       this.set('cost' + i, cost, () => (s.cost.textContent = cost));
     }
-    // ultimate (Awakening): round gauge
+    // ultimate (Awakening): the gauge rises inside the slot
     {
       const s = this.slots[SLOT_ULT];
       const locked = p.level < c.ult.unlock;
       const g = Math.max(0, Math.min(100, a.ult));
-      this.set('ultg', Math.floor(g), () => {
-        s.root.style.setProperty('--g', `${(g * 3.6).toFixed(1)}deg`);
-        s.root.style.setProperty('--gk', (g / 100).toFixed(3));
-      });
+      this.set('ultg', Math.floor(g), () => s.root.style.setProperty('--gk', (g / 100).toFixed(3)));
       const cd = a.cds[SLOT_ULT];
       this.cool(s, cd, a.cdMax[SLOT_ULT] || 1);
       this.state(s, locked ? 'locked' : a.ready(SLOT_ULT) ? 'ready' : 'cd');
@@ -356,15 +349,15 @@ export class ArpgHud {
       const n = a.dodgeCharges;
       const rech = n < max ? Math.max(0, c.dodge.cd - a.dodgeT) : 0;
       const k = n < max ? Math.min(1, rech / c.dodge.cd) : 0;
-      this.set('cd10', Math.round(k * 120) + (n > 0 ? 1000 : 0), () => (s.cd.style.background = sweep(k, n > 0 ? 'rgba(8,10,14,0.35)' : 'rgba(8,10,14,0.78)')));
+      this.set('cd10', Math.round(k * 240) + (n > 0 ? 1000 : 0), () => (s.cd.style.background = sweep(k, n > 0 ? 'rgba(6,8,12,0.35)' : 'rgba(6,8,12,0.74)')));
       const tx = n === 0 ? cdText(rech) : '';
       this.set('tm10', tx, () => (s.timer.textContent = tx));
       this.state(s, n > 0 ? 'ready' : 'cd');
       this.fb(s, a);
       this.set('dpips', n * 10 + max, () => {
         clear(s.sub);
-        s.sub.className = 'sk-sub pips';
-        for (let j = 0; j < max; j++) s.sub.append(h('i' + (j < n ? '.on' : '')));
+        s.sub.className = 'bs-sub pips';
+        if (max > 1) for (let j = 0; j < max; j++) s.sub.append(h('i' + (j < n ? '.on' : '')));
       });
     }
     // identity (Z)
@@ -373,7 +366,7 @@ export class ArpgHud {
       const id = c.identity;
       const active = a.identityT > 0;
       const k = active ? Math.min(1, a.identityT / Math.max(0.1, id.dur || 1)) : 1 - rk;
-      this.set('cd11', Math.round(k * 120) + (active ? 1000 : 0), () => (s.cd.style.background = active ? sweep(1 - k, 'rgba(8,10,14,0.55)') : sweep(idReady ? 0 : k, 'rgba(8,10,14,0.6)')));
+      this.set('cd11', Math.round(k * 240) + (active ? 1000 : 0), () => (s.cd.style.background = active ? sweep(1 - k, 'rgba(6,8,12,0.55)') : sweep(idReady ? 0 : k, 'rgba(6,8,12,0.6)')));
       const tx = active ? String(Math.ceil(a.identityT)) : '';
       this.set('tm11', tx, () => (s.timer.textContent = tx));
       this.state(s, active ? 'active' : idReady ? 'ready' : 'nores');
@@ -385,11 +378,14 @@ export class ArpgHud {
       this.state(s, 'ready');
       this.fb(s, a);
     }
-    // keys
+    // keys (from the player's bindings)
     const kb = this.binds;
-    const ks = this.slots.map((s) => (s ? slotKey(kb, s.i) : '')).join('|');
+    const ks = this.slots.map((s) => (s ? slotKey(kb, s.i) : '')).join('|') + '|' + (kb?.attack?.[0] ?? '');
     this.set('keys', ks, () => {
       for (const s of this.slots) if (s) s.key.textContent = slotKey(kb, s.i);
+      const atk = kb?.attack?.[0];
+      // basic attack: the mouse button and the keyboard key bound to it
+      if (atk) this.slots[SLOT_BASIC].key.textContent = `${slotKey(kb, SLOT_BASIC)}/${keyName(atk)}`;
     });
 
     // charge / cast bar
@@ -429,7 +425,7 @@ export class ArpgHud {
 
     // tooltip refresh (cooldowns, gauge) a few times a second
     if (this.tipSlot >= 0) {
-      this.tipT -= 1 / 60;
+      this.tipT -= dt || 1 / 60;
       if (this.tipT <= 0) this.renderTip();
     }
     this.updateHover(run);
@@ -470,10 +466,6 @@ export class ArpgHud {
     });
   }
 
-  colorOf(c: number) {
-    return hex(c);
-  }
-
   /** Tooltip over a slot: name, key, level, numbers, description and tripods. */
   private renderTip() {
     const run = this.lastRun;
@@ -486,11 +478,14 @@ export class ArpgHud {
     if (ty === 'hold' || ty === 'charge')
       rows.splice(1, 0, h('div.sk-hold-note', ty === 'hold' ? L({ ru: '⚠ Зажмите клавишу: умение действует, пока она нажата', en: '⚠ Hold the key: the skill lasts while it is held' }) : L({ ru: '⚠ Зажмите клавишу, чтобы зарядить; отпустите для удара', en: '⚠ Hold the key to charge; release to strike' })));
     this.tip.append(...rows);
+    // the tooltip lives in the scaled bar: convert screen pixels to bar pixels
     const r = this.slots[i].root.getBoundingClientRect();
-    const host = this.root.getBoundingClientRect();
+    const host = this.wrap.getBoundingClientRect();
+    const sc = host.width / Math.max(1, this.wrap.offsetWidth) || 1;
     const half = 150;
-    const x = r.left - host.left + r.width / 2;
-    this.tip.style.left = `${Math.min(host.width + 40 - half, Math.max(half - 40, x))}px`;
+    const x = (r.left - host.left + r.width / 2) / sc;
+    const w = host.width / sc;
+    this.tip.style.left = `${Math.min(w + 40 - half, Math.max(half - 40, x))}px`;
     this.tip.classList.remove('hidden');
   }
 }

@@ -1,5 +1,6 @@
 import { DAY_NIGHT, type DayPeriod, type PhaseLight } from '../config/dayNight';
 import type { Run } from './Run';
+import { DAY_MINUTES, phaseAt, type GameClock } from './GameClock';
 
 function smooth(x: number): number {
   const u = Math.min(1, Math.max(0, x));
@@ -32,81 +33,61 @@ function lerpLight(a: PhaseLight, b: PhaseLight, k: number, out: PhaseLight): Ph
 }
 
 /**
- * Day/night cycle: dawn → day → dusk → night with smooth lighting.
- * Disabled when the cycle length setting is 0.
+ * Day/night lighting driven by the world clock (GameClock): dawn 05–07, day 07–18, dusk 18–20,
+ * night 20–05, blended smoothly. The clock itself is advanced by the game loop; this class only
+ * reads it, so it never changes game speed and keeps the gameplay hooks (period events, `night`).
  */
 export class DayNight {
-  readonly length: number;
-  /** Seconds into the current cycle. */
-  t = 0;
   /** Completed nights (the first night is 1 while it lasts). */
   nights = 0;
   period: DayPeriod = 'day';
+  /** Progress 0..1 through the current period. */
+  phaseK = 0;
   /** 0 full day .. 1 full night, eased through dawn and dusk. */
   night = 0;
   /** Blended lighting for the renderer. */
   readonly light: PhaseLight = { ...DAY_NIGHT.light.day };
-  private bounds: { p: DayPeriod; a: number; b: number }[] = [];
 
-  constructor(private run: Run, length: number) {
-    this.length = Math.max(0, length);
-    let a = 0;
-    for (const [p, share] of DAY_NIGHT.phases) {
-      this.bounds.push({ p, a: a * this.length, b: (a + share) * this.length });
-      a += share;
-    }
-    // runs begin in the morning
-    this.t = this.enabled ? this.bounds.find((b) => b.p === 'day')!.a : 0;
+  constructor(
+    private run: Run,
+    readonly clock: GameClock,
+  ) {
     this.compute();
   }
 
+  /** The cycle always runs (kept for callers that still ask). */
   get enabled(): boolean {
-    return this.length > 0;
+    return true;
   }
 
   get isNight(): boolean {
-    return this.enabled && this.night >= 0.5;
+    return this.night >= 0.5;
   }
 
-  /** Seconds until the next period begins. */
-  get timeToNext(): number {
-    const b = this.bounds.find((x) => this.t >= x.a && this.t < x.b);
-    return b ? b.b - this.t : 0;
+  /** Minutes since midnight. */
+  get minutes(): number {
+    return this.clock.minutes;
   }
 
-  /** Position of the sun (day) or moon (night) across the sky, -1 (rising) .. 1 (setting). */
+  /**
+   * Position of the sun (05:00–20:00) or the moon (20:00–05:00) across the sky, -1 (rising in the
+   * east) .. 1 (setting in the west).
+   */
   get sunArc(): number {
-    if (!this.enabled) return 0;
-    const night = this.bounds.find((b) => b.p === 'night')!;
-    if (this.t >= night.a && this.t < night.b) return ((this.t - night.a) / (night.b - night.a)) * 2 - 1;
-    // dawn..dusk (wrapping past the night)
-    const dayLen = this.length - (night.b - night.a);
-    const since = (this.t - night.b + this.length) % this.length;
-    return Math.min(1, (since / dayLen) * 2 - 1);
-  }
-
-  /** Progress through the whole cycle 0..1 (for the HUD dial). */
-  get cycleProgress(): number {
-    return this.enabled ? this.t / this.length : 0.3;
-  }
-
-  private periodAt(t: number): { p: DayPeriod; a: number; b: number } {
-    for (const b of this.bounds) if (t >= b.a && t < b.b) return b;
-    return this.bounds[this.bounds.length - 1];
+    const m = this.clock.minutes;
+    const rise = 5 * 60;
+    const set = 20 * 60;
+    if (m >= rise && m < set) return ((m - rise) / (set - rise)) * 2 - 1;
+    const since = m >= set ? m - set : m + DAY_MINUTES - set;
+    return (since / (DAY_MINUTES - (set - rise))) * 2 - 1;
   }
 
   private compute() {
-    if (!this.enabled) {
-      this.period = 'day';
-      this.night = 0;
-      Object.assign(this.light, DAY_NIGHT.light.day);
-      return;
-    }
-    const cur = this.periodAt(this.t);
-    this.period = cur.p;
-    const k = (this.t - cur.a) / Math.max(1e-6, cur.b - cur.a);
+    const { p, k } = phaseAt(this.clock.minutes);
+    this.period = p;
+    this.phaseK = k;
     const L = DAY_NIGHT.light;
-    switch (cur.p) {
+    switch (p) {
       case 'day':
         this.night = 0;
         // the last stretch of the day already leans toward dusk
@@ -119,11 +100,12 @@ export class DayNight {
         break;
       case 'night':
         this.night = 1;
+        // the last hour before dawn starts to lighten
         lerpLight(L.night, L.dawn, smooth((k - 0.9) / 0.1) * 0.4, this.light);
         break;
       case 'dawn':
         this.night = 1 - smooth(k);
-        if (k < 0.5) lerpLight(L.night, L.dawn, smooth(0.4 + k * 1.2), this.light);
+        if (k < 0.5) lerpLight(L.night, L.dawn, 0.4 + 0.6 * smooth(k * 2), this.light);
         else lerpLight(L.dawn, L.day, smooth((k - 0.5) * 2), this.light);
         break;
     }
@@ -140,11 +122,9 @@ export class DayNight {
   }
 
   // ---------------------------------------------------------------- update
-  update(dt: number) {
-    if (!this.enabled) return;
+  /** Re-reads the clock (advanced by the game loop) and announces period changes. */
+  update() {
     const prev = this.period;
-    this.t += dt;
-    if (this.t >= this.length) this.t -= this.length;
     this.compute();
     if (this.period !== prev) this.onPeriod(this.period);
   }

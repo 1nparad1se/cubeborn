@@ -81,8 +81,6 @@ export interface Settings {
   showMinimap: boolean;
   showFps: boolean;
   autoPause: boolean;
-  /** Day/night cycle length: 'off' | 'short' | 'normal' | 'long' (see DAY_NIGHT.lengths). */
-  dayNight: string;
   /** Camera distance multiplier (wheel zoom), 0.75 (close) .. 1.35 (far). */
   cameraZoom: number;
   /** Interface scale for the HUD and menus, 0.8 .. 1.3. */
@@ -113,6 +111,8 @@ export interface SaveData {
   activeChar: string | null;
   /** Creatures met in the world (bestiary); empty until creatures exist. */
   bestiary: string[];
+  /** World clock (minutes since midnight and days passed), shared by every map. Absent in older saves. */
+  clock?: { minutes: number; days: number };
 }
 
 const KEY = 'cubeborn.save.v1';
@@ -140,7 +140,6 @@ export function defaultSettings(): Settings {
     showMinimap: true,
     showFps: false,
     autoPause: true,
-    dayNight: 'normal',
     cameraZoom: 1,
     uiScale: 1,
     showHints: true,
@@ -192,6 +191,10 @@ export function migrate(raw: any): SaveData {
     chars,
     activeChar: chars.some((c) => c.id === raw.activeChar) ? raw.activeChar : (chars[0]?.id ?? null),
     bestiary: Array.isArray(raw.bestiary) ? raw.bestiary.filter((x: unknown) => typeof x === 'string') : [],
+    // the world clock arrived within v7: older saves simply start a fresh morning
+    ...(raw.clock && typeof raw.clock === 'object' && Number.isFinite(raw.clock.minutes)
+      ? { clock: { minutes: ((raw.clock.minutes % 1440) + 1440) % 1440, days: Number.isFinite(raw.clock.days) ? Math.max(0, Math.floor(raw.clock.days)) : 0 } }
+      : {}),
   };
 }
 

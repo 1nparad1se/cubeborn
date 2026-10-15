@@ -1,7 +1,7 @@
 /**
  * Day/night cycle configuration (v2.2). Everything that the cycle changes lives here: phase
- * lengths and lighting per phase.
- * The cycle length itself is a player setting (Settings → Gameplay).
+ * lighting per phase. The phases follow the world clock (see game/GameClock.ts):
+ * dawn 05–07, day 07–18, dusk 18–20, night 20–05; 1 real second = 1 game minute.
  */
 
 export type DayPeriod = 'dawn' | 'day' | 'dusk' | 'night';
@@ -26,17 +26,6 @@ export interface PhaseLight {
 }
 
 export const DAY_NIGHT = {
-  /** Cycle length options in seconds (setting); 0 turns the cycle off. */
-  lengths: { off: 0, short: 180, normal: 300, long: 480 } as Record<string, number>,
-  defaultLength: 'normal',
-  /** Share of the cycle each period takes, in order. The run starts at the beginning of `day`. */
-  phases: [
-    ['dawn', 0.1],
-    ['day', 0.42],
-    ['dusk', 0.1],
-    ['night', 0.38],
-  ] as [DayPeriod, number][],
-
   light: {
     // Minecraft Dungeons palette: peachy dawn, warm saturated day, magenta-orange dusk and a
     // deep, rich blue night lit by torches (not a grey, desaturated one)

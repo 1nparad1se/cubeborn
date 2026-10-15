@@ -37,7 +37,7 @@ const SECTIONS: { id: Section; icon: string; ru: string; en: string }[] = [
 const SECTION_KEYS: Record<Section, (keyof Settings)[]> = {
   screen: ['displayMode', 'resolution', 'vsync', 'fpsLimit', 'uiScale'],
   graphics: ['quality', 'shadows', 'effects', 'particles', 'viewDistance', 'antiAliasing', 'textures', 'postProcessing'],
-  game: ['cameraZoom', 'screenShake', 'damageNumbers', 'enemyHealthBars', 'showMinimap', 'showFps', 'showHints', 'dayNight', 'autoPause'],
+  game: ['cameraZoom', 'screenShake', 'damageNumbers', 'enemyHealthBars', 'showMinimap', 'showFps', 'showHints', 'autoPause'],
   audio: ['master', 'music', 'sfx', 'ambient', 'ui'],
   controls: ['keybinds', 'swapMouse', 'invertWheel'],
   other: ['lang'],
@@ -383,12 +383,6 @@ export function settingsPanel(api: MenuApi, rerender: () => void, onBack: () => 
           toggle(tr('Подсказки управления', 'Control hints'), () => st.showHints, (v) => (st.showHints = v), tr('Подсказка по клавишам в начале игры новым персонажем.', 'Key hints when a new character starts.')),
           toggle(tr('Счётчик кадров', 'FPS counter'), () => st.showFps, (v) => (st.showFps = v)),
           group(tr('Мир', 'World')),
-          seg(tr('Смена дня и ночи', 'Day and night'), [
-            { id: 'off', name: off() },
-            { id: 'short', name: tr('Быстро', 'Fast') },
-            { id: 'normal', name: tr('Обычно', 'Normal') },
-            { id: 'long', name: tr('Медленно', 'Slow') },
-          ], () => st.dayNight ?? 'normal', (v) => (st.dayNight = v), tr('Применяется при следующем входе в мир.', 'Applies the next time you enter the world.')),
           toggle(tr('Пауза при сворачивании', 'Pause when the window loses focus'), () => st.autoPause, (v) => (st.autoPause = v)),
         );
         break;

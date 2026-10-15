@@ -1,6 +1,6 @@
 import { installCursors, setCursor } from './ui/cursor';
 import { PROG } from './config/progression';
-import { DAY_NIGHT } from './config/dayNight';
+import { GameClock } from './game/GameClock';
 import { Run } from './game/Run';
 import type { Enemy } from './game/Enemy';
 import { NullFx, type FxSink } from './game/types';
@@ -87,6 +87,8 @@ export class App implements MenuApi {
   private charTime = 0;
   private autosaveT = AUTOSAVE;
   private backdropPaused = false;
+  /** The world's 24-hour clock: shared by every map, advanced only while playing, kept in the save. */
+  readonly clock: GameClock;
 
   constructor(root: HTMLElement) {
     installCursors();
@@ -94,6 +96,7 @@ export class App implements MenuApi {
     root.classList.add('app');
     const s = this.profile.data.settings;
     setLang(s.lang);
+    this.clock = GameClock.fromSave(this.profile.data.clock);
     this.view = h('div.view');
     root.appendChild(this.view);
     this.renderer = new Renderer(this.view, s);
@@ -317,7 +320,8 @@ export class App implements MenuApi {
       map: mapId === SHOWCASE.id ? SHOWCASE : GREENVALE,
       hero,
       fx,
-      settings: { damageNumbers: s.damageNumbers, dayLength: DAY_NIGHT.lengths[s.dayNight] ?? DAY_NIGHT.lengths[DAY_NIGHT.defaultLength] },
+      settings: { damageNumbers: s.damageNumbers },
+      clock: this.clock,
       tr: (k) => t(k),
       char: structuredClone(ch),
     });
@@ -372,6 +376,7 @@ export class App implements MenuApi {
     ch.playTime += Math.round(run.time - this.charTime);
     this.charTime = Math.round(run.time);
     ch.lastPlayed = Date.now();
+    p.data.clock = this.clock.toSave();
     return p.save();
   }
 
@@ -533,6 +538,8 @@ export class App implements MenuApi {
       this.readMouse(run, active);
       const sim = !this.paused && !this.modals.isOpen;
       if (sim) {
+        // the world clock follows real play time (1 s = 1 game minute), whatever the frame rate
+        this.clock.advance(realDt);
         // sub-steps keep collisions stable on slow frames
         const steps = Math.max(1, Math.ceil(dt / (1 / 40)));
         for (let i = 0; i < steps; i++) run.update(dt / steps, ix, iz);
@@ -552,7 +559,7 @@ export class App implements MenuApi {
       const p = run.player;
       const rd = Math.abs(p.x - RIVER.centerX(p.z)) - RIVER.halfWidth(p.z);
       const water = run.map.id !== GREENVALE.id || p.z < RIVER.sourceZ - 4 ? 0 : Math.max(0, 1 - Math.max(0, rd) / 18);
-      audio.setAmbience(!this.paused, 0.5, water, run.dayNight.enabled && run.dayNight.period === 'night', realDt);
+      audio.setAmbience(!this.paused, 0.5, water, run.dayNight.period === 'night', realDt);
     } else {
       audio.setAmbience(false, 0, 0, false, realDt);
     }

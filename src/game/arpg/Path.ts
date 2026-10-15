@@ -1,4 +1,4 @@
-import type { Terrain } from '../Terrain';
+import { SLOPE, type Terrain } from '../Terrain';
 
 /**
  * Click-to-move pathfinding: A* over terrain cells (8 directions, no corner cutting), then
@@ -68,9 +68,19 @@ function walkable(t: Terrain, cx: number, cz: number): boolean {
   return t.inBounds(cx, cz) && !t.blocksWalker(cx, cz);
 }
 
-/** Moving from a cell at height `from` into (cx, cz): walkable, at most one block up (any drop is fine). */
+/**
+ * Moving from cell `from` (index) into (cx, cz): walkable ground joins them (a slope no steeper
+ * than the walking limit, no rock face), or the step drops off a ledge (falls are fine).
+ */
 function enter(t: Terrain, from: number, cx: number, cz: number): boolean {
-  return walkable(t, cx, cz) && t.elev[cz * t.size + cx] <= from + 1;
+  if (!walkable(t, cx, cz)) return false;
+  const j = cz * t.size + cx;
+  if (j === from) return true;
+  const fx = from % t.size;
+  const fz = (from / t.size) | 0;
+  if (Math.abs(fx - cx) > 1 || Math.abs(fz - cz) > 1) return false;
+  if (t.passable(from, j)) return true;
+  return t.centerY(j) < t.centerY(from) - SLOPE.lip;
 }
 
 /** True when a body of radius r can walk straight from a to b. */
@@ -79,8 +89,10 @@ export function clearLine(t: Terrain, ax: number, az: number, bx: number, bz: nu
   const steps = Math.max(1, Math.ceil(d / 0.25));
   const nx = d > 0 ? -(bz - az) / d : 0;
   const nz = d > 0 ? (bx - ax) / d : 0;
-  let ha = t.elevAt(ax, az);
-  let hb = ha;
+  const n = t.size;
+  // each side of the body tracks the cell it is in
+  let ca = Math.floor(az + nz * r) * n + Math.floor(ax + nx * r);
+  let cb = Math.floor(az - nz * r) * n + Math.floor(ax - nx * r);
   for (let i = 0; i <= steps; i++) {
     const u = i / steps;
     const x = ax + (bx - ax) * u;
@@ -89,9 +101,10 @@ export function clearLine(t: Terrain, ax: number, az: number, bx: number, bz: nu
     const z1 = Math.floor(z + nz * r);
     const x2 = Math.floor(x - nx * r);
     const z2 = Math.floor(z - nz * r);
-    if (!enter(t, ha, x1, z1) || !enter(t, hb, x2, z2)) return false;
-    ha = t.elev[z1 * t.size + x1];
-    hb = t.elev[z2 * t.size + x2];
+    if (!t.inBounds(x1, z1) || !t.inBounds(x2, z2)) return false;
+    if (!enter(t, ca, x1, z1) || !enter(t, cb, x2, z2)) return false;
+    ca = z1 * n + x1;
+    cb = z2 * n + x2;
   }
   return true;
 }
@@ -177,7 +190,7 @@ export function findPath(t: Terrain, sx: number, sz: number, tx: number, tz: num
     for (let k = 0; k < 8; k++) {
       const nx = cx + DX[k];
       const nz = cz + DZ[k];
-      const here = t.elev[cur];
+      const here = cur;
       if (!enter(t, here, nx, nz)) continue;
       // no squeezing diagonally past a corner
       if (k >= 4 && (!enter(t, here, cx + DX[k], cz) || !enter(t, here, cx, cz + DZ[k]))) continue;

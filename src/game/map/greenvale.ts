@@ -162,31 +162,38 @@ function heightmap(n: number, water: Float32Array, noTree: Uint8Array): Uint8Arr
   return H;
 }
 
-/** Cells reachable from the spawn on foot (steps of one block up or down). */
-function reachable(t: Terrain): Uint8Array {
-  const n = t.size;
-  const seen = new Uint8Array(n * n);
-  const q = new Int32Array(n * n);
-  let qh = 0;
-  let qt = 0;
-  const s = Math.floor(SPAWN.z) * n + Math.floor(SPAWN.x);
-  seen[s] = 1;
-  q[qt++] = s;
-  while (qh < qt) {
-    const i = q[qh++];
-    const x = i % n;
-    const z = (i / n) | 0;
-    for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-      const nx = x + dx;
-      const nz = z + dz;
-      if (nx < 0 || nz < 0 || nx >= n || nz >= n) continue;
-      const j = nz * n + nx;
-      if (seen[j] || t.blocksWalker(nx, nz) || Math.abs(t.elev[j] - t.elev[i]) > 1) continue;
-      seen[j] = 1;
-      q[qt++] = j;
+/**
+ * Rolling hills laid over the block tiers (world units, per cell): broad swells and ridges
+ * several blocks high with valleys between, flat at the spawn meadow and sinking to the water's
+ * level along the river and lakes; every creature camp gets a level pad at the height of the
+ * hillside it stands on. Gradients stay mostly under ~30°.
+ */
+function rollingHills(n: number, water: Float32Array, pads: { x: number; z: number; r: number }[]): Float32Array {
+  const R = (x: number, z: number) => {
+    const broad = fbm(x / 46, z / 46, SEED + 71);
+    const mid = noise(x / 19, z / 19, SEED + 73);
+    // ridges: a folded noise gives long crests between valleys
+    const ridge = 1 - Math.abs(noise(x / 31, z / 31, SEED + 77) * 2 - 1);
+    return Math.max(0, broad - 0.3) * 9 + ridge * ridge * 3.2 + (mid - 0.5) * 1.6;
+  };
+  const out = new Float32Array(n * n);
+  for (let z = 0; z < n; z++)
+    for (let x = 0; x < n; x++) {
+      const ds = Math.hypot(x - SPAWN.x, z - SPAWN.z);
+      const calm = smooth01((ds - 24) / 30) * smooth01((water[z * n + x] - 3) / 16);
+      let h = R(x, z) * calm;
+      for (const p of pads) {
+        const d = Math.hypot(x - p.x, z - p.z);
+        if (d > p.r + 10) continue;
+        // the pad keeps the hillside height at its centre; the slope meets it gradually
+        const dc = Math.hypot(p.x - SPAWN.x, p.z - SPAWN.z);
+        const wc = Math.floor(p.z) * n + Math.floor(p.x);
+        const hc = R(p.x, p.z) * smooth01((dc - 24) / 30) * smooth01((water[wc] - 3) / 16);
+        h = hc + (h - hc) * smooth01((d - p.r) / 10);
+      }
+      out[z * n + x] = h;
     }
-  }
-  return seen;
+  return out;
 }
 
 /** A small camp by the spawn meadow showing the world prop library (lights and cargo). */
@@ -258,8 +265,15 @@ export function buildGreenvale(map: MapDef): Terrain {
       else if (w <= 2.6 + hash2(x, z, 5) * 0.8) t.setTile(x, z, 'bank');
       else t.setTile(x, z, fbm(x / 11, z / 11, SEED) > 0.62 ? 'grass2' : 'grass');
     }
+  // the block tiers become a continuous sloped surface (cliffs stay where tiers jump two or more);
+  // a first pass finds the reachable ground and the creature camps (laid out on the block tiers,
+  // as before), then rolling hills are laid over the country with level pads under every camp
+  t.buildSurface({ iters: 7 });
+  t.reach = t.computeReach(SPAWN.x, SPAWN.z);
+  const pads = buildCamps(t).map((c) => ({ x: c.x, z: c.z, r: 5 }));
+  t.buildSurface({ relief: rollingHills(n, water, pads), iters: 6 });
   placeSpawnProps(t);
-  t.reach = reachable(t);
+  t.reach = t.computeReach(SPAWN.x, SPAWN.z);
 
   // trees: groves from noise plus lone trees, never closer than a few cells, with open lanes
   const placed: TreeInst[] = [];
@@ -300,7 +314,7 @@ export function buildGreenvale(map: MapDef): Terrain {
     placeProp(t, id, tr.x + 0.5, tr.z + 0.5, { variant: tr.v % 3, yaw: (hash2(tr.x, tr.z, 92) - 0.5) * 0.6 });
   }
   scatterUndergrowth(t, water, noTree);
-  placeGreenvaleCamps(t);
+  placeGreenvaleCamps(t, noTree);
   return t;
 }
 
@@ -336,7 +350,7 @@ function scatterUndergrowth(t: Terrain, water: Float32Array, noTree: Uint8Array)
  * open, reachable ground well clear of every creature camp, so the creature layout (buildCamps on
  * the finished terrain) and the walkable area stay exactly as before.
  */
-function placeGreenvaleCamps(t: Terrain) {
+function placeGreenvaleCamps(t: Terrain, noTree: Uint8Array) {
   const n = t.size;
   const mobs = buildCamps(t);
   const half: Record<CampSize, number> = { small: 4, medium: 6, large: 8 };
@@ -370,6 +384,18 @@ function placeGreenvaleCamps(t: Terrain) {
         const x = Math.round(ax + Math.cos(a) * r);
         const z = Math.round(az + Math.sin(a) * r);
         if (!fits(x, z, size)) continue;
+        // a level pad on the hillside first, so the whole camp stands on one floor
+        const h = half[size] + 1;
+        const cells: number[] = [];
+        let sum = 0;
+        for (let dz = -h; dz <= h; dz++)
+          for (let dx = -h; dx <= h; dx++) {
+            const i = (z + dz) * n + x + dx;
+            if (t.cell[i] === CELL.liquid || Math.abs(t.elev[i] - t.elev[z * n + x]) > 1) continue;
+            cells.push(i);
+            sum += t.centerY(i);
+          }
+        if (cells.length) t.flattenPad(cells, sum / cells.length);
         placeCamp(t, kind, size, x, z, seed);
         return true;
       }
@@ -381,6 +407,84 @@ function placeGreenvaleCamps(t: Terrain) {
   const raider = by('desert_raider');
   if (raider) near('bandit', 'medium', raider.x, raider.z, 12);
   near('abandoned', 'small', SPAWN.x - 34, SPAWN.z + 18, 13, 0, 30);
+  placeOutcrops(t, mobs, noTree);
+  placeRetainingWalls(t, mobs, noTree);
+  dressSlopes(t, noTree);
+}
+
+/**
+ * Stone outcrops and mossy boulders breaking through the hillsides (like the stone faces of the
+ * references): on tilted ground, away from the meadow, the paths and every creature camp (they
+ * only take cells away, so the camp layout stays exactly the same).
+ */
+function placeOutcrops(t: Terrain, mobs: { x: number; z: number }[], noTree: Uint8Array) {
+  const n = t.size;
+  const rng = new Rng(SEED + 17);
+  const ids = ['rock_mossy', 'rock_low', 'rock_mid', 'rock_low'];
+  let made = 0;
+  for (let k = 0; k < 20000 && made < 70; k++) {
+    const x = rng.int(RIM + 4, n - RIM - 6);
+    const z = rng.int(RIM + 4, n - RIM - 6);
+    if (Math.hypot(x - SPAWN.x, z - SPAWN.z) < 26) continue;
+    const [gx, gz] = t.slopeAt(x + 1, z + 1);
+    const g = Math.hypot(gx, gz);
+    if (g < 0.22 || g > 0.7) continue;
+    if (!t.areaFree(x, z, 2) || noTree[z * n + x] || (t.reach && !t.reach[z * n + x])) continue;
+    if (mobs.some((m) => Math.max(Math.abs(m.x - x), Math.abs(m.z - z)) < 10)) continue;
+    const r = hash2(x, z, 404);
+    placeProp(t, ids[Math.floor(r * ids.length)], x + 1, z + 1, { variant: rng.int(0, 2), yaw: (rng.next() - 0.5) * 0.6, ifFree: true });
+    made++;
+  }
+}
+
+/**
+ * Low stone retaining walls on the hillsides (as on the references): short runs of stone blocks
+ * along the contour of a slope, with a step block at one end. Clear of paths and camps.
+ */
+function placeRetainingWalls(t: Terrain, mobs: { x: number; z: number }[], noTree: Uint8Array) {
+  const n = t.size;
+  const rng = new Rng(SEED + 23);
+  let made = 0;
+  for (let k = 0; k < 30000 && made < 55; k++) {
+    const x = rng.int(RIM + 6, n - RIM - 8);
+    const z = rng.int(RIM + 6, n - RIM - 8);
+    if (Math.hypot(x - SPAWN.x, z - SPAWN.z) < 28) continue;
+    const [gx, gz] = t.slopeAt(x + 0.5, z + 0.5);
+    const g = Math.hypot(gx, gz);
+    if (g < 0.28 || g > 0.62) continue;
+    if (mobs.some((m) => Math.max(Math.abs(m.x - x), Math.abs(m.z - z)) < 11)) continue;
+    // along the contour: the axis closest to perpendicular to the slope
+    const alongX = Math.abs(gx) < Math.abs(gz);
+    const len = rng.int(3, 6);
+    const cells: [number, number][] = [];
+    for (let j = 0; j < len; j++) cells.push(alongX ? [x + j, z] : [x, z + j]);
+    const ok = cells.every(([cx, cz]) => t.areaFree(cx, cz, 1) && !noTree[cz * n + cx] && (!t.reach || t.reach[cz * n + cx]));
+    if (!ok) continue;
+    cells.forEach(([cx, cz], j) => {
+      const id = j === len - 1 && rng.chance(0.6) ? 'rock_step' : 'rock_block';
+      placeProp(t, id, cx + 0.5, cz + 0.5, { variant: [0, 5, 6, 7, 0][rng.int(0, 4)], rot: alongX ? 0 : 1 });
+    });
+    made++;
+  }
+}
+
+/** Bushes, flowers and tall grass dotted over the hillsides beyond the meadow (decoration). */
+function dressSlopes(t: Terrain, noTree: Uint8Array) {
+  const n = t.size;
+  const rng = new Rng(SEED + 29);
+  const ids = ['bush_low', 'bush_mid', 'bush_flower', 'flowers_white', 'flowers_yellow', 'flowers_red', 'flowers_purple', 'grass_tall', 'fern'];
+  let made = 0;
+  for (let k = 0; k < 20000 && made < 320; k++) {
+    const x = rng.int(RIM + 2, n - RIM - 3);
+    const z = rng.int(RIM + 2, n - RIM - 3);
+    const d = Math.hypot(x - SPAWN.x, z - SPAWN.z);
+    if (d < 30 || d > 120) continue;
+    const [gx, gz] = t.slopeAt(x + 0.5, z + 0.5);
+    if (Math.hypot(gx, gz) < 0.12) continue;
+    if (!t.isFree(x, z) || noTree[z * n + x] || t.elev[z * n + x] >= 8) continue;
+    placeProp(t, ids[rng.int(0, ids.length - 1)], x + 0.5, z + 0.5, { variant: rng.int(0, 2), yaw: rng.next() * 6.28, noCollide: true });
+    made++;
+  }
 }
 
 /** A small grass clearing for the menu backdrop (the campfire stands in the middle). */

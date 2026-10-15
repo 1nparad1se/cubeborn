@@ -1,6 +1,7 @@
 import { PROG } from '../config/progression';
 import type { CharSave } from '../meta/Characters';
 import { DayNight } from './DayNight';
+import { GameClock } from './GameClock';
 import type { DayPeriod } from '../config/dayNight';
 import { EventBus } from '../core/EventBus';
 import { Rng } from '../core/Rng';
@@ -36,7 +37,9 @@ export interface RunOptions {
   map: MapDef;
   hero: HeroDef;
   fx: FxSink;
-  settings: { damageNumbers: boolean; dayLength?: number };
+  settings: { damageNumbers: boolean };
+  /** The world clock (shared by every map, advanced by the game loop); a fresh one when absent. */
+  clock?: GameClock;
   tr: (key: string) => string;
   /** The character played: level, experience, skills, position (a copy; App writes results back). */
   char?: CharSave | null;
@@ -79,7 +82,7 @@ export class Run {
   /** Action combat: class skills, combos, resource, Identity, Ultimate, summons; and the frame's controls. */
   readonly action: ActionSystem;
   readonly ctl = makeControls();
-  readonly settings: { damageNumbers: boolean; dayLength?: number };
+  readonly settings: { damageNumbers: boolean };
   readonly dayNight: DayNight;
   readonly tr: (key: string) => string;
   readonly weather = { darkness: 0 };
@@ -99,7 +102,7 @@ export class Run {
     this.fx = o.fx;
     this.settings = o.settings;
     this.tr = o.tr;
-    this.dayNight = new DayNight(this, o.settings.dayLength ?? 0);
+    this.dayNight = new DayNight(this, o.clock ?? new GameClock());
     this.vfx = new Vfx(this);
     this.terrain = worldTerrain(o.map);
     const ch = o.char ?? null;
@@ -154,7 +157,7 @@ export class Run {
     this.ctl.click = false;
     this.ctl.dodge = false;
     this.ctl.identity = false;
-    this.dayNight.update(dt);
+    this.dayNight.update();
     if (this.timers.length) {
       const now = this.time;
       const due = this.timers.filter((t) => t.t <= now);
