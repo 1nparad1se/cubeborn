@@ -2,6 +2,7 @@
 // ?hero=berserker&anim=idle&t=0.6&views=front,angle,left,back,right,game&w=1800&h=640
 import * as THREE from 'three';
 import { ALL_RIGS } from './rigsList';
+import { berserkerSculptRig } from '../../src/models/classRigs/berserkerSculpt';
 import { HeroRig } from '../../src/render/rig/HeroRig';
 import { HeroAnimator } from '../../src/render/rig/Animator';
 import { makeHeroTexture } from '../../src/render/Textures';
@@ -38,7 +39,7 @@ views.forEach((v, i) => {
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = true;
   scene.add(floor);
-  const base = ALL_RIGS[id];
+  const base = id === 'berserker_sculpt' ? berserkerSculptRig() : ALL_RIGS[id];
   const st = q.get('stance');
   const def = st || q.get('noik') ? { ...base, anim: { ...base.anim, stance: st ? JSON.parse(st) : base.anim.stance, twoHand: q.get('noik') ? undefined : base.anim.twoHand } } : base;
   const rig = new HeroRig(def, tex, { shadows: true });

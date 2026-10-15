@@ -41,6 +41,8 @@ export interface RigPart {
    * atlas. Its size comes from the skin box (`d` is ignored) and `c` tints it (use 0xffffff).
    */
   sk?: SkinRef;
+  /** Prebuilt triangles in bone space (voxel sculpts): positions, normals, colours, glow per vertex. */
+  raw?: { pos: number[]; nor: number[]; col: number[]; glow: number[] };
 }
 
 const tmpC = new THREE.Color();
@@ -82,6 +84,18 @@ export class GeoSink {
  * brighter on up-facing faces, which reads as hand-painted shading from the game camera.
  */
 export function addPart(sink: GeoSink, part: RigPart, scale: number, atlas?: SkinAtlas | null) {
+  if (part.raw) {
+    const r = part.raw;
+    for (let i = 0; i < r.pos.length; i += 3) {
+      sink.pos.push(r.pos[i] * scale, r.pos[i + 1] * scale, r.pos[i + 2] * scale);
+      sink.nor.push(r.nor[i], r.nor[i + 1], r.nor[i + 2]);
+      sink.col.push(r.col[i], r.col[i + 1], r.col[i + 2]);
+      if (atlas) sink.uv.push(atlas.white[0], atlas.white[1]);
+      else sink.uv.push(0.02, 0.02);
+    }
+    for (const g of r.glow) sink.glow.push(g);
+    return;
+  }
   if (part.sk && atlas) {
     addSkinPart(sink, part, part.sk, scale, atlas);
     return;
