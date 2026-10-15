@@ -600,7 +600,7 @@ export class Menus {
       detail.append(
         h('div.mb-stage', view.canvas, h('small.mb-hint', tr('Потяните, чтобы повернуть', 'Drag to rotate'))),
         h('h3.mb-name', L(x.name)),
-        h('div.mb-meta', catDef ? h('span.mb-tag', glyph(catDef.icon), L(catDef.name)) : '', x.preview && !seen.has(x.id) ? h('span.mb-tag.mb-preview', tr('Пока не встречается в мире', 'Not found in the world yet')) : ''),
+        h('div.mb-meta', catDef ? h('span.mb-tag', glyph(catDef.icon), L(catDef.name)) : '', x.preview && !seen.has(x.id) ? h('span.mb-tag.mb-preview', tr('Ещё не встречено', 'Not met yet')) : ''),
       );
     };
     const render = () => {

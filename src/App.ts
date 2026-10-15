@@ -16,6 +16,7 @@ import { RunModals } from './ui/RunModals';
 import { h } from './ui/dom';
 import { t, L, setLang } from './i18n';
 import { HERO_BY_ID } from './data/heroes';
+import { CREATURES } from './data/bestiary';
 import { GREENVALE } from './data/maps';
 import { buildMenuGround, RIVER } from './game/map/greenvale';
 import { tr } from './ui/ClassPreview';
@@ -333,6 +334,15 @@ export class App implements MenuApi {
     this.input.setEnabled(true);
     this.mode = 'run';
     run.events.on('banner', (key) => this.hud.showBanner(t(key), key === 'dn_dawn' ? '#ffd08a' : '#9ab8ff'));
+    run.events.on('meet', (id) => {
+      // a creature met in the world opens its bestiary entry
+      const seen = this.profile.data.bestiary;
+      if (seen.includes(id)) return;
+      seen.push(id);
+      this.profile.saveSoon();
+      const c = CREATURES.find((x) => x.id === id);
+      if (c) this.toast(`${tr('Бестиарий', 'Bestiary')}: ${L(c.name)}`, '#ffd23d');
+    });
     run.events.on('respawn', () => {
       this.renderer.snapTo(run.player.x, run.player.z);
       this.hud.showBanner(tr('Вы пришли в себя', 'You come to'), '#ffffff', 2);

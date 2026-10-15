@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import type { Run } from '../game/Run';
+import { getLang } from '../i18n';
 
 interface Num {
   x: number;
@@ -15,6 +16,8 @@ interface Num {
 }
 
 const v = new THREE.Vector3();
+/** Creature name plates are shown within this distance of the hero. */
+const LABEL_R = 13;
 
 function hex(c: number): string {
   return '#' + c.toString(16).padStart(6, '0');
@@ -102,9 +105,23 @@ export class Overlay {
       let drawn = 0;
       for (const e of run.enemies.list) {
         if (!e.active || e.dying > 0 || drawn > 160) continue;
-        if (!all && e.hp >= e.maxHp) continue;
-        if ((e.x - px) ** 2 + (e.z - pz) ** 2 > 30 * 30) continue;
-        if (!this.project(camera, e.x, 1.2 + e.scale * 1.4, e.z)) continue;
+        const d2 = (e.x - px) ** 2 + (e.z - pz) ** 2;
+        // named world creatures always show their name, level and health up close
+        const named = !!e.name && d2 < LABEL_R * LABEL_R;
+        if (!all && !named && e.hp >= e.maxHp) continue;
+        if (d2 > 30 * 30) continue;
+        if (!this.project(camera, e.x, 1.2 + e.scale * 1.4 + e.y, e.z)) continue;
+        if (named) {
+          const diff = e.level - run.player.level;
+          ctx.font = '600 11px "Russo One", sans-serif';
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+          const label = `${getLang() === 'ru' ? 'Ур.' : 'Lv'} ${e.level} ${e.name}`;
+          ctx.strokeText(label, v.x, v.y - 8);
+          // level colour against the hero: grey easy, white even, yellow/red tough
+          ctx.fillStyle = diff <= -5 ? '#a8b0b8' : diff < 3 ? '#ffffff' : diff < 6 ? '#ffd040' : '#ff5a4a';
+          ctx.fillText(label, v.x, v.y - 8);
+        }
         const bw = 22;
         const sx = Math.round(v.x - bw / 2);
         const sy = Math.round(v.y);

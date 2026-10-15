@@ -10,6 +10,7 @@ import { Combat } from './Combat';
 import { Effects } from './Effects';
 import { EnemyManager } from './EnemyManager';
 import { Player } from './Player';
+import { MobWorld } from './MobWorld';
 import { Projectiles } from './Projectiles';
 import { RunStats } from './RunStats';
 import { resolveStats, sumMods } from './Stats';
@@ -26,6 +27,8 @@ export interface RunEvents extends Record<string, unknown> {
   dayPeriod: DayPeriod;
   /** The hero fell and came back at the spawn point. */
   respawn: void;
+  /** A bestiary creature was met (aggro or kill): its id. */
+  meet: string;
 }
 
 export interface RunOptions {
@@ -57,6 +60,8 @@ export class Run {
   readonly player: Player;
   /** Combat targets (the world has no creatures yet; skills hit whatever is placed here). */
   readonly enemies: EnemyManager;
+  /** The creatures of the map: camps, AI and respawn. */
+  readonly mobs: MobWorld;
   readonly projectiles: Projectiles;
   readonly allies: Allies;
   readonly effects = new Effects();
@@ -106,6 +111,8 @@ export class Run {
     this.projectiles = new Projectiles(this);
     this.allies = new Allies(this);
     this.combat = new Combat(this);
+    this.mobs = new MobWorld(this);
+    this.mobs.onMeet = (id) => this.events.emit('meet', id);
   }
 
   /** Recomputes player stats from the class and its skills. */
@@ -146,6 +153,7 @@ export class Run {
       }
     }
     this.vfx.update(dt);
+    this.mobs.update(dt);
     this.enemies.update(dt);
     this.projectiles.update(dt);
     this.allies.update(dt);

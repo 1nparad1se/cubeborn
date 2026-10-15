@@ -1,5 +1,6 @@
 import type { RigPart, V3 } from '../../render/rig/shapes';
-import { bk, jr, type BlockOpts } from '../classRigs/blockKit';
+export type { V3 };
+import { bc, bk, jr, type BlockOpts } from '../classRigs/blockKit';
 
 /**
  * Creature models for the bestiary. Like the hero class models they are built from many small
@@ -103,6 +104,41 @@ export class MobBuilder {
           p = [x0 - out, ly - h / 2, lz2 - w / 2, x0 + 0.2, ly + h / 2, lz2 + w / 2];
       }
       this.parts.push(bk(bone, p[0], p[1], p[2], p[3], p[4], p[5], c, { bv: 0.06, g: o.g }));
+    }
+  }
+
+  /** A w x h block running from point a to point b (voxels), turned to follow the segment (legs, branches, poles). */
+  seg(bone: string, a: V3, b: V3, w: number, h: number, c: number, o: BlockOpts = {}) {
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const dz = b[2] - a[2];
+    const len = Math.hypot(dx, dy, dz);
+    const yaw = (Math.atan2(-dz, dx) * 180) / Math.PI;
+    const pitch = (Math.atan2(dy, Math.hypot(dx, dz)) * 180) / Math.PI;
+    this.parts.push(bc(bone, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2, len, h, w, c, { ...o, r: [0, yaw, pitch] }));
+  }
+
+  /** A pointed crystal / spike / horn from base to tip: three stacked segments narrowing to the tip. */
+  crystal(bone: string, base: V3, tip: V3, w: number, colors: number[], g = false) {
+    const at = (t: number): V3 => [base[0] + (tip[0] - base[0]) * t, base[1] + (tip[1] - base[1]) * t, base[2] + (tip[2] - base[2]) * t];
+    const steps: [number, number, number][] = [
+      [0, 0.55, 1],
+      [0.45, 0.85, 0.66],
+      [0.78, 1, 0.34],
+    ];
+    steps.forEach(([t0, t1, k], i) => this.seg(bone, at(t0), at(t1), w * k, w * k, colors[i % colors.length], { bv: 0.06, g }));
+  }
+
+  /** Small knobbly blocks scattered along the segment a..b (bark, moss, ice on a limb). */
+  segSpeck(bone: string, a: V3, b: V3, rad: number, colors: number[], n: number, seed: number, size = 1, g = false) {
+    for (let i = 0; i < n; i++) {
+      const t = (i + 0.5) / n;
+      const ox = (jr(seed + i * 1.7) - 0.5) * 2 * rad;
+      const oy = (jr(seed * 2.1 + i * 2.3) - 0.5) * 2 * rad;
+      const oz = (jr(seed * 3.7 + i * 0.9) - 0.5) * 2 * rad;
+      const s = size * (0.6 + jr(seed + i * 4.4) * 0.7);
+      const c = colors[Math.floor(jr(seed * 5.3 + i * 3.1) * colors.length) % colors.length];
+      this.parts.push(bc(bone, a[0] + (b[0] - a[0]) * t + ox, a[1] + (b[1] - a[1]) * t + oy, a[2] + (b[2] - a[2]) * t + oz, s, s, s, c, { bv: 0.06, g }));
     }
   }
 

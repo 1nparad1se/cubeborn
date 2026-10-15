@@ -16,6 +16,8 @@ import { makeCreatureTexture, makeHeroTexture } from './Textures';
 import { ActionFxRenderer } from './ActionFxRenderer';
 import { getSkinMaterial, packAnim, skinOf } from './creatureSkins';
 import { SUMMON_MODELS } from '../models/summons';
+import { MobRenderer } from './MobRenderer';
+import { MobWorld } from '../game/MobWorld';
 
 const TAU = Math.PI * 2;
 
@@ -68,6 +70,7 @@ export class EntityRenderer {
   private actAnim = 0;
   private actFx: ActionFxRenderer;
   private stealthA = 1;
+  private mobs: MobRenderer;
 
   constructor(
     scene: THREE.Scene,
@@ -114,6 +117,7 @@ export class EntityRenderer {
     for (const b of [this.glowBox, this.glowDisc, this.glowRing, this.glowRingThin, this.glowPlane]) b.mesh.renderOrder = 5;
     this.glowBoxTop.mesh.renderOrder = 6;
     this.actFx = new ActionFxRenderer(run, this, lights);
+    this.mobs = new MobRenderer(this.group, run, this.shadows, this.glowBoxTop, quality === 'high');
   }
 
   private batchesFor(id: string, model: VoxelModel | undefined, frames: number): ModelBatches | null {
@@ -151,6 +155,7 @@ export class EntityRenderer {
 
     this.drawHero(dt, time);
     this.drawEnemies(time, visible);
+    this.mobs.update(dt, time, camX, camZ);
     this.drawAllies(visible);
     this.drawProjectiles(time, visible);
     this.drawEffects(time);
@@ -288,7 +293,7 @@ export class EntityRenderer {
   private drawEnemies(time: number, visible: (x: number, z: number) => boolean) {
     const run = this.run;
     for (const e of run.enemies.list) {
-      if (!e.active) continue;
+      if (!e.active || MobWorld.isMob(e)) continue;
       if (!visible(e.x, e.z)) continue;
       const def = e.def;
       const frames = 2;
@@ -675,6 +680,7 @@ export class EntityRenderer {
 
   dispose() {
     for (const b of this.models.values()) for (const f of b.frames) f.dispose();
+    this.mobs.dispose();
     this.hero?.dispose();
     this.rig?.dispose();
     this.heroTex?.dispose();

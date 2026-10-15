@@ -173,6 +173,18 @@ export class Minimap {
       ctx.fillStyle = fill;
       ctx.fill();
     };
+    // creatures: small red dots (brighter when hunting the hero)
+    const span = this.big ? 1e9 : (LOCAL_SPAN * 0.75) ** 2;
+    const r = (this.big ? 1.6 : 2.2) * dpr;
+    for (const e of run.enemies.list) {
+      if (!e.alive || (e.x - p.x) ** 2 + (e.z - p.z) ** 2 > span) continue;
+      const [ex, ey] = toScreen(e.x, e.z);
+      if (ex < -4 || ey < -4 || ex > cw + 4 || ey > ch + 4) continue;
+      ctx.fillStyle = 'rgba(0,0,0,0.8)';
+      ctx.fillRect(ex - r - dpr, ey - r - dpr, (r + dpr) * 2, (r + dpr) * 2);
+      ctx.fillStyle = run.mobs.mobOf(e)?.state === 'chase' ? '#ff5040' : '#c8504a';
+      ctx.fillRect(ex - r, ey - r, r * 2, r * 2);
+    }
     // the hero: a gold diamond with a small white pointer in the facing direction
     const [hx, hy] = toScreen(p.x, p.z);
     const a = Math.atan2(p.fz, p.fx) + yaw;

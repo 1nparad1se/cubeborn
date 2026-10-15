@@ -80,6 +80,47 @@ export class MobRig {
     }
   }
 
+  /**
+   * World pose: the idle loop plus procedural locomotion and actions, for any skeleton. Legs
+   * (bones named leg*) swing in alternating pairs with the shins bending, arms swing against the
+   * legs, wings flap, the body bobs; `attack` (0..1) winds the weapon arm and leans the body in,
+   * `hit` (0..1) jerks it back, `flash` lights the creature white.
+   */
+  pose(t: number, m: { walk: number; move: number; attack: number; hit: number; flash: number; flap: boolean }) {
+    this.update(t);
+    const mv = m.move;
+    const w = m.walk;
+    for (const [id, g] of this.bones) {
+      const side = id.endsWith('L') ? 1 : id.endsWith('R') ? -1 : 0;
+      if (id.startsWith('leg')) {
+        // pairs: front/back legs of quadrupeds and numbered spider legs alternate
+        const n = parseInt(id.slice(3), 10);
+        const alt = id.includes('B') ? -1 : !Number.isNaN(n) && n % 2 ? -1 : 1;
+        g.rotation.x += Math.sin(w + (side * alt < 0 ? Math.PI : 0)) * 0.5 * mv;
+      } else if (id.startsWith('shin')) {
+        g.rotation.x += Math.max(0, Math.sin(w + (side < 0 ? 0 : Math.PI))) * 0.55 * mv;
+      } else if (id.startsWith('arm')) {
+        g.rotation.x += Math.sin(w + (side > 0 ? 0 : Math.PI)) * 0.4 * mv;
+      } else if (id.startsWith('wing') && m.flap) {
+        g.rotation.z += Math.sin(t * 13) * 0.55 * side;
+      }
+    }
+    const a = m.attack;
+    if (a > 0) {
+      const arm = this.bones.get('armR') ?? this.bones.get('armL');
+      if (arm) arm.rotation.x -= 2.1 * a;
+      const fore = this.bones.get('foreR');
+      if (fore) fore.rotation.x -= 0.6 * a;
+      const head = this.bones.get('head');
+      if (head && !arm) head.rotation.x += 0.45 * a;
+    }
+    const body = this.bones.get('chest') ?? this.bones.get('body');
+    if (body) body.rotation.x += 0.25 * a - 0.3 * m.hit;
+    const base = this.bones.get('root') ?? this.bones.get('hips') ?? this.bones.get('body');
+    if (base) base.position.y += Math.abs(Math.sin(w)) * 0.06 * mv;
+    this.material.emissive.setScalar(m.flash);
+  }
+
   dispose() {
     for (const g of this.geometries) g.dispose();
     this.material.dispose();
