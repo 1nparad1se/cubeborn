@@ -1,5 +1,6 @@
 import type { HeroRigDef } from '../../render/rig/HeroRig';
-import type { RigPart, V3 } from '../../render/rig/shapes';
+import type { RigPart } from '../../render/rig/shapes';
+import { bk, jr } from './blockKit';
 import { GRIP, MC_POS_SCALE, MC_SCALE, mcProps, pixelItem } from './mcKit';
 
 /**
@@ -40,22 +41,6 @@ const SPX = 1.0;
 export const BERSERKER_HILT: [number, number, number] = [0, 0, -3.4 * SPX];
 
 type Side = 'L' | 'R';
-const BV = 0.18;
-
-/** Block from corner (x0, y0, z0) to (x1, y1, z1) in bone space, softly bevelled. */
-function bk(b: string, x0: number, y0: number, z0: number, x1: number, y1: number, z1: number, c: number, o: { r?: V3; g?: boolean; flat?: boolean; bv?: number } = {}): RigPart {
-  const w = Math.abs(x1 - x0);
-  const h = Math.abs(y1 - y0);
-  const d = Math.abs(z1 - z0);
-  const bv = Math.min(o.bv ?? BV, w / 3, h / 3, d / 3);
-  return { b, s: bv > 0.02 ? 'rbox' : 'box', bv: [bv, bv, bv], p: [(x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2], d: [w, h, d], c, r: o.r, g: o.g, flat: o.flat };
-}
-
-/** Deterministic jitter for ragged edges. */
-function jr(n: number): number {
-  const v = Math.sin(n * 91.7 + 13.1) * 43758.5;
-  return v - Math.floor(v);
-}
 
 export function berserkerRig(): HeroRigDef {
   const pr = mcProps(false, { shoulderX: 6.4, hipX: 2.2, thigh: 7, shin: 6 });

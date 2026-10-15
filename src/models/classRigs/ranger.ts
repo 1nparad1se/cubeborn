@@ -1,192 +1,222 @@
 import type { HeroRigDef } from '../../render/rig/HeroRig';
 import type { RigPart } from '../../render/rig/shapes';
-import { shade, type FaceId, type Pix } from '../../render/rig/skins';
-import { cube, GRIP, hairHead, humanoid, isSide, MC_POS_SCALE, MC_SCALE, mcProps, outer, paintFace, pixelItem, tex, type Side } from './mcKit';
+import { bk, jr } from './blockKit';
+import { GRIP, MC_POS_SCALE, MC_SCALE, mcProps, pixelItem, type Side } from './mcKit';
 
 /**
- * Ranger, Minecraft Dungeons style: a forest hunter in a peaked green hood with a hawk feather,
- * a short green shoulder cape, a brown leather jerkin over a moss tunic, a rust scarf, a
- * leather bracer on the bow arm, tall boots, a quiver of red-fletched arrows on the back and
- * a pixel-art recurve bow in the left hand (limbs along the hand's z axis, string on +y).
+ * Ranger, a forest hunter built as a detailed block model (many small bevelled blocks, no pixel
+ * skins): a peaked green hood with a light rim and a hawk feather, a short ragged green shoulder
+ * cape, a laced brown leather jerkin over a moss tunic, a rust scarf, a diagonal quiver strap and a
+ * belt with a brass buckle, a leather bracer on the bow arm, gloves, tall boots with folded cuffs,
+ * a quiver of red-fletched arrows on the back and a pixel-art recurve bow in the left hand.
  */
+
+const SKIN = 0xe2b28c;
+const SKIN_D = 0xc4926e;
+const HAIR = 0x7a4a24;
+const HAIR_D = 0x5a3418;
+const HOOD = 0x3f7f4a;
+const HOOD_L = 0x58a060;
+const HOOD_D = 0x2a5a34;
+const TUNIC = 0x5a7a3a;
+const TUNIC_D = 0x46602c;
+const LEATHER = 0x7a5030;
+const LEATHER_L = 0x9a6a40;
+const LEATHER_D = 0x4e3220;
+const SCARF = 0xb8582a;
+const SCARF_D = 0x864020;
+const PANTS = 0x5e5a3a;
+const PANTS_D = 0x48452c;
+const BOOT = 0x4a3020;
+const SOLE = 0x2a1c12;
+const BRASS = 0xd4a040;
+const WOOD = 0x8a5a2e;
+const WOOD_L = 0xb07a40;
+const FLETCH = 0xc83a2a;
+
 export function rangerRig(): HeroRigDef {
   const pr = mcProps();
-  const skin = 0xe2b28c;
-  const hair = 0x7a4a24;
-  const hood = 0x3f7f4a;
-  const hoodL = 0x58a060;
-  const hoodD = 0x2a5a34;
-  const tunic = 0x5a7a3a;
-  const leather = 0x7a5030;
-  const leatherL = 0x9a6a40;
-  const leatherD = 0x4e3220;
-  const scarf = 0xb8582a;
-  const scarfD = 0x864020;
-  const pants = 0x5e5a3a;
-  const boot = 0x4a3020;
-  const wood = 0x8a5a2e;
-  const woodL = 0xb07a40;
-  const woodD = 0x5a3a1c;
+  const P: RigPart[] = [];
+  const add = (...a: RigPart[]) => P.push(...a);
 
-  const head = (f: FaceId, g: Pix) => {
-    hairHead(f, g, { skin, hair, fringe: 2, side: 4, back: 8, frame: 1 });
-    if (f === 'F') {
-      paintFace(g, { skin, eye: 0x3a8a3a, brow: shade(hair, 0.8), nose: true, mouth: 0xa0604a });
-      g.set(1, 2, hair).set(6, 2, shade(hair, 0.85));
-    }
-  };
+  // ---------------------------------------------------------------- head: face, hair in the hood opening
+  add(bk('head', -3.4, 0.2, -3.2, 3.4, 6.4, 3.6, SKIN));
+  add(bk('head', -1.6, -1.2, -1.6, 1.6, 0.6, 1.6, SKIN_D));
+  add(bk('head', -0.6, 2.2, 3.5, 0.6, 3.6, 4.05, SKIN_D, { bv: 0.1 }));
+  add(bk('head', -1.0, 1.3, 3.55, 1.0, 1.7, 3.85, 0xa0604a, { bv: 0 }));
+  add(bk('head', -2.8, 0.2, 2.9, 2.8, 1.0, 3.75, SKIN_D, { bv: 0.1 }));
+  for (const k of [-1, 1]) {
+    add(bk('head', k * 0.8, 4.5, 3.45, k * 2.8, 5.0, 3.9, HAIR_D, { bv: 0.08 }));
+    add(bk('head', k * 0.9, 3.6, 3.45, k * 2.6, 4.4, 3.75, 0xf2ece4, { bv: 0 }));
+    add(bk('head', k * 0.9, 3.6, 3.6, k * 1.6, 4.4, 3.85, 0x3a8a3a, { bv: 0 }));
+  }
+  // swept fringe and side locks
+  for (let i = 0; i < 6; i++) add(bk('head', -3 + i, 5.0 + jr(i) * 0.6, 3.3, -2 + i, 6.4, 4.0, i % 2 ? HAIR : HAIR_D, { bv: 0.1 }));
+  for (const k of [-1, 1]) add(bk('head', k * 2.6, 1.4, 2.4, k * 3.5, 5.4, 3.9, HAIR, { bv: 0.12 }));
 
-  /** Peaked hood: green shell with a lighter rim around a wide face opening. */
-  const hat = (f: FaceId, g: Pix) => {
-    g.fill(hood, 0.08);
-    if (f === 'T') {
-      g.vline(3, hoodD).vline(4, hoodD);
-      return;
-    }
-    if (f === 'D') {
-      g.rect(0, 0, 8, 8, -1);
-      return;
-    }
-    if (f === 'F') {
-      g.rect(1, 2, 6, 6, -1);
-      g.hline(1, hoodL, 1, 7).set(0, 2, hoodL).set(7, 2, hoodL).set(0, 3, hoodL).set(7, 3, hoodL);
-    } else if (f === 'L' || f === 'R') {
-      // the hood opens toward the front
-      const fx = f === 'L' ? 0 : 6;
-      g.rect(fx, 6, 1, 2, -1);
-      g.vline(f === 'L' ? 2 : 5, hoodD, 2, 8);
+  // peaked hood: shell, light rim around the face opening, peak trailing back
+  add(bk('head', -4.4, 6.2, -4.4, 4.4, 8.8, 4.2, HOOD));
+  add(bk('head', -4.4, 0.0, -4.4, 4.4, 6.4, -1.8, HOOD));
+  for (const k of [-1, 1]) {
+    add(bk('head', k * 3.5, 0.0, -4.4, k * 4.45, 6.4, 3.6, HOOD));
+    add(bk('head', k * 3.4, 0.0, 3.4, k * 4.6, 7.0, 4.6, HOOD_L, { bv: 0.15 })); // rim sides
+    add(bk('head', k * 4.4, 1.0, -3.6, k * 4.6, 6.0, 1.0, HOOD_D, { bv: 0 })); // fold
+  }
+  add(bk('head', -4.6, 6.4, 3.6, 4.6, 7.6, 4.7, HOOD_L, { bv: 0.15 })); // rim top
+  add(bk('head', -3.6, 8.6, -3.6, 3.6, 9.4, 3.2, HOOD_L, { bv: 0.2 }));
+  add(bk('head', -0.5, 8.8, -4.0, 0.5, 9.6, 3.0, HOOD_D, { bv: 0.1 })); // seam
+  add(bk('head', -3.0, 5.0, -6.2, 3.0, 8.6, -4.0, HOOD, { r: [-24, 0, 0] })); // peak
+  add(bk('head', -2.0, 4.0, -7.6, 2.0, 7.0, -5.8, HOOD_D, { r: [-24, 0, 0], bv: 0.25 }));
+  // hawk feather on the hood (accC bob)
+  add(bk('accC', -0.25, -0.6, -0.5, 0.25, 4.6, 0.5, 0xe8e0d0, { r: [-20, 0, -20], bv: 0.08 }));
+  add(bk('accC', -0.3, 1.0, -0.55, 0.3, 1.5, 0.55, 0x8a5a3a, { r: [-20, 0, -20], bv: 0 }));
+  add(bk('accC', -0.3, 2.8, -0.55, 0.3, 3.3, 0.55, 0x6a4a2a, { r: [-20, 0, -20], bv: 0 }));
+  add(bk('accC', -0.3, 4.2, -0.55, 0.3, 4.9, 0.55, 0x8a5a3a, { r: [-20, 0, -20], bv: 0 }));
+
+  // ---------------------------------------------------------------- chest: tunic, jerkin, lacing, scarf, strap
+  add(bk('chest', -4.0, 0, -2.0, 4.0, 8.0, 2.0, TUNIC));
+  add(bk('chest', -4.2, 0, -2.3, 4.2, 6.4, 2.3, LEATHER));
+  for (const k of [-1, 1]) {
+    add(bk('chest', k * 0.4, 0.2, 2.2, k * 3.8, 6.2, 2.6, LEATHER_L, { bv: 0.15 })); // jerkin panels
+    add(bk('chest', k * 3.6, 0.2, -2.4, k * 4.35, 6.2, 2.4, LEATHER_D, { bv: 0.1 }));
+  }
+  add(bk('chest', -0.4, 0.2, 2.25, 0.4, 6.2, 2.5, LEATHER_D, { bv: 0 }));
+  for (let i = 0; i < 4; i++) add(bk('chest', -0.9, 1.0 + i * 1.3, 2.5, 0.9, 1.3 + i * 1.3, 2.75, BRASS, { bv: 0 })); // lacing
+  // rust scarf wrapped at the neck, a hanging end
+  add(bk('chest', -3.6, 6.2, -2.6, 3.6, 8.6, 2.8, SCARF));
+  add(bk('chest', -3.3, 8.2, -2.4, 3.3, 9.0, 2.5, SCARF_D, { bv: 0.15 }));
+  add(bk('chest', -2.6, 3.2, 2.6, -1.0, 6.6, 3.1, SCARF, { bv: 0.12 }));
+  add(bk('chest', -2.6, 2.6, 2.65, -1.6, 3.4, 3.05, SCARF_D, { bv: 0.08 }));
+  // quiver strap: right shoulder (x<0 is right) to left hip, front and back
+  for (let i = 0; i < 8; i++) {
+    const y = 6.6 - i * 0.9;
+    const x = 3.4 - i * 0.95;
+    add(bk('chest', x - 0.6, y - 0.5, 2.55, x + 0.6, y + 0.5, 3.0, i & 1 ? LEATHER_D : 0x3e2818, { bv: 0.08 }));
+    add(bk('chest', x - 0.6, y - 0.5, -3.0, x + 0.6, y + 0.5, -2.5, LEATHER_D, { bv: 0.08 }));
+  }
+  add(bk('chest', 2.0, 4.6, 2.9, 3.0, 5.6, 3.2, BRASS, { bv: 0.06 }));
+  // spine: jerkin skirt and tunic
+  add(bk('spine', -3.8, 0.9, -2.0, 3.8, 3.9, 2.0, TUNIC));
+  add(bk('spine', -4.1, 2.0, -2.3, 4.1, 3.9, 2.3, LEATHER));
+  add(bk('spine', -0.4, 2.0, 2.25, 0.4, 3.9, 2.45, LEATHER_D, { bv: 0 }));
+
+  // ---------------------------------------------------------------- hips: belt with a brass buckle, tunic skirt, pouch
+  add(bk('hips', -4.1, -0.6, -2.2, 4.1, 2.0, 2.2, TUNIC));
+  add(bk('hips', -4.4, 1.6, -2.5, 4.4, 2.8, 2.5, LEATHER_D));
+  add(bk('hips', -0.9, 1.4, 2.4, 0.9, 3.0, 2.85, BRASS, { bv: 0.1 }));
+  add(bk('hips', -0.4, 1.8, 2.7, 0.4, 2.6, 2.95, LEATHER_D, { bv: 0 }));
+  for (let i = 0; i < 8; i++) {
+    const x = -4.2 + i * 1.05;
+    add(bk('hips', x, -1.6 - jr(i) * 0.8, -2.35, x + 1.05, 1.7, 2.35, i % 2 ? TUNIC_D : TUNIC, { bv: 0.08 }));
+  }
+  add(bk('hips', -4.3, -0.6, 0.6, -3.0, 1.8, 2.8, LEATHER, { bv: 0.2 })); // pouch on the right hip
+  add(bk('hips', -4.35, 1.0, 0.5, -2.95, 1.9, 2.9, LEATHER_L, { bv: 0.12 }));
+
+  // ---------------------------------------------------------------- limbs, mirrored
+  for (const s of ['L', 'R'] as Side[]) {
+    const k = s === 'L' ? 1 : -1;
+    const arm = 'arm' + s;
+    const fore = 'fore' + s;
+    const hand = 'hand' + s;
+    const leg = 'leg' + s;
+    const shin = 'shin' + s;
+    const foot = 'foot' + s;
+    // tunic sleeve, leather shoulder guard
+    add(bk(arm, -2.0, -5.0, -2.0, 2.0, 2.0, 2.0, TUNIC));
+    add(bk(arm, -2.2, 0.0, -2.3, k * 2.6 > 0 ? 2.6 : 2.2, 2.4, 2.3, LEATHER, { bv: 0.25 }));
+    add(bk(arm, k * 0.4, 1.8, -1.9, k * 2.4, 2.7, 1.9, LEATHER_L, { bv: 0.2 }));
+    add(bk(arm, -2.1, -0.6, -2.1, 2.1, -0.1, 2.1, LEATHER_D, { bv: 0.06 }));
+    add(bk(arm, -2.05, -5.0, -2.05, 2.05, -4.4, 2.05, TUNIC_D, { bv: 0.06 }));
+    // forearm: bracer with brass studs on the bow arm, a rolled cuff on the draw arm
+    add(bk(fore, -1.9, -3.0, -1.9, 1.9, 1.0, 1.9, TUNIC));
+    if (s === 'L') {
+      add(bk(fore, -2.2, -3.0, -2.2, 2.2, 0.4, 2.2, LEATHER));
+      add(bk(fore, -2.25, 0.0, -2.25, 2.25, 0.5, 2.25, LEATHER_L, { bv: 0.06 }));
+      add(bk(fore, -2.25, -3.1, -2.25, 2.25, -2.6, 2.25, LEATHER_D, { bv: 0.06 }));
+      for (const y of [-2.0, -0.8]) add(bk(fore, k * 2.1, y, -0.9, k * 2.45, y + 0.5, -0.3, BRASS, { bv: 0 }), bk(fore, k * 2.1, y, 0.3, k * 2.45, y + 0.5, 0.9, BRASS, { bv: 0 }));
+      add(bk(fore, -1.8, -2.4, -2.5, 1.8, -0.4, -2.1, LEATHER_L, { bv: 0.1 })); // inner arm guard
     } else {
-      for (let x = 1; x < 8; x += 3) g.set(x, 7, hoodD);
+      add(bk(fore, -2.1, -0.4, -2.1, 2.1, 0.7, 2.1, TUNIC_D, { bv: 0.15 }));
+      add(bk(fore, -2.1, -3.0, -2.1, 2.1, -2.2, 2.1, LEATHER_D, { bv: 0.08 }));
     }
-  };
+    // glove
+    add(bk(hand, -1.9, -2.1, -1.9, 1.9, 1.0, 1.9, LEATHER_D));
+    add(bk(hand, -1.6, -2.2, 1.3, 1.6, -1.2, 2.05, 0x3e2818, { bv: 0.12 }));
+    add(bk(hand, -2.0, 0.3, -2.0, 2.0, 1.0, 2.0, LEATHER, { bv: 0.1 }));
+    // trousers, knee patch
+    add(bk(leg, -2.0, -6.0, -2.0, 2.0, 0.2, 2.0, PANTS));
+    add(bk(leg, k * 0.5, -5.0, -2.1, k * 2.15, -1.0, 2.1, PANTS_D, { bv: 0.15 }));
+    add(bk(leg, -2.1, -0.4, -2.1, 2.1, 0.3, 2.1, TUNIC_D, { bv: 0.06 }));
+    add(bk(shin, -1.95, -1.0, -1.95, 1.95, 1.0, 1.95, PANTS));
+    add(bk(shin, -1.4, -0.2, 1.8, 1.4, 1.2, 2.3, PANTS_D, { bv: 0.15 }));
+    // tall boots with a folded cuff, laces, sole
+    add(bk(shin, -2.1, -5.0, -2.1, 2.1, -0.9, 2.1, BOOT));
+    add(bk(shin, -2.35, -1.6, -2.35, 2.35, -0.4, 2.35, LEATHER_L, { bv: 0.15 }));
+    add(bk(shin, -2.3, -1.9, -2.3, 2.3, -1.5, 2.3, LEATHER, { bv: 0.06 }));
+    for (let i = 0; i < 3; i++) add(bk(shin, -0.8, -4.2 + i * 0.9, 2.05, 0.8, -3.9 + i * 0.9, 2.3, LEATHER_L, { bv: 0 }));
+    add(bk(foot, -2.1, -1.0, -2.3, 2.1, 0.6, 3.2, BOOT));
+    add(bk(foot, -1.9, -0.6, 2.0, 1.9, 0.4, 3.6, LEATHER, { bv: 0.2 }));
+    add(bk(foot, -2.2, -1.0, -2.4, 2.2, -0.6, 3.6, SOLE, { bv: 0.08 }));
+  }
 
-  const body = (f: FaceId, g: Pix) => {
-    g.fill(tunic, 0.08);
-    if (!isSide(f)) return;
-    // leather jerkin with lacing, scarf at the neck, quiver strap, belt
-    g.nrect(0, 2, g.w, 7, leather, 0.08);
-    if (f === 'F') {
-      g.vline(3, leatherD, 2, 9).vline(4, leatherD, 2, 9);
-      g.set(3, 3, leatherL).set(4, 5, leatherL).set(3, 7, leatherL);
-      for (let i = 0; i < 7; i++) g.set(i + 1, 7 - i, leatherD);
-      g.nrect(1, 0, 6, 2, scarf, 0.1).set(2, 2, scarf).set(2, 3, scarfD);
-    } else if (f === 'B') {
-      for (let i = 0; i < 8; i++) g.set(i, i + 1, leatherD);
-      g.nrect(1, 0, 6, 1, scarf, 0.1);
-    } else g.nrect(0, 0, g.w, 1, scarf, 0.1);
-    g.nrect(0, 8, g.w, 1, leatherD, 0.06);
-    if (f === 'F') g.set(3, 8, 0xd4a040);
-    g.nrect(0, 9, g.w, 3, tunic, 0.08);
-    g.hline(11, shade(tunic, 0.8));
-  };
+  // ---------------------------------------------------------------- short ragged shoulder cape
+  for (let i = 0; i < 9; i++) {
+    const x = -4.5 + i;
+    const len = 7.4 - (i % 3 === 1 ? 1.2 : 0) - jr(i + 7) * 0.8;
+    add(bk('capeA', x, -len, -0.5, x + 1, 0.4, 0.3, i % 3 === 1 ? HOOD_D : i % 2 ? HOOD : HOOD_L, { bv: 0.08 }));
+  }
+  add(bk('capeA', -4.8, -0.8, -0.7, 4.8, 0.8, 0.6, HOOD_L, { bv: 0.15 }));
+  add(bk('capeA', -0.4, -6.4, -0.75, 0.4, -0.6, -0.45, HOOD_D, { bv: 0 }));
 
-  const arm = (side: Side) => (f: FaceId, g: Pix) => {
-    g.fill(tunic, 0.08);
-    if (f === 'T') return;
-    if (f === 'D') {
-      g.fill(leatherD);
-      return;
-    }
-    g.hline(5, shade(tunic, 0.8));
-    // bracer on the bow arm, glove cuffs
-    if (side === 'L') {
-      g.nrect(0, 6, g.w, 4, leather, 0.08).hline(6, leatherL).hline(9, leatherD);
-      if (f === outer(side)) g.set(1, 7, 0xd4a040).set(2, 8, 0xd4a040);
-    } else g.nrect(0, 7, g.w, 3, tunic, 0.08);
-    g.nrect(0, 10, g.w, 2, leatherD, 0.06);
-  };
-
-  const leg = (side: Side) => (f: FaceId, g: Pix) => {
-    g.fill(pants, 0.08);
-    if (f === 'D') {
-      g.fill(0x2a1c12);
-      return;
-    }
-    if (f === 'T') return;
-    g.set(side === 'L' ? 1 : 2, 3, shade(pants, 0.8));
-    // tall boots with a folded cuff
-    g.nrect(0, 6, 4, 6, boot, 0.08).hline(6, leatherL).hline(7, leather);
-    g.hline(11, 0x2a1c12);
-  };
-
-  // ---------------------------------------------------------------- accessories
-  const cape = tex('rg.cape', [9, 8, 1], (f, g) => {
-    g.fill(hood, 0.08);
-    if (f === 'B' || f === 'F') {
-      g.hline(0, hoodL);
-      for (let x = 0; x < 9; x++) if (x % 3 === 1) g.set(x, 7, -1);
-      g.vline(4, hoodD, 1, 7);
-    }
+  // ---------------------------------------------------------------- quiver with red-fletched arrows (accB)
+  add(bk('accB', -1.5, -6.5, -1.5, 1.5, 2.5, 1.5, LEATHER));
+  add(bk('accB', -1.7, 1.6, -1.7, 1.7, 2.6, 1.7, LEATHER_L, { bv: 0.12 }));
+  add(bk('accB', -1.65, -6.6, -1.65, 1.65, -5.8, 1.65, LEATHER_D, { bv: 0.1 }));
+  add(bk('accB', -1.6, -2.2, -1.6, 1.6, -1.6, 1.6, LEATHER_D, { bv: 0.06 }));
+  add(bk('accB', -1.2, 2.4, -1.2, 1.2, 2.7, 1.2, LEATHER_D, { bv: 0 }));
+  [-0.8, 0, 0.8].forEach((x, i) => {
+    const y = 3.6 + (i % 2) * 0.5;
+    const z = 0.4 * (i - 1);
+    add(bk('accB', x - 0.15, 2.4, z - 0.15, x + 0.15, y, z + 0.15, WOOD_L, { bv: 0 }));
+    add(bk('accB', x - 0.4, y - 0.4, z - 0.15, x + 0.4, y + 1.6, z + 0.15, FLETCH, { bv: 0 }));
+    add(bk('accB', x - 0.15, y - 0.4, z - 0.4, x + 0.15, y + 1.6, z + 0.4, 0xf0e8dc, { bv: 0 }));
   });
-  const hoodTip = tex('rg.hoodTip', [4, 3, 3], (f, g) => g.fill(hood, 0.08).hline(g.h - 1, hoodD));
-  const feather = tex('rg.feather', [1, 5, 2], (f, g) => {
-    g.fill(0xe8e0d0, 0.06);
-    g.set(0, 0, 0x8a5a3a).set(1, 0, 0x8a5a3a);
-    g.hline(2, 0x8a5a3a).hline(4, 0x6a4a2a);
-  });
-  const quiver = tex('rg.quiver', [3, 9, 3], (f, g) => {
-    g.fill(leather, 0.08);
-    if (f === 'T') {
-      g.fill(leatherD);
-      return;
-    }
-    if (isSide(f)) g.hline(0, leatherL).hline(1, leatherD).hline(6, leatherD).hline(8, leatherD);
-  });
-  const fletch = tex('rg.fletch', [1, 3, 1], (f, g) => g.fill(0xc83a2a, 0.06).set(0, 0, 0xf0e8dc));
-
-  const parts: RigPart[] = [
-    ...humanoid({ name: 'rg', head, hat, body, arm, leg }),
-    cube('head', [0, 6.4, -4.8], hoodTip, { r: [-24, 0, 0] }),
-    cube('accC', [0, 0, 0], feather, { r: [-20, 0, -20] }),
-    cube('capeA', [0, -4, 0], cape),
-    // quiver on the back with three fletchings
-    cube('accB', [0, -2, 0], quiver),
-    ...[-0.9, 0, 0.9].map((x, i) => cube('accB', [x, 3.6 + (i % 2) * 0.5, 0.2 * (i - 1)], fletch)),
-    ...bow(),
-  ];
 
   // ---------------------------------------------------------------- recurve bow (riser at the fist, string on +y) and the nocked arrow
-  function bow(): RigPart[] {
-    const rows = [
-      '...ww.',
-      '...wwS',
-      '...w.S',
-      '..ww.S',
-      '..w..S',
-      '..w..S',
-      '.ww..S',
-      '.w...S',
-      'ww...S',
-      'wB...S',
-      'LL...S',
-      'LL...S',
-      'LL...S',
-      'wB...S',
-      'ww...S',
-      '.w...S',
-      '.ww..S',
-      '..w..S',
-      '..w..S',
-      '..ww.S',
-      '...w.S',
-      '...wwS',
-      '...ww.',
-    ];
-    const pal = { w: wood, B: woodL, L: leatherD, S: 0xece4d4 };
-    const parts = pixelItem(rows, pal, { b: 'gripL', at: GRIP, pivot: [0.5, 11], px: 0.9, th: 0.8, u: '+y', v: '+z', thick: { S: 0.25, L: 1.3 } });
-    void woodD;
-    // arrow across the bow, head toward -y, fletching beyond the string
-    const arrow = ['hhaaaaaff'];
-    parts.push(...pixelItem(arrow, { h: 0xc8d2dc, a: woodL, f: 0xc83a2a }, { b: 'gripL', at: [GRIP[0] + 0.7, GRIP[1], GRIP[2]], pivot: [2, 0], px: 0.9, th: 0.35, u: '+y', v: '+z', grp: 'arrow' }));
-    return parts;
-  }
+  const rows = [
+    '...ww.',
+    '...wwS',
+    '...w.S',
+    '..ww.S',
+    '..w..S',
+    '..w..S',
+    '.ww..S',
+    '.w...S',
+    'ww...S',
+    'wB...S',
+    'LL...S',
+    'LL...S',
+    'LL...S',
+    'wB...S',
+    'ww...S',
+    '.w...S',
+    '.ww..S',
+    '..w..S',
+    '..w..S',
+    '..ww.S',
+    '...w.S',
+    '...wwS',
+    '...ww.',
+  ];
+  add(...pixelItem(rows, { w: WOOD, B: WOOD_L, L: LEATHER_D, S: 0xece4d4 }, { b: 'gripL', at: GRIP, pivot: [0.5, 11], px: 0.9, th: 0.8, u: '+y', v: '+z', thick: { S: 0.25, L: 1.3 } }));
+  add(...pixelItem(['hhaaaaaff'], { h: 0xc8d2dc, a: WOOD_L, f: FLETCH }, { b: 'gripL', at: [GRIP[0] + 0.7, GRIP[1], GRIP[2]], pivot: [2, 0], px: 0.9, th: 0.35, u: '+y', v: '+z', grp: 'arrow' }));
 
   return {
     id: 'ranger',
     scale: MC_SCALE,
     posScale: MC_POS_SCALE,
     props: pr,
-    parts,
+    parts: P,
     springs: {
       capeA: { parent: 'chest', at: [0, 7.8, -2.55], kind: 'cape', k: 1.1 },
       capeB: { parent: 'capeA', at: [0, -8, 0], kind: 'cape', k: 1.0 },
