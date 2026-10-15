@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { addPart, GeoSink, type RigPart, type V3 } from './shapes';
+import { voxelizeParts } from './voxelize';
 import { makeVoxelMaterial } from '../Materials';
 import type { AnimStyle } from './animTypes';
 import { buildSkinAtlas, type SkinAtlas, type SkinBox } from './skins';
@@ -98,6 +99,8 @@ export interface HeroRigDef {
   posScale?: number;
   props: Proportions;
   parts: RigPart[];
+  /** false keeps the plain block parts instead of the detailed voxel grid. */
+  voxel?: boolean;
   springs?: Partial<Record<BoneId, SpringDef>>;
   /**
    * Weapon attach points: one grip bone per hand, at the palm. Held items are authored on
@@ -153,6 +156,26 @@ function toGripSpace(def: HeroRigDef, part: RigPart): RigPart {
   if (part.b !== 'gripL' && part.b !== 'gripR') return part;
   const g = gripAt(def, part.b === 'gripL' ? 'L' : 'R');
   return { ...part, p: [part.p[0] - g[0], part.p[1] - g[1], part.p[2] - g[2]] };
+}
+
+/** Parts per bone|group key, voxelised once per rig definition (see voxelize.ts). */
+const PARTS = new WeakMap<HeroRigDef, Map<string, RigPart[]>>();
+
+function rigParts(def: HeroRigDef, atlas: SkinAtlas | null, voxel: boolean): Map<string, RigPart[]> {
+  const cached = voxel ? PARTS.get(def) : undefined;
+  if (cached) return cached;
+  const byKey = new Map<string, RigPart[]>();
+  for (const part0 of def.parts) {
+    const part = toGripSpace(def, part0);
+    const key = part.b + '|' + (part.grp ?? '');
+    let list = byKey.get(key);
+    if (!list) byKey.set(key, (list = []));
+    list.push(part);
+  }
+  if (!voxel || def.voxel === false) return byKey;
+  for (const [key, list] of byKey) byKey.set(key, voxelizeParts(key.split('|')[0], list, atlas));
+  PARTS.set(def, byKey);
+  return byKey;
 }
 
 /** Skin atlases are built once per rig definition and shared by every instance. */
@@ -216,12 +239,10 @@ export class HeroRig {
       const gs = def.grip?.[side]?.scale;
       if (gs) this.bones[('grip' + side) as BoneId].scale.setScalar(gs);
     }
-    for (const part0 of def.parts) {
-      const part = toGripSpace(def, part0);
-      const key = part.b + '|' + (part.grp ?? '');
+    for (const [key, parts] of rigParts(def, atlas, !opts.silhouette)) {
       let sink = sinks.get(key);
       if (!sink) sinks.set(key, (sink = new GeoSink()));
-      addPart(sink, part, s, atlas);
+      for (const part of parts) addPart(sink, part, s, atlas);
     }
     for (const [key, sink] of sinks) {
       if (sink.empty) continue;
