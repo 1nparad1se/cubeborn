@@ -6,6 +6,7 @@ import type { EmitKind, EmitLayer } from '../config/vfx';
 import { InstancedBatch } from './InstancedBatch';
 import type { LightPool } from './LightPool';
 import { makeSquareMaterial } from './Particles';
+import { classVfx, type ClassVfx } from './classVfx';
 
 /** Glow batches shared with the EntityRenderer (all additive, unlit). */
 export interface FxBatches {
@@ -79,10 +80,10 @@ function setPt(p: Float32Array, x: number, y: number, z: number, r: number, g: n
  * two camera-facing square batches and one lit block batch owned here (three extra draw calls).
  */
 export class ActionFxRenderer {
-  private time = 0;
-  private dt = 0;
+  time = 0;
+  dt = 0;
   /** Brightness share when many bright effects overlap. */
-  private dim = 1;
+  dim = 1;
   /** Effects-quality multiplier for procedural counts. */
   private mul = 1;
   private lv = 2;
@@ -99,11 +100,15 @@ export class ActionFxRenderer {
   private ribN = 0;
   private L: EmitLayer = { kind: 'pixel', count: 1, color: WHITE, speed: 1, size: 0.1, life: 0.3, spread: Math.PI };
 
+  /** Class-specific look for the hero's own effects (null: the shared look). */
+  private cv: ClassVfx | null;
+
   constructor(
     private run: Run,
-    private b: FxBatches,
+    readonly b: FxBatches,
     private lights: LightPool,
   ) {
+    this.cv = classVfx(run.hero.id);
     const parent = b.glowBox.mesh.parent ?? new THREE.Group();
     const sq = new THREE.PlaneGeometry(1, 1);
     this.sqS = new InstancedBatch(sq, makeSquareMaterial(false), parent, 256);
@@ -198,7 +203,7 @@ export class ActionFxRenderer {
   }
 
   /** Procedural count scaled by the effects setting. */
-  private n(base: number): number {
+  n(base: number): number {
     return Math.max(1, Math.round(base * this.mul));
   }
 
@@ -212,7 +217,10 @@ export class ActionFxRenderer {
     let heavy = 0;
     for (const f of list) if (f.k === 'fall' || f.k === 'flash' || f.k === 'zone' || (f.k === 'hit' && (f.fx === 'holy' || f.fx === 'fire' || f.fx === 'smash'))) heavy++;
     this.dim = 1 / Math.sqrt(Math.max(1, heavy / 2));
+    const cv = this.cv;
+    cv?.frame?.(this.run, this);
     for (const f of list) {
+      if (cv?.draw && cv.draw(f, f.life / f.max, f.max - f.life <= dt * 1.5 + 0.001, this)) continue;
       const first = f.max - f.life <= dt * 1.5 + 0.001;
       switch (f.k) {
         case 'hit':
@@ -494,7 +502,7 @@ export class ActionFxRenderer {
    * Crescent sword swing: a white-hot leading edge over a coloured band that trails and fades
    * behind the swing, tilted like a diagonal slash, with a faint shadow on the ground.
    */
-  private arcSweep(x: number, z: number, base: number, arc: number, r: number, k: number, c0: number, wide: number, seed: number) {
+  arcSweep(x: number, z: number, base: number, arc: number, r: number, k: number, c0: number, wide: number, seed: number) {
     // plain steel swings (near-white colour) get the golden MCD sword trail
     const mx = Math.max((c0 >> 16) & 255, (c0 >> 8) & 255, c0 & 255);
     const mn = Math.min((c0 >> 16) & 255, (c0 >> 8) & 255, c0 & 255);

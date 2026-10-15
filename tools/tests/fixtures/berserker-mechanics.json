@@ -1,0 +1,843 @@
+{
+ "id": "berserker",
+ "name": {
+  "ru": "Берсерк",
+  "en": "Berserker"
+ },
+ "title": {
+  "ru": "Ярость Кровавого Клинка",
+  "en": "Fury of the Blood Blade"
+ },
+ "desc": {
+  "ru": "Воин с огромным двуручным мечом. Медленные, но сокрушительные удары с бронёй от прерывания. Копит ярость и впадает в Кровавое безумие: быстрее, сильнее, красное свечение.",
+  "en": "A warrior with a huge two-handed sword. Slow but crushing armored swings. Builds fury and enters Bloodlust: faster, stronger, glowing red."
+ },
+ "role": {
+  "ru": "Ближний бой · урон и оглушение",
+  "en": "Melee · damage and stagger"
+ },
+ "difficulty": 1,
+ "weapon": {
+  "ru": "Двуручный меч",
+  "en": "Greatsword"
+ },
+ "ratings": {
+  "attack": 5,
+  "defense": 3,
+  "mobility": 2,
+  "control": 3,
+  "support": 1,
+  "range": 1
+ },
+ "passive": {
+  "name": {
+   "ru": "Тяжёлая рука",
+   "en": "Heavy Hand"
+  },
+  "desc": {
+   "ru": "Сильные удары не прерываются (сверхброня). Ярость копится от ударов и полученного урона.",
+   "en": "Strong swings cannot be interrupted (super armor). Fury builds from hits and damage taken."
+  }
+ },
+ "baseHp": 170,
+ "baseSpeed": 4.2,
+ "armor": 4,
+ "power": 11,
+ "color": 14172202,
+ "res": {
+  "id": "fury",
+  "name": {
+   "ru": "Ярость",
+   "en": "Fury"
+  },
+  "desc": {
+   "ru": "Копится в бою, убывает вне боя. Полная шкала — Кровавое безумие (Z).",
+   "en": "Builds in combat, drains out of it. Full bar — Bloodlust (Z)."
+  },
+  "color": "#ff4a2a",
+  "max": 100,
+  "regen": -3,
+  "onBasic": 4,
+  "onSkill": 3,
+  "onKill": 2,
+  "onHurt": 0.25
+ },
+ "basic": {
+  "name": {
+   "ru": "Рубка",
+   "en": "Hack"
+  },
+  "desc": {
+   "ru": "Цепочка из трёх рубящих ударов; третий — тяжёлый удар сверху.",
+   "en": "A three-hit chain; the third is an overhead crash."
+  },
+  "icon": "berserker_basic",
+  "el": "phys",
+  "ranged": false,
+  "window": 0.5,
+  "steps": [
+   {
+    "anim": "bz_basic1",
+    "dur": 0.62,
+    "ev": [
+     {
+      "do": "hit",
+      "t": 0.3,
+      "shape": {
+       "k": "cone",
+       "r": 3,
+       "arc": 150
+      },
+      "dmg": 1.2,
+      "stag": 6,
+      "fx": "slash_wide",
+      "knock": 0.6,
+      "sfx": "whoosh"
+     }
+    ],
+    "cancel": 0.42,
+    "move": 0.2,
+    "track": true
+   },
+   {
+    "anim": "bz_basic2",
+    "dur": 0.62,
+    "ev": [
+     {
+      "do": "hit",
+      "t": 0.3,
+      "shape": {
+       "k": "cone",
+       "r": 3,
+       "arc": 150
+      },
+      "dmg": 1.2,
+      "stag": 6,
+      "fx": "slash_wide",
+      "knock": 0.6,
+      "sfx": "whoosh"
+     }
+    ],
+    "cancel": 0.42,
+    "move": 0.2,
+    "track": true
+   },
+   {
+    "anim": "bz_basic3",
+    "dur": 0.9,
+    "ev": [
+     {
+      "do": "hit",
+      "t": 0.45,
+      "shape": {
+       "k": "rect",
+       "len": 3.6,
+       "w": 2.2
+      },
+      "dmg": 2.2,
+      "stag": 14,
+      "fx": "smash",
+      "knock": 1.4,
+      "shake": 0.12,
+      "sfx": "smash"
+     }
+    ],
+    "cancel": 0.62,
+    "move": 0,
+    "armor": "push"
+   }
+  ]
+ },
+ "dodge": {
+  "name": {
+   "ru": "Рывок плечом",
+   "en": "Shoulder Roll"
+  },
+  "cd": 7,
+  "charges": 1,
+  "step": {
+   "anim": "bz_dodge",
+   "dur": 0.55,
+   "ev": [
+    {
+     "do": "move",
+     "t": 0,
+     "kind": "dash",
+     "dist": 4.2,
+     "dur": 0.32,
+     "iframe": true
+    }
+   ],
+   "iframes": [
+    0,
+    0.36
+   ]
+  }
+ },
+ "skills": [
+  {
+   "id": "bz_q",
+   "name": {
+    "ru": "Рассекающий взмах",
+    "en": "Cleaving Sweep"
+   },
+   "desc": {
+    "ru": "Два мощных взмаха: широкая дуга перед собой и разворот по кругу.",
+    "en": "Two heavy swings: a wide arc ahead, then a full spin."
+   },
+   "icon": "berserker_q",
+   "color": 14172202,
+   "cd": 5,
+   "type": "combo",
+   "window": 0.8,
+   "tags": [
+    "melee",
+    "combo",
+    "aoe"
+   ],
+   "el": "phys",
+   "range": 3.4,
+   "radius": 3.4,
+   "unlock": 1,
+   "steps": [
+    {
+     "anim": "bz_q1",
+     "dur": 0.55,
+     "ev": [
+      {
+       "do": "hit",
+       "t": 0.28,
+       "shape": {
+        "k": "cone",
+        "r": 3.4,
+        "arc": 170
+       },
+       "dmg": 2.6,
+       "stag": 12,
+       "fx": "slash_wide",
+       "knock": 1,
+       "sfx": "whoosh"
+      }
+     ],
+     "cancel": 0.4,
+     "track": true,
+     "armor": "push"
+    },
+    {
+     "anim": "bz_q2",
+     "dur": 0.75,
+     "ev": [
+      {
+       "do": "hit",
+       "t": 0.36,
+       "shape": {
+        "k": "circle",
+        "r": 3.4,
+        "at": "self"
+       },
+       "dmg": 3.6,
+       "stag": 18,
+       "fx": "spin",
+       "knock": 1.6,
+       "shake": 0.1,
+       "sfx": "whoosh"
+      }
+     ],
+     "cancel": 0.55,
+     "armor": "push"
+    }
+   ]
+  },
+  {
+   "id": "bz_w",
+   "name": {
+    "ru": "Прыжок разрушителя",
+    "en": "Leap Crash"
+   },
+   "desc": {
+    "ru": "Прыжок к курсору и удар мечом о землю — оглушает и подбрасывает врагов.",
+    "en": "Leaps to the cursor and crashes down, stunning and launching foes."
+   },
+   "icon": "berserker_w",
+   "color": 14172202,
+   "cd": 9,
+   "type": "normal",
+   "tags": [
+    "mobility",
+    "aoe",
+    "control"
+   ],
+   "el": "phys",
+   "range": 7,
+   "radius": 3.2,
+   "unlock": 1,
+   "steps": [
+    {
+     "anim": "bz_w",
+     "dur": 1,
+     "ev": [
+      {
+       "do": "move",
+       "t": 0.1,
+       "kind": "leap",
+       "dist": 7,
+       "dur": 0.45
+      },
+      {
+       "do": "hit",
+       "t": 0.55,
+       "shape": {
+        "k": "circle",
+        "r": 3.2,
+        "at": "self"
+       },
+       "dmg": 5,
+       "stag": 30,
+       "st": "stun",
+       "stp": 1,
+       "launch": true,
+       "fx": "smash",
+       "shake": 0.35,
+       "sfx": "smash",
+       "knock": 1.5
+      }
+     ],
+     "cancel": 0.8,
+     "armor": "super"
+    }
+   ]
+  },
+  {
+   "id": "bz_e",
+   "name": {
+    "ru": "Вихрь клинка",
+    "en": "Blade Whirl"
+   },
+   "desc": {
+    "ru": "Удерживайте: герой вращается с мечом, двигаясь медленно и разрубая всё вокруг.",
+    "en": "Hold: spin with the sword, moving slowly and cutting everything around."
+   },
+   "icon": "berserker_e",
+   "color": 14172202,
+   "cd": 12,
+   "type": "hold",
+   "holdMax": 2.4,
+   "tags": [
+    "melee",
+    "aoe",
+    "holding"
+   ],
+   "el": "phys",
+   "range": 2.8,
+   "radius": 2.8,
+   "unlock": 1,
+   "steps": [
+    {
+     "anim": "bz_e_in",
+     "dur": 0.2,
+     "ev": [],
+     "armor": "push"
+    },
+    {
+     "anim": "bz_e_loop",
+     "dur": 0.3,
+     "ev": [
+      {
+       "do": "hit",
+       "t": 0.1,
+       "shape": {
+        "k": "circle",
+        "r": 2.8,
+        "at": "self"
+       },
+       "dmg": 1.3,
+       "stag": 5,
+       "fx": "spin",
+       "knock": 0.4,
+       "sfx": "whoosh"
+      }
+     ],
+     "move": 0.45,
+     "armor": "push"
+    },
+    {
+     "anim": "bz_e_out",
+     "dur": 0.5,
+     "ev": [
+      {
+       "do": "hit",
+       "t": 0.2,
+       "shape": {
+        "k": "circle",
+        "r": 3.2,
+        "at": "self"
+       },
+       "dmg": 3,
+       "stag": 14,
+       "fx": "spin",
+       "knock": 1.5,
+       "shake": 0.12
+      }
+     ],
+     "cancel": 0.35,
+     "armor": "push"
+    }
+   ]
+  },
+  {
+   "id": "bz_r",
+   "name": {
+    "ru": "Сокрушитель черепов",
+    "en": "Skull Crusher"
+   },
+   "desc": {
+    "ru": "Удерживайте, чтобы зарядить, и отпустите: сокрушительный удар сверху вниз. Полный заряд — тройной урон и огромное оглушение.",
+    "en": "Hold to charge, release for an overhead blow. Full charge triples damage and stagger."
+   },
+   "icon": "berserker_r",
+   "color": 14172202,
+   "cd": 11,
+   "type": "charge",
+   "chargeMax": 1.2,
+   "chargeMul": 2.6,
+   "tags": [
+    "melee",
+    "charge",
+    "burst",
+    "head"
+   ],
+   "el": "phys",
+   "range": 4,
+   "radius": 1.6,
+   "unlock": 2,
+   "note": {
+    "ru": "Против оглушённых — +30% урона.",
+    "en": "+30% damage vs. staggered foes."
+   },
+   "steps": [
+    {
+     "anim": "bz_r",
+     "dur": 0.8,
+     "ev": [
+      {
+       "do": "hit",
+       "t": 0.32,
+       "shape": {
+        "k": "rect",
+        "len": 4,
+        "w": 2
+       },
+       "dmg": 6.5,
+       "stag": 40,
+       "fx": "smash",
+       "shake": 0.3,
+       "knock": 2,
+       "sfx": "smash"
+      }
+     ],
+     "cancel": 0.6,
+     "armor": "super"
+    }
+   ]
+  },
+  {
+   "id": "bz_a",
+   "name": {
+    "ru": "Таран",
+    "en": "Shoulder Charge"
+   },
+   "desc": {
+    "ru": "Рывок вперёд плечом, сбивающий врагов с ног.",
+    "en": "Charges forward with the shoulder, knocking foes down."
+   },
+   "icon": "berserker_a",
+   "color": 14172202,
+   "cd": 7,
+   "type": "normal",
+   "tags": [
+    "mobility",
+    "control"
+   ],
+   "el": "phys",
+   "range": 6,
+   "radius": 1.4,
+   "unlock": 3,
+   "steps": [
+    {
+     "anim": "bz_a",
+     "dur": 0.55,
+     "ev": [
+      {
+       "do": "move",
+       "t": 0.05,
+       "kind": "dash",
+       "dist": 6,
+       "dur": 0.3,
+       "hit": {
+        "r": 1.4,
+        "dmg": 2.5,
+        "stag": 20,
+        "knock": 2.4,
+        "st": "stun",
+        "stp": 0.6,
+        "fx": "smash"
+       }
+      }
+     ],
+     "cancel": 0.42,
+     "armor": "push"
+    }
+   ]
+  },
+  {
+   "id": "bz_s",
+   "name": {
+    "ru": "Боевой клич",
+    "en": "War Cry"
+   },
+   "desc": {
+    "ru": "Рёв ужаса: ослабляет врагов вокруг и даёт +25% урона и ярость на 8 сек.",
+    "en": "A terrifying roar: weakens foes around you and grants +25% damage and fury for 8s."
+   },
+   "icon": "berserker_s",
+   "color": 16734762,
+   "cd": 18,
+   "type": "normal",
+   "cost": -30,
+   "tags": [
+    "buff",
+    "control"
+   ],
+   "el": "phys",
+   "range": 5,
+   "radius": 5,
+   "unlock": 4,
+   "steps": [
+    {
+     "anim": "bz_s",
+     "dur": 0.7,
+     "ev": [
+      {
+       "do": "hit",
+       "t": 0.3,
+       "shape": {
+        "k": "circle",
+        "r": 5,
+        "at": "self"
+       },
+       "dmg": 0.4,
+       "stag": 10,
+       "st": "weaken",
+       "stp": 5,
+       "fx": "shock",
+       "sfx": "roar"
+      },
+      {
+       "do": "buff",
+       "t": 0.3,
+       "dur": 8,
+       "dmg": 0.25,
+       "color": 16734762
+      },
+      {
+       "do": "fx",
+       "t": 0.3,
+       "kind": "ring",
+       "color": 16734762,
+       "r": 5
+      }
+     ],
+     "cancel": 0.5
+    }
+   ]
+  },
+  {
+   "id": "bz_d",
+   "name": {
+    "ru": "Разлом земли",
+    "en": "Earth Rend"
+   },
+   "desc": {
+    "ru": "Три удара: два косых и вонзание меча с разломом по линии.",
+    "en": "Three strikes: two diagonal slashes and a sword plunge that rends the ground in a line."
+   },
+   "icon": "berserker_d",
+   "color": 11569754,
+   "cd": 10,
+   "type": "combo",
+   "window": 0.9,
+   "tags": [
+    "melee",
+    "combo",
+    "directional"
+   ],
+   "el": "phys",
+   "range": 7,
+   "radius": 1.6,
+   "unlock": 5,
+   "steps": [
+    {
+     "anim": "bz_d1",
+     "dur": 0.45,
+     "ev": [
+      {
+       "do": "hit",
+       "t": 0.22,
+       "shape": {
+        "k": "cone",
+        "r": 3,
+        "arc": 120
+       },
+       "dmg": 2,
+       "stag": 8,
+       "fx": "slash"
+      }
+     ],
+     "cancel": 0.32,
+     "track": true
+    },
+    {
+     "anim": "bz_d2",
+     "dur": 0.45,
+     "ev": [
+      {
+       "do": "hit",
+       "t": 0.22,
+       "shape": {
+        "k": "cone",
+        "r": 3,
+        "arc": 120
+       },
+       "dmg": 2,
+       "stag": 8,
+       "fx": "slash"
+      }
+     ],
+     "cancel": 0.32,
+     "track": true
+    },
+    {
+     "anim": "bz_d3",
+     "dur": 0.85,
+     "ev": [
+      {
+       "do": "hit",
+       "t": 0.42,
+       "shape": {
+        "k": "rect",
+        "len": 7,
+        "w": 1.8
+       },
+       "dmg": 5.5,
+       "stag": 28,
+       "fx": "smash",
+       "shake": 0.25,
+       "launch": true,
+       "sfx": "smash"
+      }
+     ],
+     "cancel": 0.65,
+     "armor": "super"
+    }
+   ]
+  },
+  {
+   "id": "bz_f",
+   "name": {
+    "ru": "Кровавый полумесяц",
+    "en": "Blood Crescent"
+   },
+   "desc": {
+    "ru": "Взмах, выпускающий кровавую волну, которая пронзает всех на пути и вызывает кровотечение.",
+    "en": "A swing that releases a blood wave, piercing everything and causing bleeding."
+   },
+   "icon": "berserker_f",
+   "color": 16724032,
+   "cd": 8,
+   "type": "normal",
+   "cost": 15,
+   "tags": [
+    "ranged",
+    "directional"
+   ],
+   "el": "phys",
+   "range": 10,
+   "radius": 1.2,
+   "unlock": 6,
+   "steps": [
+    {
+     "anim": "bz_f",
+     "dur": 0.6,
+     "ev": [
+      {
+       "do": "proj",
+       "t": 0.28,
+       "dmg": 3.4,
+       "stag": 12,
+       "speed": 20,
+       "range": 10,
+       "r": 1.2,
+       "pierce": -1,
+       "vis": "crescent",
+       "color": 16724032,
+       "st": "bleed",
+       "stp": 4
+      }
+     ],
+     "cancel": 0.42,
+     "track": true
+    }
+   ]
+  }
+ ],
+ "ult": {
+  "id": "bz_ult",
+  "name": {
+   "ru": "Кровавый Судный День",
+   "en": "Red Doom"
+  },
+  "desc": {
+   "ru": "Пробуждение: взлёт к курсору, два огненных удара по сторонам и падение с колоссальным разломом.",
+   "en": "Awakening: leap to the cursor, two blazing side cuts and a colossal ground-splitting fall."
+  },
+  "icon": "berserker_ult",
+  "color": 16722458,
+  "cd": 90,
+  "type": "normal",
+  "tags": [
+   "burst",
+   "aoe"
+  ],
+  "el": "fire",
+  "range": 8,
+  "radius": 5.5,
+  "unlock": 8,
+  "steps": [
+   {
+    "anim": "bz_ult",
+    "dur": 2,
+    "ev": [
+     {
+      "do": "move",
+      "t": 0.1,
+      "kind": "leap",
+      "dist": 8,
+      "dur": 0.5,
+      "iframe": true
+     },
+     {
+      "do": "hit",
+      "t": 0.75,
+      "shape": {
+       "k": "sides",
+       "len": 4.5,
+       "w": 2.4
+      },
+      "dmg": 6,
+      "stag": 30,
+      "fx": "fire",
+      "el": "fire",
+      "shake": 0.25,
+      "sfx": "smash"
+     },
+     {
+      "do": "hit",
+      "t": 1.1,
+      "shape": {
+       "k": "circle",
+       "r": 3.6,
+       "at": "self"
+      },
+      "dmg": 6,
+      "stag": 30,
+      "fx": "spin",
+      "el": "fire",
+      "shake": 0.25
+     },
+     {
+      "do": "hit",
+      "t": 1.45,
+      "shape": {
+       "k": "circle",
+       "r": 5.5,
+       "at": "self"
+      },
+      "dmg": 16,
+      "stag": 120,
+      "fx": "smash",
+      "el": "fire",
+      "launch": true,
+      "shake": 0.7,
+      "st": "burn",
+      "stp": 8,
+      "sfx": "meteor"
+     },
+     {
+      "do": "zone",
+      "t": 1.45,
+      "at": "self",
+      "r": 5,
+      "dur": 3,
+      "every": 0.5,
+      "dmg": 0.8,
+      "el": "fire",
+      "vis": "fire",
+      "color": 16734746
+     }
+    ],
+    "iframes": [
+     0,
+     1.6
+    ],
+    "armor": "super",
+    "cancel": 1.75
+   }
+  ]
+ },
+ "identity": {
+  "kind": "bloodlust",
+  "name": {
+   "ru": "Кровавое безумие",
+   "en": "Bloodlust"
+  },
+  "desc": {
+   "ru": "При полной ярости: 15 сек. +25% урона, +20% скорости атаки и бега, сверхброня. Тело светится красным.",
+   "en": "At full fury: 15s of +25% damage, +20% attack and move speed, super armor. The body glows red."
+  },
+  "icon": "berserker_id",
+  "need": 100,
+  "dur": 15,
+  "color": 16734762,
+  "step": {
+   "anim": "bz_identity",
+   "dur": 0.6,
+   "ev": [
+    {
+     "do": "fx",
+     "t": 0.25,
+     "kind": "burst",
+     "color": 16734762,
+     "r": 3,
+     "shake": 0.3
+    },
+    {
+     "do": "hit",
+     "t": 0.25,
+     "shape": {
+      "k": "circle",
+      "r": 3,
+      "at": "self"
+     },
+     "dmg": 1,
+     "stag": 10,
+     "knock": 2,
+     "fx": "shock"
+    }
+   ],
+   "iframes": [
+    0,
+    0.6
+   ]
+  }
+ }
+}

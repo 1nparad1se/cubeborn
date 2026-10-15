@@ -43,4 +43,10 @@ export interface AnimStyle {
   /** Fraction of the stance kept while running (weapon arms stay up for a knight, relax for a mage). */
   stanceRun?: number;
   victory: 'cheer' | 'salute' | 'raise' | 'flex';
+  /**
+   * Two-handed weapon: after posing, the left arm is solved (two-bone IK) so the left fist
+   * closes on this point of the right-hand weapon (gripR space, voxels). Clips marked
+   * `oneHand` release it.
+   */
+  twoHand?: { hilt: [number, number, number] };
 }

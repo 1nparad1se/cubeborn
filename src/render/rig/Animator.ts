@@ -92,6 +92,8 @@ export class HeroAnimator {
   /** Fired at named moments of clips: 'impulse', 'charge', 'death', 'levelup', 'ability'. */
   onEvent: ((ev: string) => void) | null = null;
   readonly dead = { value: false };
+  /** Two-handed grip weight (0 = left hand free), eased so letting go and grabbing are smooth. */
+  private handW = 1;
 
   constructor(readonly rig: HeroRig) {
     this.style = rig.def.anim;
@@ -287,6 +289,13 @@ export class HeroAnimator {
     this.bobVel += (bv - this.bobVel) * (1 - Math.exp(-20 * dt));
     this.springLayer(dt, t, fwd);
     this.write();
+    const th = this.style.twoHand;
+    if (th) {
+      const a = this.action;
+      const free = (a && a.clip.oneHand && (a.t < a.clip.dur || a.clip.hold || a.clip.loopFrom !== undefined)) || (this.fading?.clip.oneHand && this.fading.out < 0.1);
+      this.handW += ((free ? 0 : 1) - this.handW) * (1 - Math.exp(-(free ? 18 : 10) * dt));
+      if (this.handW > 0.01) solveTwoHand(this.rig, th.hilt, this.handW);
+    }
   }
 
   private jumpLayer(dt: number) {
@@ -536,5 +545,72 @@ export class HeroAnimator {
     rig.bones.hips.position.set(hr.x + hp[0] * sc, hr.y + hp[1] * sc, hr.z + hp[2] * sc);
     const rp = this.pose.get('rootPos')!;
     rig.bones.root.position.set(rp[0] * sc, rp[1] * sc, rp[2] * sc);
+  }
+}
+
+// ---------------------------------------------------------------- two-handed grip (left-arm IK)
+const _S = new THREE.Vector3();
+const _E = new THREE.Vector3();
+const _G = new THREE.Vector3();
+const _T = new THREE.Vector3();
+const _A = new THREE.Vector3();
+const _B = new THREE.Vector3();
+const _P = new THREE.Vector3();
+const _q = new THREE.Quaternion();
+const _qp = new THREE.Quaternion();
+const _qw = new THREE.Quaternion();
+const _qh = new THREE.Quaternion();
+
+/** Rotates a bone in world space so that direction `from` turns into `to` (scaled by `w`). */
+function turnBone(b: THREE.Object3D, from: THREE.Vector3, to: THREE.Vector3, w: number) {
+  if (from.lengthSq() < 1e-10 || to.lengthSq() < 1e-10) return;
+  _q.setFromUnitVectors(from.normalize(), to.normalize());
+  if (w < 1) _q.slerp(_qw.identity(), 1 - w);
+  b.parent!.getWorldQuaternion(_qp);
+  b.getWorldQuaternion(_qw);
+  // new local = parent^-1 * delta * world
+  b.quaternion.copy(_qp.invert().multiply(_q).multiply(_qw));
+  b.updateMatrixWorld(true);
+}
+
+/**
+ * Two-bone IK for the left arm: the shoulder and elbow turn so the left fist's grip point
+ * reaches `hilt` on the right-hand weapon, bending in the plane the clip already chose; the
+ * fist then takes the right fist's orientation so both close around the same handle.
+ */
+function solveTwoHand(rig: HeroRig, hilt: [number, number, number], w: number) {
+  const B = rig.bones;
+  const s = rig.def.scale;
+  rig.root.updateMatrixWorld(true);
+  B.gripR.localToWorld(_T.set(hilt[0] * s, hilt[1] * s, hilt[2] * s));
+  for (let it = 0; it < 2; it++) {
+    B.armL.getWorldPosition(_S);
+    B.foreL.getWorldPosition(_E);
+    B.gripL.getWorldPosition(_G);
+    const a = _S.distanceTo(_E);
+    const b = _E.distanceTo(_G);
+    _A.subVectors(_T, _S);
+    const d = Math.min(a + b - 1e-4, Math.max(Math.abs(a - b) + 1e-4, _A.length()));
+    _A.normalize();
+    // bend plane: keep the elbow on the side it already points to
+    _P.subVectors(_E, _S);
+    _P.addScaledVector(_A, -_P.dot(_A));
+    if (_P.lengthSq() < 1e-8) _P.set(0, -1, 0).addScaledVector(_A, -_A.y);
+    _P.normalize();
+    const cosA = Math.max(-1, Math.min(1, (a * a + d * d - b * b) / (2 * a * d)));
+    const sinA = Math.sqrt(1 - cosA * cosA);
+    // wanted elbow position
+    _B.copy(_S).addScaledVector(_A, cosA * a).addScaledVector(_P, sinA * a);
+    turnBone(B.armL, _E.clone().sub(_S), _B.clone().sub(_S), w);
+    B.foreL.getWorldPosition(_E);
+    B.gripL.getWorldPosition(_G);
+    turnBone(B.foreL, _G.clone().sub(_E), _T.clone().sub(_E), w);
+    // fist orientation: match the right fist
+    B.handR.getWorldQuaternion(_qh);
+    B.handL.parent!.getWorldQuaternion(_qp);
+    B.handL.getWorldQuaternion(_qw);
+    _qw.slerp(_qh, w);
+    B.handL.quaternion.copy(_qp.invert().multiply(_qw));
+    B.handL.updateMatrixWorld(true);
   }
 }

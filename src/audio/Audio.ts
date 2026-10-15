@@ -59,7 +59,13 @@ export class AudioEngine {
   private sfxVol = 0.8;
   private musicVol = 0.6;
   private uiVol = 0.8;
+  private ambVol = 0.7;
   private masterVol = 1;
+  /** Ambience: looping wind and water beds plus occasional birds (day) or crickets (night). */
+  ambBus!: GainNode;
+  private windGain: GainNode | null = null;
+  private waterGain: GainNode | null = null;
+  private critterT = 0;
   private song: SongDef | null = null;
   private songId = '';
   private step = 0;
@@ -83,6 +89,8 @@ export class AudioEngine {
       this.uiBus = this.ctx.createGain();
       this.bus = this.sfxBus;
       this.musicBus = this.ctx.createGain();
+      this.ambBus = this.ctx.createGain();
+      this.ambBus.connect(this.master);
       this.musicFilter = this.ctx.createBiquadFilter();
       this.musicFilter.type = 'lowpass';
       this.musicFilter.frequency.value = 2400;
@@ -96,7 +104,7 @@ export class AudioEngine {
       this.noiseBuf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
       const d = this.noiseBuf.getChannelData(0);
       for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
-      this.setVolumes(this.masterVol, this.sfxVol, this.musicVol, this.uiVol);
+      this.setVolumes(this.masterVol, this.sfxVol, this.musicVol, this.uiVol, this.ambVol);
       if (this.songId) {
         const id = this.songId;
         this.songId = '';
@@ -106,12 +114,14 @@ export class AudioEngine {
     if (this.ctx.state === 'suspended') void this.ctx.resume();
   }
 
-  setVolumes(master: number, sfx: number, music: number, ui: number) {
+  setVolumes(master: number, sfx: number, music: number, ui: number, amb = this.ambVol) {
     this.masterVol = master;
     this.sfxVol = sfx;
     this.musicVol = music;
     this.uiVol = ui;
+    this.ambVol = amb;
     if (!this.ctx) return;
+    this.ambBus.gain.value = amb * 0.9;
     this.master.gain.value = 0.9 * master;
     this.uiBus.gain.value = ui * 0.9;
     this.sfxBus.gain.value = sfx * 0.9;
@@ -178,6 +188,64 @@ export class AudioEngine {
     this.bus = ui ? this.uiBus : this.sfxBus;
     r(this, now, Math.min(1.2, volume));
     this.bus = this.sfxBus;
+  }
+
+  // ------------------------------------------------------------- ambience
+  /** Loop of filtered noise feeding a gain (wind or water bed). */
+  private bed(type: BiquadFilterType, freq: number, q: number, lfo: number): GainNode {
+    const c = this.ctx!;
+    const src = c.createBufferSource();
+    src.buffer = this.noiseBuf;
+    src.loop = true;
+    const f = c.createBiquadFilter();
+    f.type = type;
+    f.frequency.value = freq;
+    f.Q.value = q;
+    // slow swell of the filter (gusts / ripples)
+    const o = c.createOscillator();
+    o.frequency.value = lfo;
+    const og = c.createGain();
+    og.gain.value = freq * 0.35;
+    o.connect(og);
+    og.connect(f.frequency);
+    o.start();
+    const g = c.createGain();
+    g.gain.value = 0;
+    src.connect(f);
+    f.connect(g);
+    g.connect(this.ambBus);
+    src.start();
+    return g;
+  }
+
+  /**
+   * Sets the world ambience every frame: `wind` and `water` 0..1, `night` switches birds to crickets.
+   * `on` false (menus) fades the beds out.
+   */
+  setAmbience(on: boolean, wind: number, water: number, night: boolean, dt: number) {
+    if (!this.ctx || this.ctx.state !== 'running') return;
+    if (!this.windGain) {
+      this.windGain = this.bed('bandpass', 420, 0.6, 0.07);
+      this.waterGain = this.bed('highpass', 1800, 0.4, 0.9);
+    }
+    const t = this.ctx.currentTime;
+    this.windGain.gain.setTargetAtTime(on ? 0.05 + wind * 0.08 : 0, t, 0.6);
+    this.waterGain!.gain.setTargetAtTime(on ? water * 0.11 : 0, t, 0.4);
+    if (!on || this.ambVol <= 0 || this.masterVol <= 0) return;
+    this.critterT -= dt;
+    if (this.critterT > 0) return;
+    this.critterT = night ? 0.25 + Math.random() * 0.6 : 1.5 + Math.random() * 4;
+    const out = this.ambBus;
+    if (night) {
+      // cricket: a few fast high pulses
+      const f = 4200 + Math.random() * 500;
+      for (let i = 0; i < 3; i++) this.tone(t + i * 0.045, 'sine', f, f, 0.03, 0.012, 0.003, out);
+    } else {
+      // bird: two or three falling chirps
+      const n = 2 + ((Math.random() * 2) | 0);
+      const f = 2400 + Math.random() * 1400;
+      for (let i = 0; i < n; i++) this.tone(t + i * 0.11, 'sine', f * (1.15 - i * 0.06), f * 0.8, 0.08, 0.02, 0.005, out);
+    }
   }
 
   // ------------------------------------------------------------- music

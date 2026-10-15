@@ -1,10 +1,10 @@
 import { h, clear } from './dom';
-import { t, LANGS, setLang, type Lang } from '../i18n';
+import { LANGS, setLang, type Lang } from '../i18n';
 import { keyName } from '../input/Input';
-import { QUALITY_PRESETS, SKILL_BINDS, defaultKeybinds, type BindAction, type Quality, type Settings } from '../meta/Save';
-import { confirmBox, type MenuApi } from './Menus';
-import './classSelect.css';
-import './mcd.css';
+import { QUALITY_PRESETS, SKILL_BINDS, defaultKeybinds, defaultSettings, type BindAction, type Quality, type Settings } from '../meta/Save';
+import type { MenuApi } from './Menus';
+import { tr } from './ClassPreview';
+import './settings.css';
 
 const RESOLUTIONS: [number, number][] = [
   [1280, 720],
@@ -23,58 +23,238 @@ export function availableResolutions(): string[] {
   return out.length ? out : ['1280x720'];
 }
 
-type Tab = 'video' | 'graphics' | 'gameplay' | 'audio' | 'controls' | 'other';
-let lastTab: Tab = 'video';
+type Section = 'screen' | 'graphics' | 'game' | 'audio' | 'controls' | 'other';
+const SECTIONS: { id: Section; icon: string; ru: string; en: string }[] = [
+  { id: 'screen', icon: 'monitor', ru: 'Экран', en: 'Display' },
+  { id: 'graphics', icon: 'gem', ru: 'Графика', en: 'Graphics' },
+  { id: 'game', icon: 'sword', ru: 'Игра', en: 'Gameplay' },
+  { id: 'audio', icon: 'note', ru: 'Звук', en: 'Audio' },
+  { id: 'controls', icon: 'keys', ru: 'Управление', en: 'Controls' },
+  { id: 'other', icon: 'dots', ru: 'Прочее', en: 'Other' },
+];
+
+/** Settings each section owns ("По умолчанию" resets only these). */
+const SECTION_KEYS: Record<Section, (keyof Settings)[]> = {
+  screen: ['displayMode', 'resolution', 'vsync', 'fpsLimit', 'uiScale'],
+  graphics: ['quality', 'shadows', 'effects', 'particles', 'viewDistance', 'antiAliasing', 'textures', 'postProcessing'],
+  game: ['cameraZoom', 'screenShake', 'damageNumbers', 'enemyHealthBars', 'showMinimap', 'showFps', 'showHints', 'dayNight', 'autoPause'],
+  audio: ['master', 'music', 'sfx', 'ambient', 'ui'],
+  controls: ['keybinds', 'swapMouse', 'invertWheel'],
+  other: ['lang'],
+};
 
 const SUB_KEYS = ['shadows', 'effects', 'particles', 'viewDistance', 'antiAliasing', 'textures', 'postProcessing'] as const;
 
-/** Tabbed settings, shared by the main menu and the pause menu. */
-export function settingsPanel(api: MenuApi, rerender: () => void, inRun = false): HTMLElement {
-  const s = api.profile.data.settings;
-  const save = () => {
-    api.profile.saveSoon();
-    api.applySettings();
-  };
-  const body = h('div.set-body');
-  const tabs = h('div.tabs.set-tabs');
-  const note = h('div.set-note');
+const BIND_LABEL: Record<BindAction, [string, string]> = {
+  up: ['Вверх', 'Up'],
+  down: ['Вниз', 'Down'],
+  left: ['Влево', 'Left'],
+  right: ['Вправо', 'Right'],
+  jump: ['Прыжок', 'Jump'],
+  stop: ['Остановиться', 'Stop'],
+  skillQ: ['Навык Q', 'Skill Q'],
+  skillW: ['Навык W', 'Skill W'],
+  skillE: ['Навык E', 'Skill E'],
+  skillR: ['Навык R', 'Skill R'],
+  skillA: ['Навык A', 'Skill A'],
+  skillS: ['Навык S', 'Skill S'],
+  skillD: ['Навык D', 'Skill D'],
+  skillF: ['Навык F', 'Skill F'],
+  ult: ['Ультимативная способность', 'Ultimate'],
+  identity: ['Особая способность класса', 'Class identity'],
+  special: ['Дополнительное действие', 'Special action'],
+  dodge: ['Уклонение', 'Dodge'],
+  attack: ['Базовая атака', 'Basic attack'],
+  attackHere: ['Атаковать на месте (удерживать)', 'Attack in place (hold)'],
+  skills: ['Окно навыков', 'Skills window'],
+  map: ['Карта мира', 'World map'],
+  pause: ['Пауза', 'Pause'],
+  zoomIn: ['Приблизить камеру', 'Zoom in'],
+  zoomOut: ['Отдалить камеру', 'Zoom out'],
+};
+const bindLabel = (a: BindAction) => tr(...BIND_LABEL[a]);
+const BIND_GROUPS: [string, string, BindAction[]][] = [
+  ['Передвижение', 'Movement', ['up', 'down', 'left', 'right', 'jump', 'stop']],
+  ['Атаки и способности', 'Attacks and skills', ['attack', 'attackHere', ...SKILL_BINDS, 'ult', 'identity', 'special', 'dodge']],
+  ['Экраны и камера', 'Screens and camera', ['skills', 'map', 'pause', 'zoomIn', 'zoomOut']],
+];
+/** Actions every class needs a key for (warned about when left without one). */
+const ESSENTIAL: BindAction[] = [...SKILL_BINDS, 'ult', 'identity', 'dodge', 'skills', 'map'];
 
-  // ---- control builders
-  const row = (label: string, control: HTMLElement, hint?: string) => h('div.set-row', h('span.set-label', label, hint ? h('small', hint) : null), control);
-  const slider = (label: string, get: () => number, set: (v: number) => void, fmt = (v: number) => Math.round(v * 100) + '%', min = 0, max = 100, k = 100) => {
-    const val = h('span.val', fmt(get()));
-    const input = h('input', { type: 'range', min, max, value: Math.round(get() * k) }) as HTMLInputElement;
+let section: Section = 'screen';
+/** Settings as last applied; edits made since are a preview until «Применить». */
+let applied: Settings | null = null;
+
+const clone = (s: Settings): Settings => JSON.parse(JSON.stringify(s));
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+
+/** True when the open settings screen has changes that were not applied. */
+export function settingsDirty(api: MenuApi): boolean {
+  return !!applied && !same(applied, api.profile.data.settings);
+}
+
+/**
+ * Leaving the settings: with unapplied changes asks to apply or discard them first.
+ * `go` runs once the settings are settled.
+ */
+export function leaveSettings(api: MenuApi, host: HTMLElement, go: () => void) {
+  if (!settingsDirty(api)) {
+    closeDraft(api);
+    go();
+    return;
+  }
+  stDialog(host, tr('Есть изменения, которые не применены.', 'Some changes are not applied.'), [
+    { label: tr('Отмена', 'Cancel') },
+    {
+      label: tr('Не сохранять', 'Discard'),
+      fn: () => {
+        revert(api);
+        go();
+      },
+    },
+    {
+      label: tr('Применить', 'Apply'),
+      primary: true,
+      fn: () => {
+        apply(api);
+        closeDraft(api);
+        go();
+      },
+    },
+  ]);
+}
+
+function apply(api: MenuApi) {
+  const s = api.profile.data.settings;
+  applied = clone(s);
+  api.profile.committedSettings = null;
+  api.profile.save();
+  api.profile.committedSettings = applied;
+}
+
+function revert(api: MenuApi) {
+  if (applied) {
+    const back = clone(applied);
+    api.profile.data.settings = back;
+    setLang(back.lang);
+    api.applySettings();
+  }
+  closeDraft(api);
+}
+
+function closeDraft(api: MenuApi) {
+  applied = null;
+  api.profile.committedSettings = null;
+}
+
+function stDialog(host: HTMLElement, text: string, buttons: { label: string; primary?: boolean; fn?: () => void }[]) {
+  const box: HTMLElement = h(
+    'div.st-dialog',
+    h(
+      'div.st-dialog-box',
+      h('p', text),
+      h(
+        'div.st-dialog-btns',
+        ...buttons.map((b) =>
+          h('button.st-btn' + (b.primary ? '.primary' : ''), {
+            onclick: () => {
+              box.remove();
+              b.fn?.();
+            },
+          }, b.label),
+        ),
+      ),
+    ),
+  );
+  (host.closest('.app') ?? host).appendChild(box);
+}
+
+/**
+ * Settings screen in the main-menu style: six sections on the left, the options of the section
+ * on the right, «По умолчанию», «Применить» and «Назад» at the bottom. Changes preview at once
+ * and are saved by «Применить»; leaving without it asks first. Shared by the menu and the pause.
+ */
+export function settingsPanel(api: MenuApi, rerender: () => void, onBack: () => void): HTMLElement {
+  if (!applied) {
+    applied = clone(api.profile.data.settings);
+    api.profile.committedSettings = applied;
+  }
+  const s = () => api.profile.data.settings;
+  const nav = h('nav.st-nav');
+  const body = h('div.st-body');
+  const head = h('div.st-head');
+  const applyBtn = h('button.st-btn.primary', {
+    onclick: () => {
+      if (!settingsDirty(api)) return;
+      api.sfx('select');
+      apply(api);
+      flash(tr('Настройки применены и сохранены.', 'Settings applied and saved.'));
+      refresh();
+    },
+  }, tr('Применить', 'Apply'));
+  const status = h('div.st-status');
+  let flashT = 0;
+  const flash = (text: string) => {
+    status.textContent = text;
+    status.classList.add('show');
+    clearTimeout(flashT);
+    flashT = window.setTimeout(() => status.classList.remove('show'), 2400);
+  };
+  const changed = () => {
+    api.applySettings();
+    refresh();
+  };
+  const refresh = () => {
+    const dirty = settingsDirty(api);
+    applyBtn.toggleAttribute('disabled', !dirty);
+    root.classList.toggle('dirty', dirty);
+  };
+
+  // ---------------------------------------------------------------- controls
+  const row = (label: string, control: HTMLElement, hint?: string) => h('div.st-row', h('div.st-label', h('span', label), hint ? h('small', hint) : null), h('div.st-ctl', control));
+  const group = (title: string) => h('div.st-group', title);
+  const slider = (label: string, get: () => number, set: (v: number) => void, o: { min?: number; max?: number; k?: number; fmt?: (v: number) => string; hint?: string } = {}) => {
+    const k = o.k ?? 100;
+    const fmt = o.fmt ?? ((v: number) => Math.round(v * 100) + '%');
+    const val = h('span.st-val', fmt(get()));
+    const input = h('input.st-range', { type: 'range', min: o.min ?? 0, max: o.max ?? 100, value: Math.round(get() * k) }) as HTMLInputElement;
+    const paint = () => input.style.setProperty('--p', ((Number(input.value) - Number(input.min)) / (Number(input.max) - Number(input.min))) * 100 + '%');
+    paint();
     input.addEventListener('input', () => {
       set(Number(input.value) / k);
       val.textContent = fmt(get());
-      save();
+      paint();
+      changed();
     });
-    return row(label, h('div.slider', input, val));
+    return row(label, h('div.st-slider', input, val), o.hint);
   };
   const toggle = (label: string, get: () => boolean, set: (v: boolean) => void, hint?: string) => {
-    const b = h('button.toggle' + (get() ? '.on' : ''), {
+    const b = h('button.st-toggle' + (get() ? '.on' : ''), {
+      role: 'switch',
       onclick: () => {
         set(!get());
         b.classList.toggle('on', get());
-        b.textContent = get() ? t('on') : t('off');
+        txt.textContent = get() ? tr('Вкл', 'On') : tr('Выкл', 'Off');
         api.sfx('ui');
-        save();
+        changed();
       },
-    }, get() ? t('on') : t('off'));
-    return row(label, b, hint);
+    }, h('i'));
+    const txt = h('span.st-toggle-txt', get() ? tr('Вкл', 'On') : tr('Выкл', 'Off'));
+    return row(label, h('div.st-toggle-wrap', b, txt), hint);
   };
   const seg = <T extends string | number>(label: string, opts: { id: T; name: string }[], get: () => T, set: (v: T) => void, hint?: string) => {
-    const box = h('div.seg');
+    const box = h('div.st-seg');
     const draw = () => {
       clear(box);
       for (const o of opts)
         box.append(
           h('button' + (o.id === get() ? '.sel' : ''), {
             onclick: () => {
+              if (o.id === get()) return;
               api.sfx('ui');
               set(o.id);
-              save();
               draw();
+              changed();
             },
           }, o.name),
         );
@@ -82,49 +262,48 @@ export function settingsPanel(api: MenuApi, rerender: () => void, inRun = false)
     draw();
     return row(label, box, hint);
   };
-  /** Changing any graphics sub-setting turns the preset into "custom". */
-  const sub = <K extends (typeof SUB_KEYS)[number]>(key: K) => (v: Settings[K]) => {
-    s[key] = v;
-    s.quality = 'custom';
-    renderTab();
-  };
-  const lv3 = [
-    { id: 'low' as const, name: t('q_low') },
-    { id: 'medium' as const, name: t('q_medium') },
-    { id: 'high' as const, name: t('q_high') },
+  const lv3 = () => [
+    { id: 'low' as const, name: tr('Низко', 'Low') },
+    { id: 'medium' as const, name: tr('Средне', 'Medium') },
+    { id: 'high' as const, name: tr('Высоко', 'High') },
   ];
+  const off = () => tr('Выкл', 'Off');
+  /** Changing a graphics sub-setting turns the preset into "custom". */
+  const sub = <K extends (typeof SUB_KEYS)[number]>(key: K) => (v: Settings[K]) => {
+    s()[key] = v;
+    s().quality = 'custom';
+    renderBody();
+  };
 
-  /** Notice from the last rebind (a key taken from another action). */
+  // ---------------------------------------------------------------- key binding
   let bindNote = '';
-  const bindLabel = (a: BindAction) => t('bind_' + a);
-  /** Two key slots for an action; binding a key already used elsewhere moves it here (with a notice). */
   const bindRow = (a: BindAction, clash: Set<string>) => {
+    const st = s();
     const all = Object.keys(defaultKeybinds()) as BindAction[];
-    const keys = h('div.binds');
+    const keys = h('div.st-binds');
     for (let slot = 0; slot < 2; slot++) {
-      const code = s.keybinds[a][slot] ?? '';
-      const b = h('button.bind' + (code ? '' : '.empty') + (code && clash.has(code) ? '.conflict' : ''), {
-        title: code && clash.has(code) ? t('bind_conflict', { key: keyName(code), a: bindLabel(a), b: all.filter((o) => o !== a && s.keybinds[o].includes(code)).map(bindLabel).join(', ') }) : '',
+      const code = st.keybinds[a][slot] ?? '';
+      const b = h('button.st-key' + (code ? '' : '.empty') + (code && clash.has(code) ? '.conflict' : ''), {
         onclick: () => {
           api.sfx('ui');
-          b.textContent = t('press_key');
+          b.textContent = tr('Нажмите клавишу…', 'Press a key…');
           b.classList.add('wait');
           api.captureKey((c) => {
             bindNote = '';
             if (c !== 'Escape' || a === 'pause') {
-              if (c === 'Backspace' || c === 'Delete') s.keybinds[a].splice(slot, 1);
+              if (c === 'Backspace' || c === 'Delete') st.keybinds[a].splice(slot, 1);
               else {
-                const from = all.filter((o) => o !== a && s.keybinds[o].includes(c));
-                for (const other of all) if (other !== a) s.keybinds[other] = s.keybinds[other].filter((k) => k !== c);
-                const list = [...s.keybinds[a]];
+                const from = all.filter((o) => o !== a && st.keybinds[o].includes(c));
+                for (const other of all) if (other !== a) st.keybinds[other] = st.keybinds[other].filter((k) => k !== c);
+                const list = [...st.keybinds[a]];
                 if (slot < list.length) list[slot] = c;
                 else list.push(c);
-                s.keybinds[a] = list.filter((k, i) => list.indexOf(k) === i);
-                if (from.length) bindNote = t('bind_moved', { key: keyName(c), a: bindLabel(a), b: from.map(bindLabel).join(', ') });
+                st.keybinds[a] = list.filter((k, i) => list.indexOf(k) === i);
+                if (from.length) bindNote = tr(`Клавиша ${keyName(c)} переназначена на «${bindLabel(a)}» и снята с: ${from.map(bindLabel).join(', ')}.`, `${keyName(c)} now does "${bindLabel(a)}" and was removed from: ${from.map(bindLabel).join(', ')}.`);
               }
-              save();
+              changed();
             }
-            renderTab();
+            renderBody();
           });
         },
       }, code ? keyName(code) : '—');
@@ -132,159 +311,189 @@ export function settingsPanel(api: MenuApi, rerender: () => void, inRun = false)
     }
     return row(bindLabel(a), keys);
   };
-  const BIND_GROUPS: [string, BindAction[]][] = [
-    ['combat', ['attack', 'attackHere', ...SKILL_BINDS, 'ult', 'identity', 'special', 'dodge']],
-    ['move', ['up', 'down', 'left', 'right', 'stop', 'jump', 'zoomIn', 'zoomOut', 'map']],
-    ['ui', ['skills', 'pause']],
-  ];
-  /** Actions every class needs a key for (warned about when left without one). */
-  const ESSENTIAL: BindAction[] = [...SKILL_BINDS, 'ult', 'identity', 'dodge', 'skills', 'map'];
 
-  const renderTab = () => {
+  // ---------------------------------------------------------------- sections
+  const renderBody = () => {
+    const st = s();
     clear(body);
-    clear(note);
-    if (api.needsRestart()) note.append(t('set_restart_note'));
-    switch (lastTab) {
-      case 'video': {
+    const sec = SECTIONS.find((x) => x.id === section)!;
+    clear(head);
+    head.append(h('h2', tr(sec.ru, sec.en)));
+    switch (section) {
+      case 'screen': {
         const res = availableResolutions();
         body.append(
-          seg(t('set_display'), [
-            { id: 'windowed', name: t('dm_windowed') },
-            { id: 'fullscreen', name: t('dm_fullscreen') },
-            { id: 'borderless', name: t('dm_borderless') },
-          ], () => s.displayMode, (v) => (s.displayMode = v), t('set_display_hint')),
-          seg(t('set_resolution'), [{ id: 'native', name: t('res_native') }, ...res.map((r) => ({ id: r, name: r.replace('x', '×') }))], () => (s.resolution === 'native' || res.includes(s.resolution) ? s.resolution : 'native'), (v) => (s.resolution = v), t('set_resolution_hint')),
-          toggle(t('set_vsync'), () => s.vsync, (v) => (s.vsync = v)),
-          seg(t('set_fps_limit'), [30, 60, 120, 144, 165, 240, 0].map((n) => ({ id: n, name: n ? String(n) : '∞' })), () => s.fpsLimit, (v) => (s.fpsLimit = v)),
-          slider(t('set_shake'), () => s.screenShake, (v) => (s.screenShake = v)),
+          seg(tr('Режим окна', 'Window mode'), [
+            { id: 'windowed', name: tr('В окне', 'Windowed') },
+            { id: 'fullscreen', name: tr('Полный экран', 'Fullscreen') },
+            { id: 'borderless', name: tr('Без рамки', 'Borderless') },
+          ], () => st.displayMode, (v) => (st.displayMode = v), tr('В браузере полный экран и режим без рамки работают одинаково: игра занимает весь экран без панелей браузера.', 'In a browser, fullscreen and borderless behave the same: the game fills the screen without browser bars.')),
+          seg(tr('Разрешение', 'Resolution'), [{ id: 'native', name: tr('Родное', 'Native') }, ...res.map((r) => ({ id: r, name: r.replace('x', '×') }))], () => (st.resolution === 'native' || res.includes(st.resolution) ? st.resolution : 'native'), (v) => (st.resolution = v), tr('Разрешение отрисовки 3D-сцены; показаны только подходящие вашему монитору.', 'Render resolution of the 3D scene; only ones that fit your monitor are listed.')),
+          toggle(tr('Вертикальная синхронизация', 'Vertical sync'), () => st.vsync, (v) => (st.vsync = v)),
+          seg(tr('Ограничение кадров', 'Frame limit'), [30, 60, 120, 144, 165, 240, 0].map((n) => ({ id: n, name: n ? String(n) : '∞' })), () => st.fpsLimit, (v) => (st.fpsLimit = v)),
+          slider(tr('Масштаб интерфейса', 'Interface scale'), () => st.uiScale, (v) => (st.uiScale = v), { min: 80, max: 130, hint: tr('Размер меню, панели навыков, карты и подсказок.', 'Size of menus, the skill bar, the map and hints.') }),
         );
         break;
       }
       case 'graphics':
         body.append(
-          seg<Quality>(t('set_quality'), [
-            { id: 'low', name: t('q_low') },
-            { id: 'medium', name: t('q_medium') },
-            { id: 'high', name: t('q_high') },
-            { id: 'ultra', name: t('q_ultra') },
-            ...(s.quality === 'custom' ? [{ id: 'custom' as Quality, name: t('q_custom') }] : []),
-          ], () => s.quality, (v) => {
-            s.quality = v;
-            if (v !== 'custom') Object.assign(s, QUALITY_PRESETS[v]);
-            renderTab();
-          }),
-          seg(t('set_shadows'), [{ id: 'off' as const, name: t('off') }, ...lv3], () => s.shadows, sub('shadows')),
-          seg(t('set_effects'), lv3, () => s.effects, sub('effects')),
-          seg(t('set_particles'), lv3, () => s.particles, sub('particles')),
-          seg(t('set_view_distance'), [
-            { id: 'near', name: t('vd_near') },
-            { id: 'medium', name: t('vd_medium') },
-            { id: 'far', name: t('vd_far') },
-            { id: 'max', name: t('vd_max') },
-          ], () => s.viewDistance, sub('viewDistance')),
-          seg(t('set_aa'), [
-            { id: 'off', name: t('off') },
+          seg<Quality>(tr('Общее качество', 'Overall quality'), [
+            { id: 'low', name: tr('Низкое', 'Low') },
+            { id: 'medium', name: tr('Среднее', 'Medium') },
+            { id: 'high', name: tr('Высокое', 'High') },
+            { id: 'ultra', name: tr('Ультра', 'Ultra') },
+            ...(st.quality === 'custom' ? [{ id: 'custom' as Quality, name: tr('Своё', 'Custom') }] : []),
+          ], () => st.quality, (v) => {
+            st.quality = v;
+            if (v !== 'custom') Object.assign(st, QUALITY_PRESETS[v]);
+            renderBody();
+          }, tr('«Ультра» включает все параметры на максимум.', 'Ultra turns every option to the maximum.')),
+          group(tr('Детали', 'Details')),
+          seg(tr('Качество текстур', 'Texture quality'), lv3(), () => st.textures, sub('textures'), tr('Фильтрация и мипмапы текстур блоков.', 'Filtering and mipmaps of block textures.')),
+          seg(tr('Тени', 'Shadows'), [{ id: 'off' as const, name: off() }, ...lv3()], () => st.shadows, sub('shadows'), tr('Размер карты теней: 1024, 2048 или 4096.', 'Shadow map size: 1024, 2048 or 4096.')),
+          seg(tr('Освещение и эффекты', 'Lighting and effects'), lv3(), () => st.effects, sub('effects'), tr('Число динамических источников света (2, 4 или 6), сила свечения и затенение (AO).', 'Dynamic light count (2, 4 or 6), glow strength and ambient occlusion.')),
+          seg(tr('Частицы', 'Particles'), lv3(), () => st.particles, sub('particles'), tr('Количество частиц в эффектах навыков и окружения.', 'How many particles skills and the world spawn.')),
+          seg(tr('Дальность прорисовки', 'View distance'), [
+            { id: 'near', name: tr('Близко', 'Near') },
+            { id: 'medium', name: tr('Средне', 'Medium') },
+            { id: 'far', name: tr('Далеко', 'Far') },
+            { id: 'max', name: tr('Макс.', 'Max') },
+          ], () => st.viewDistance, sub('viewDistance')),
+          seg(tr('Сглаживание', 'Anti-aliasing'), [
+            { id: 'off', name: off() },
             { id: 'msaa', name: 'MSAA' },
             { id: 'ssaa', name: 'MSAA + SSAA' },
-          ], () => s.antiAliasing, sub('antiAliasing'), t('set_aa_hint')),
-          seg(t('set_textures'), lv3, () => s.textures, sub('textures')),
-          toggle(t('set_post'), () => s.postProcessing, sub('postProcessing'), t('set_post_hint')),
+          ], () => st.antiAliasing, sub('antiAliasing'), tr('MSAA включается или выключается после перезапуска игры.', 'MSAA turns on or off after restarting the game.')),
+          toggle(tr('Постобработка', 'Post-processing'), () => st.postProcessing, sub('postProcessing'), tr('Свечение, цветокоррекция, тональная компрессия и виньетка.', 'Bloom, color grading, tone mapping and vignette.')),
         );
         break;
-      case 'gameplay':
+      case 'game':
         body.append(
-          toggle(t('set_numbers'), () => s.damageNumbers, (v) => (s.damageNumbers = v)),
-          seg(t('set_hpbars'), [
-            { id: 'off', name: t('off') },
-            { id: 'elites', name: t('hp_elites') },
-            { id: 'all', name: t('hp_all') },
-          ], () => s.enemyHealthBars, (v) => (s.enemyHealthBars = v)),
-          toggle(t('set_minimap'), () => s.showMinimap, (v) => (s.showMinimap = v)),
-          toggle(t('set_fps'), () => s.showFps, (v) => (s.showFps = v)),
-          toggle(t('set_autopause'), () => s.autoPause, (v) => (s.autoPause = v)),
-          seg(t('set_daynight'), [
-            { id: 'off', name: t('off') },
-            { id: 'short', name: t('dn_len_short') },
-            { id: 'normal', name: t('dn_len_normal') },
-            { id: 'long', name: t('dn_len_long') },
-          ], () => s.dayNight ?? 'normal', (v) => (s.dayNight = v), inRun ? t('set_daynight_next') : t('set_daynight_hint')),
-          slider(t('set_zoom'), () => s.cameraZoom, (v) => (s.cameraZoom = v), (v) => Math.round(v * 100) + '%', 75, 135),
-          seg<Lang>(t('set_lang'), LANGS, () => s.lang, (v) => {
-            s.lang = v;
-            setLang(v);
-            rerender();
-          }),
+          group(tr('Камера', 'Camera')),
+          slider(tr('Отдаление камеры', 'Camera distance'), () => st.cameraZoom, (v) => (st.cameraZoom = v), { min: 75, max: 135, hint: tr('Также меняется колесом мыши в игре.', 'Also changes with the mouse wheel in game.') }),
+          slider(tr('Тряска экрана', 'Screen shake'), () => st.screenShake, (v) => (st.screenShake = v)),
+          group(tr('Интерфейс', 'Interface')),
+          toggle(tr('Мини-карта', 'Minimap'), () => st.showMinimap, (v) => (st.showMinimap = v)),
+          toggle(tr('Цифры урона', 'Damage numbers'), () => st.damageNumbers, (v) => (st.damageNumbers = v)),
+          seg(tr('Полоски здоровья противников', 'Enemy health bars'), [
+            { id: 'off', name: off() },
+            { id: 'elites', name: tr('Только сильные', 'Strong only') },
+            { id: 'all', name: tr('Все', 'All') },
+          ], () => st.enemyHealthBars, (v) => (st.enemyHealthBars = v)),
+          toggle(tr('Подсказки управления', 'Control hints'), () => st.showHints, (v) => (st.showHints = v), tr('Подсказка по клавишам в начале игры новым персонажем.', 'Key hints when a new character starts.')),
+          toggle(tr('Счётчик кадров', 'FPS counter'), () => st.showFps, (v) => (st.showFps = v)),
+          group(tr('Мир', 'World')),
+          seg(tr('Смена дня и ночи', 'Day and night'), [
+            { id: 'off', name: off() },
+            { id: 'short', name: tr('Быстро', 'Fast') },
+            { id: 'normal', name: tr('Обычно', 'Normal') },
+            { id: 'long', name: tr('Медленно', 'Slow') },
+          ], () => st.dayNight ?? 'normal', (v) => (st.dayNight = v), tr('Применяется при следующем входе в мир.', 'Applies the next time you enter the world.')),
+          toggle(tr('Пауза при сворачивании', 'Pause when the window loses focus'), () => st.autoPause, (v) => (st.autoPause = v)),
         );
         break;
       case 'audio':
         body.append(
-          slider(t('set_master'), () => s.master, (v) => (s.master = v)),
-          slider(t('set_music'), () => s.music, (v) => (s.music = v)),
-          slider(t('set_sfx'), () => s.sfx, (v) => (s.sfx = v)),
-          slider(t('set_ui'), () => s.ui, (v) => (s.ui = v)),
+          slider(tr('Общая громкость', 'Master volume'), () => st.master, (v) => (st.master = v)),
+          slider(tr('Музыка', 'Music'), () => st.music, (v) => (st.music = v)),
+          slider(tr('Звуковые эффекты', 'Sound effects'), () => st.sfx, (v) => (st.sfx = v)),
+          slider(tr('Окружение', 'Ambience'), () => st.ambient, (v) => (st.ambient = v), { hint: tr('Ветер, река, птицы днём и сверчки ночью.', 'Wind, the river, birds by day and crickets at night.') }),
+          slider(tr('Интерфейс', 'Interface'), () => st.ui, (v) => (st.ui = v)),
         );
         break;
       case 'controls': {
         const all = Object.keys(defaultKeybinds()) as BindAction[];
-        // conflicts: a key used by two actions (old saves, or two slots of the same action)
         const owners = new Map<string, BindAction[]>();
-        for (const a of all) for (const k of s.keybinds[a]) owners.set(k, [...(owners.get(k) ?? []), a]);
+        for (const a of all) for (const k of st.keybinds[a]) owners.set(k, [...(owners.get(k) ?? []), a]);
         const clash = new Set([...owners].filter(([, o]) => o.length > 1).map(([k]) => k));
-        const warns: string[] = [...clash].map((k) => t('bind_conflict', { key: keyName(k), a: bindLabel(owners.get(k)![0]), b: owners.get(k)!.slice(1).map(bindLabel).join(', ') }));
-        const unbound = ESSENTIAL.filter((a) => !s.keybinds[a].length);
-        if (unbound.length) warns.push(t('bind_unbound', { list: unbound.map(bindLabel).join(', ') }));
-        body.append(h('div.set-hint.bind-mouse', t('bind_mouse')));
-        if (bindNote) body.append(h('div.bind-note', bindNote));
-        for (const w of warns) body.append(h('div.bind-warn', '⚠ ' + w));
-        for (const [g, acts] of BIND_GROUPS) {
-          body.append(h('div.set-sub', t('bindgrp_' + g)));
+        const warns: string[] = [...clash].map((k) => tr(`Клавиша ${keyName(k)} назначена сразу на: ${owners.get(k)!.map(bindLabel).join(', ')}.`, `${keyName(k)} is bound to several actions: ${owners.get(k)!.map(bindLabel).join(', ')}.`));
+        const unbound = ESSENTIAL.filter((a) => !st.keybinds[a].length);
+        if (unbound.length) warns.push(tr(`Без клавиши: ${unbound.map(bindLabel).join(', ')}.`, `No key: ${unbound.map(bindLabel).join(', ')}.`));
+        body.append(
+          group(tr('Мышь', 'Mouse')),
+          toggle(tr('Поменять кнопки мыши местами', 'Swap mouse buttons'), () => st.swapMouse, (v) => (st.swapMouse = v), tr('Обычно: левая — идти и выбирать цель, правая — атаковать.', 'Default: left moves and picks a target, right attacks.')),
+          toggle(tr('Обратное направление колеса', 'Reverse wheel zoom'), () => st.invertWheel, (v) => (st.invertWheel = v)),
+          h('div.st-hint', tr('Чувствительности мыши нет: курсор системный и указывает точку в мире напрямую.', 'There is no mouse sensitivity: the system cursor points at the world directly.')),
+        );
+        if (bindNote) body.append(h('div.st-note', bindNote));
+        for (const w of warns) body.append(h('div.st-warn', w));
+        for (const [ru, en, acts] of BIND_GROUPS) {
+          body.append(group(tr(ru, en)));
           for (const a of acts) body.append(bindRow(a, clash));
         }
-        body.append(
-          h('div.set-hint', t('bind_hint')),
-          h('div.center', h('button.btn.small', {
-            onclick: (e: MouseEvent) => {
-              api.sfx('ui');
-              confirmBox(e.target as HTMLElement, t('bind_reset_confirm'), () => {
-                s.keybinds = defaultKeybinds();
-                bindNote = '';
-                save();
-                renderTab();
-              });
-            },
-          }, t('bind_reset'))),
-        );
+        body.append(h('div.st-hint', tr('Щёлкните по клавише и нажмите новую. Backspace очищает слот, Esc отменяет.', 'Click a key and press a new one. Backspace clears the slot, Esc cancels.')));
         break;
       }
       case 'other':
         body.append(
-          row(t('set_reset'), h('button.btn.danger.small', { onclick: (e: MouseEvent) => confirmReset(e, api) }, t('btn_reset'))),
-          h('div.credits', t('credits'), h('br'), api.version),
+          seg<Lang>(tr('Язык', 'Language'), LANGS, () => st.lang, (v) => {
+            st.lang = v;
+            setLang(v);
+            rerender();
+          }),
+          row(
+            tr('Все настройки', 'All settings'),
+            h('button.st-btn.danger', {
+              onclick: () => {
+                api.sfx('ui');
+                stDialog(root, tr('Вернуть все настройки и клавиши к значениям по умолчанию? Персонажи не пострадают.', 'Restore every setting and key to the defaults? Characters are not affected.'), [
+                  { label: tr('Отмена', 'Cancel') },
+                  {
+                    label: tr('Сбросить', 'Reset'),
+                    primary: true,
+                    fn: () => {
+                      const keep = s().lang;
+                      api.profile.data.settings = { ...defaultSettings(), lang: keep };
+                      changed();
+                      rerender();
+                    },
+                  },
+                ]);
+              },
+            }, tr('Сбросить всё', 'Reset everything')),
+            tr('Изменение нужно применить кнопкой «Применить».', 'Press Apply to keep the change.'),
+          ),
+          h('div.st-credits', tr('Cubeborn — оригинальная игра. Вся графика, модели, звуки и музыка созданы процедурно. Шрифты: Russo One, Rubik и Press Start 2P (SIL OFL).', 'Cubeborn is an original game. All graphics, models, sounds and music are procedural. Fonts: Russo One, Rubik and Press Start 2P (SIL OFL).'), h('br'), api.version),
         );
         break;
     }
+    if (api.needsRestart()) body.prepend(h('div.st-note', tr('Изменение сглаживания вступит в силу после перезапуска игры.', 'The anti-aliasing change takes effect after restarting the game.')));
+    refresh();
   };
 
-  const drawTabs = () => {
-    clear(tabs);
-    const ids: Tab[] = ['video', 'graphics', 'gameplay', 'audio', 'controls', 'other'];
-    for (const id of ids)
-      tabs.append(
-        h('button.tab' + (lastTab === id ? '.sel' : ''), {
+  const drawNav = () => {
+    clear(nav);
+    for (const sc of SECTIONS)
+      nav.append(
+        h('button.st-tab' + (section === sc.id ? '.sel' : ''), {
           onclick: () => {
+            if (section === sc.id) return;
             api.sfx('ui');
-            lastTab = id;
-            drawTabs();
-            renderTab();
+            section = sc.id;
+            drawNav();
+            renderBody();
           },
-        }, t('settab_' + id)),
+        }, h('i.st-ico.i-' + sc.icon), h('span', tr(sc.ru, sc.en))),
       );
   };
-  drawTabs();
-  renderTab();
-  return h('div.settings', tabs, note, body);
-}
 
-function confirmReset(e: MouseEvent, api: MenuApi) {
-  confirmBox(e.target as HTMLElement, t('reset_confirm'), () => api.resetSettings());
+  const defaults = h('button.st-btn', {
+    onclick: () => {
+      api.sfx('ui');
+      const d = defaultSettings();
+      const st = s() as unknown as Record<string, unknown>;
+      for (const k of SECTION_KEYS[section]) st[k] = JSON.parse(JSON.stringify((d as unknown as Record<string, unknown>)[k]));
+      if (section === 'other') setLang(s().lang);
+      flash(tr('Раздел возвращён к значениям по умолчанию. Нажмите «Применить», чтобы сохранить.', 'Section restored to defaults. Press Apply to keep it.'));
+      changed();
+      if (section === 'other') rerender();
+      else renderBody();
+    },
+  }, tr('По умолчанию', 'Defaults'));
+  const back = h('button.st-btn', { onclick: () => leaveSettings(api, root, onBack) }, tr('Назад', 'Back'));
+
+  const root = h('div.st', h('div.st-side', nav), h('div.st-main', head, h('div.st-scroll', body), h('div.st-foot', status, h('div.st-foot-btns', defaults, back, applyBtn))));
+  drawNav();
+  renderBody();
+  return root;
 }

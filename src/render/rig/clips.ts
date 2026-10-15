@@ -32,6 +32,8 @@ export interface Clip {
   full?: boolean;
   /** Visibility group toggles (arrow nocked, flask thrown...). */
   show?: { t: number; grp: string; on: boolean }[];
+  /** Two-handed rigs: the left hand lets go of the weapon during this clip (roar, shoulder charge). */
+  oneHand?: boolean;
 }
 
 // ---------------------------------------------------------------- attacks (relative to stance)

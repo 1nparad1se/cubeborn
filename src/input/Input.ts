@@ -17,6 +17,12 @@ export class Input {
   onPause: (() => void) | null = null;
   /** +1 zoom out, -1 zoom in. */
   onZoom: ((dir: number) => void) | null = null;
+  /** Mouse settings: left/right buttons swapped, wheel zoom direction reversed. */
+  swapMouse = false;
+  invertWheel = false;
+  private btn(b: number): number {
+    return this.swapMouse && (b === 0 || b === 2) ? 2 - b : b;
+  }
   onMap: (() => void) | null = null;
   onJump: (() => void) | null = null;
   /** Fired when the player first moves (used by the controls hint). */
@@ -91,7 +97,7 @@ export class Input {
       (e) => {
         if (!this.enabled) return;
         e.preventDefault();
-        if (Math.abs(e.deltaY) > 0.5) this.onZoom?.(Math.sign(e.deltaY));
+        if (Math.abs(e.deltaY) > 0.5) this.onZoom?.(Math.sign(e.deltaY) * (this.invertWheel ? -1 : 1));
       },
       { passive: false },
     );
@@ -106,15 +112,17 @@ export class Input {
     area.addEventListener('pointerdown', (e) => {
       pos(e);
       if (!this.enabled) return;
-      if (e.button === 0) {
+      const b = this.btn(e.button);
+      if (b === 0) {
         this.lmb = true;
         this.lmbPressed = true;
-      } else if (e.button === 2) this.rmb = true;
+      } else if (b === 2) this.rmb = true;
       area.setPointerCapture?.(e.pointerId);
     });
     const up = (e: PointerEvent) => {
-      if (e.button === 0) this.lmb = false;
-      else if (e.button === 2) this.rmb = false;
+      const b = this.btn(e.button);
+      if (b === 0) this.lmb = false;
+      else if (b === 2) this.rmb = false;
     };
     area.addEventListener('pointerup', up);
     area.addEventListener('pointercancel', () => (this.lmb = this.rmb = false));

@@ -7,7 +7,8 @@ import { crouch, ev, forwardRoll, k, lunge, makeClip, mix, plus, restPose, tremb
  * Spins rotate the root a full turn, then snap back to 0 (same facing) so fades never unwind.
  */
 
-const STANCE: Pose = { chest: [-3, -6, 0], armR: [-57, -21, 15], foreR: [-37, 0, 0], handR: [-35, 9, -35], armL: [4, 0, 9], foreL: [-22, 0, 0], legL: [-3, 0, 5], legR: [3, 0, -5] };
+/** Same as the model's stance (models/classRigs/berserker.ts); the left hand is closed on the hilt by IK. */
+const STANCE: Pose = { chest: [-3, -10, 0], spine: [0, -4, 0], head: [0, 12, 0], armR: [-50, -24, 18], foreR: [-40, 0, 0], handR: [-30, 12, -30], armL: [-38, 24, -10], foreL: [-30, 0, 0], legL: [-4, 0, 6], legR: [4, 0, -6] };
 const REST = restPose(STANCE);
 
 /** Key poses (arms solved against the sword's grip; see the model in models/classRigs/berserker.ts). */
@@ -58,7 +59,7 @@ export const BERSERKER_CLIPS: Record<string, Clip> = {
   bz_basic1: sweep('bz_basic1', 0.62, 0.3, P.windR, P.sweepMid, P.sweepL),
   bz_basic2: sweep('bz_basic2', 0.62, 0.3, P.windL, P.sweepMid, P.sweepR, lunge(0.5)),
   bz_basic3: clip('bz_basic3', 0.9, [k(0, R), k(0.3, mix(P.overhead, crouch(0.2)), 'io'), k(0.45, P.slam, 'out'), k(0.62, P.slam), k(0.9, R)], { events: [ev(0.45)] }),
-  bz_dodge: clip('bz_dodge', 0.55, forwardRoll(R, 0.55, { start: 0.06, spin: 0.3, arms: { armR: [-60, -10, 20], foreR: [-40, 0, 0], armL: [-40, 0, 20], foreL: [-60, 0, 0] } }), { full: true }),
+  bz_dodge: clip('bz_dodge', 0.55, forwardRoll(R, 0.55, { start: 0.06, spin: 0.3, arms: { armR: [-60, -10, 20], foreR: [-40, 0, 0], armL: [-40, 0, 20], foreL: [-60, 0, 0] } }), { full: true, oneHand: true }),
   bz_q1: sweep('bz_q1', 0.55, 0.28, P.windR, P.sweepMid, P.sweepL, lunge(0.8)),
   bz_q2: clip('bz_q2', 0.75, [k(0, R), k(0.1, mix(P.spin, root(0))), ...spinKeys(0.12, 0.45, 0.36, 290).slice(1), k(0.75, R)], { full: true, events: [ev(0.36)] }),
   bz_w: clip('bz_w', 1.0, [
@@ -82,8 +83,8 @@ export const BERSERKER_CLIPS: Record<string, Clip> = {
     k(0.85, mix(P.overhead, crouch(0.3))),
   ], { loopFrom: 0.25, events: [ev(0.05, 'charge')] }),
   bz_r: clip('bz_r', 0.8, [k(0, mix(P.overhead, crouch(0.3))), k(0.18, mix(plus(P.overhead, { chest: [-6, 0, 0], armR: [-8, 0, 0], armL: [-8, 0, 0] }, R), crouch(0.15)), 'io'), k(0.32, P.slam, 'out'), k(0.56, P.slam), k(0.8, R)], { events: [ev(0.32)] }),
-  bz_a: clip('bz_a', 0.55, [k(0, R), k(0.05, mix(shoulderCharge, lunge(1, 1.3)), 'out'), k(0.35, mix(shoulderCharge, lunge(0.9, 1.1))), k(0.55, R)], { full: true }),
-  bz_s: clip('bz_s', 0.7, [k(0, R), k(0.15, mix(plus(P.cry, { chest: [30, 0, 0], head: [30, 0, 0], armL: [0, 0, -40] }, R), crouch(0.4))), k(0.3, P.cry, 'back'), k(0.5, plus(P.cry, { chest: [-2, 0, 0], head: [-4, 0, 0] }, R)), k(0.7, R)], { events: [ev(0.3)] }),
+  bz_a: clip('bz_a', 0.55, [k(0, R), k(0.05, mix(shoulderCharge, lunge(1, 1.3)), 'out'), k(0.35, mix(shoulderCharge, lunge(0.9, 1.1))), k(0.55, R)], { full: true, oneHand: true }),
+  bz_s: clip('bz_s', 0.7, [k(0, R), k(0.15, mix(plus(P.cry, { chest: [30, 0, 0], head: [30, 0, 0], armL: [0, 0, -40] }, R), crouch(0.4))), k(0.3, P.cry, 'back'), k(0.5, plus(P.cry, { chest: [-2, 0, 0], head: [-4, 0, 0] }, R)), k(0.7, R)], { events: [ev(0.3)], oneHand: true }),
   bz_d1: clip('bz_d1', 0.45, [k(0, R), k(0.11, P.diagHigh, 'io'), k(0.22, mix(P.diagLow, lunge(0.5)), 'out'), k(0.32, mix(P.diagLow, lunge(0.5))), k(0.45, R)], { events: [ev(0.22)] }),
   bz_d2: clip('bz_d2', 0.45, [k(0, R), k(0.11, P.diagHighL, 'io'), k(0.22, mix(P.diagLowR, lunge(0.5)), 'out'), k(0.32, mix(P.diagLowR, lunge(0.5))), k(0.45, R)], { events: [ev(0.22)] }),
   bz_d3: clip('bz_d3', 0.85, [k(0, R), k(0.26, mix(P.overhead, crouch(0.2)), 'io'), k(0.42, P.plunge, 'out'), k(0.66, P.plunge), k(0.85, R)], { events: [ev(0.42)] }),
@@ -105,21 +106,21 @@ export const BERSERKER_CLIPS: Record<string, Clip> = {
     k(1.8, P.slam),
     k(2.0, R),
   ], { full: true, events: [ev(0.1, 'charge'), ev(0.75), ev(1.1), ev(1.45)] }),
-  bz_identity: clip('bz_identity', 0.6, [k(0, R), k(0.12, mix(P.guard, crouch(0.6)), 'io'), k(0.25, P.wide, 'back'), k(0.45, plus(P.wide, { chest: [-2, 0, 0] }, R)), k(0.6, R)], { full: true, events: [ev(0.25)] }),
+  bz_identity: clip('bz_identity', 0.6, [k(0, R), k(0.12, mix(P.guard, crouch(0.6)), 'io'), k(0.25, P.wide, 'back'), k(0.45, plus(P.wide, { chest: [-2, 0, 0] }, R)), k(0.6, R)], { full: true, events: [ev(0.25)], oneHand: true }),
   bz_stagger: clip('bz_stagger', 1.0, [
     k(0, plus(R, { chest: [14, 0, 8], spine: [6, 0, 0], head: [18, 16, 10], armL: [10, 0, -4], foreR: [10, 0, 0], rootPos: [0, -0.5, 0] }, R)),
     k(0.5, plus(R, { chest: [12, 0, -8], spine: [5, 0, 0], head: [14, -16, -10], armL: [6, 0, 4], foreR: [6, 0, 0], rootPos: [0, -0.7, 0] }, R)),
     k(1.0, plus(R, { chest: [14, 0, 8], spine: [6, 0, 0], head: [18, 16, 10], armL: [10, 0, -4], foreR: [10, 0, 0], rootPos: [0, -0.5, 0] }, R)),
   ], { loopFrom: 0 }),
   bz_heavyhit: clip('bz_heavyhit', 0.5, [k(0, R), k(0.08, plus(R, { chest: [-24, 10, 0], spine: [-10, 0, 0], head: [-22, 0, 0], armL: [-30, 0, 40], rootPos: [0, 0.3, -1.4] }, R), 'out'), k(0.25, plus(R, { chest: [-10, 4, 0], spine: [-4, 0, 0], head: [-8, 0, 0], armL: [-10, 0, 20], rootPos: [0, -0.4, -1.0] }, R)), k(0.5, R)]),
-  bz_victory: clip('bz_victory', 1.6, [k(0, R), k(0.6, P.raise1h, 'back'), k(1.1, plus(P.raise1h, { chest: [-3, 0, 0], head: [-4, 0, 0], foreL: [-10, 0, 0], rootPos: [0, -0.3, 0] }, R)), k(1.6, P.raise1h)], { loopFrom: 0.6, events: [ev(0.6)] }),
+  bz_victory: clip('bz_victory', 1.6, [k(0, R), k(0.6, P.raise1h, 'back'), k(1.1, plus(P.raise1h, { chest: [-3, 0, 0], head: [-4, 0, 0], foreL: [-10, 0, 0], rootPos: [0, -0.3, 0] }, R)), k(1.6, P.raise1h)], { loopFrom: 0.6, events: [ev(0.6)], oneHand: true }),
   bz_death: clip('bz_death', 1.2, [
     k(0, R),
     k(0.12, plus(R, { chest: [-22, 0, 6], spine: [-8, 0, 0], head: [-20, 0, 0], armL: [-30, 0, 40], rootPos: [0, 0.2, -0.8] }, R), 'out'),
     k(0.5, mix(plus(R, { chest: [24, 0, -6], spine: [10, 0, 0], head: [10, 0, 0], armL: [10, 0, 10], armR: [30, 0, 0] }, R), { legL: [-80, 0, 6], legR: [-80, 0, -6], shinL: [110, 0, 0], shinR: [110, 0, 0], footL: [-30, 0, 0], footR: [-30, 0, 0], rootPos: [0, -3.2, 0] })),
     k(0.9, mix(plus(R, { chest: [10, 0, 0], head: [-10, 20, 0], armL: [-150, 0, 20], armR: [-120, 0, -20] }, R), { root: [82, 0, 0], legL: [-10, 0, 6], legR: [-6, 0, -6], shinL: [20, 0, 0], shinR: [10, 0, 0], rootPos: [0, 2.4, 1.0] }), 'in'),
     k(1.2, mix(plus(R, { chest: [8, 0, 0], head: [-14, 24, 0], armL: [-155, 0, 24], armR: [-125, 0, -22] }, R), { root: [86, 0, 0], legL: [-8, 0, 6], legR: [-4, 0, -6], shinL: [16, 0, 0], shinR: [8, 0, 0], rootPos: [0, 2.3, 1.0] }), 'out'),
-  ], { hold: true, full: true, fadeIn: 0.05, events: [ev(0.9, 'death')] }),
+  ], { hold: true, full: true, fadeIn: 0.05, events: [ev(0.9, 'death')], oneHand: true }),
 };
 
 // the shared clip names map to the class versions (the weapon grip needs class-specific arm poses)

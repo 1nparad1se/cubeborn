@@ -17,10 +17,10 @@ import { h } from './ui/dom';
 import { t, L, setLang } from './i18n';
 import { HERO_BY_ID } from './data/heroes';
 import { GREENVALE } from './data/maps';
-import { buildMenuGround } from './game/map/greenvale';
+import { buildMenuGround, RIVER } from './game/map/greenvale';
 import { tr } from './ui/ClassPreview';
 
-export const VERSION = 'v5.0.0';
+export const VERSION = 'v5.1.0';
 
 /** Discrete camera zoom steps for the mouse wheel (camera distance multipliers). */
 const ZOOM_STEPS = [0.75, 0.88, 1, 1.15, 1.35];
@@ -170,7 +170,10 @@ export class App implements MenuApi {
 
   applySettings() {
     const s = this.profile.data.settings;
-    audio.setVolumes(s.master, s.sfx, s.music, s.ui);
+    audio.setVolumes(s.master, s.sfx, s.music, s.ui, s.ambient);
+    this.input.swapMouse = s.swapMouse;
+    this.input.invertWheel = s.invertWheel;
+    this.root.style.setProperty('--ui-scale', String(s.uiScale));
     const effectsChanged = s.effects !== this.renderer.currentQuality;
     this.renderer.applySettings(s);
     if (effectsChanged && this.mode === 'menu') this.showMenuBackdrop();
@@ -234,6 +237,7 @@ export class App implements MenuApi {
       return;
     }
     if (this.mode === 'run') {
+      if (this.paused && this.modals.escape()) return;
       if (this.hud.minimap.big) {
         this.hud.toggleMap();
         return;
@@ -335,7 +339,7 @@ export class App implements MenuApi {
     });
     audio.playMusic(run.map.generator);
     this.hud.showBanner(L(run.map.name), '#ffffff', 2.2, `${ch.name} · ${tr('Уровень', 'Level')} ${ch.level}`);
-    if (ch.playTime < 30) {
+    if (s.showHints && ch.playTime < 30) {
       const kb = s.keybinds;
       this.hud.showHint(true, [kb.up, kb.left, kb.down, kb.right].map((k) => keyName(k[0] ?? '')).join(''));
       this.input.onFirstMove = () => setTimeout(() => this.hud.showHint(false), 1200);
@@ -534,7 +538,15 @@ export class App implements MenuApi {
       if (run.killSoundBudget > 0) audio.play('kill', Math.min(1, 0.4 + run.killSoundBudget * 0.1));
       if (run.xpSoundBudget > 0) audio.play('xp', 0.6);
       run.hitSoundBudget = run.killSoundBudget = run.xpSoundBudget = 0;
-    } else if (!this.backdropPaused || this.mode !== 'menu') {
+      const p = run.player;
+      const rd = Math.abs(p.x - RIVER.centerX(p.z)) - RIVER.halfWidth(p.z);
+      const water = p.z < RIVER.sourceZ - 4 ? 0 : Math.max(0, 1 - Math.max(0, rd) / 18);
+      audio.setAmbience(!this.paused, 0.5, water, run.dayNight.enabled && run.dayNight.period === 'night', realDt);
+    } else {
+      audio.setAmbience(false, 0, 0, false, realDt);
+    }
+    if (!run || this.mode !== 'run') {
+      if (this.backdropPaused && this.mode === 'menu') return;
       this.renderer.frame(realDt);
     }
   };

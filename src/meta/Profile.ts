@@ -5,13 +5,18 @@ import { loadSave, writeSave, type SaveData } from './Save';
 export class Profile {
   data: SaveData;
   private saveTimer = 0;
+  /**
+   * While the settings screen previews unapplied changes, saves write these (the applied
+   * settings) instead, so a preview is never stored by an unrelated save.
+   */
+  committedSettings: SaveData['settings'] | null = null;
 
   constructor() {
     this.data = loadSave();
   }
 
   save(): boolean {
-    return writeSave(this.data);
+    return writeSave(this.committedSettings ? { ...this.data, settings: this.committedSettings } : this.data);
   }
 
   /** Coalesces frequent writes (e.g. settings sliders). */

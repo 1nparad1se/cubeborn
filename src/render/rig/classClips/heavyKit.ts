@@ -41,6 +41,7 @@ export interface ClipOpts {
   fadeOut?: number;
   events?: { t: number; ev: string }[];
   show?: { t: number; grp: string; on: boolean }[];
+  oneHand?: boolean;
 }
 
 /** Builds an absolute clip whose keys all share the same bone set (missing bones = rest). */

@@ -9,7 +9,7 @@ import { SLOT_KEYS } from '../game/action/types';
 import { MAX_CHARS, REGION, type CharSave } from '../meta/Characters';
 import { SkillSandbox, type DemoAction } from '../render/SkillSandbox';
 import { BESTIARY_CATEGORIES, CREATURES } from '../data/bestiary';
-import { settingsPanel } from './Settings';
+import { settingsPanel, leaveSettings } from './Settings';
 import { attachTip, classStage, hideTip, skillTipBody, tr } from './ClassPreview';
 import { fmtTime } from './format';
 import './menu.css';
@@ -130,6 +130,18 @@ export class Menus {
 
   back() {
     const dlg = this.root.querySelector('.mm-dialog');
+    const sdlg = this.root.closest('.app')?.querySelector('.st-dialog');
+    if (sdlg) {
+      sdlg.remove();
+      return;
+    }
+    if (this.current === 'settings') {
+      leaveSettings(this.api, this.root, () => {
+        this.api.sfx('uiBack');
+        this.open('main');
+      });
+      return;
+    }
     if (dlg) {
       dlg.remove();
       return;
@@ -166,14 +178,15 @@ export class Menus {
       case 'bestiary':
         return this.bestiaryScreen();
       case 'settings':
-        return this.frame(t('menu_settings'), h('div.mm-settings', settingsPanel(this.api, () => this.render())));
+        return this.frame(t('menu_settings'), settingsPanel(this.api, () => this.render(), () => this.open('main')), '.mm-full');
     }
   }
 
   private go(id: ScreenId | 'exit') {
     this.api.sfx('ui');
-    if (id === 'exit') this.exitDialog();
-    else this.open(id);
+    const go = () => (id === 'exit' ? this.exitDialog() : this.open(id));
+    if (this.current === 'settings') leaveSettings(this.api, this.root, go);
+    else go();
   }
 
   // ------------------------------------------------------------------ campfire
@@ -461,11 +474,18 @@ export class Menus {
       clear(panel);
       const c = cur;
       const s = classStats(c);
-      const skill = (sd: ClassDef['skills'][number], key: string, act: DemoAction) => {
-        const b = h('button.cc2-skill', { style: `--sc:${hex(sd.color)}`, onclick: () => demo(sd.id, [act]) }, iconImg('sk_' + sd.icon, sd.color, 'icon'), h('span.key', key));
+      const skill = (sd: ClassDef['skills'][number], key: string, act: DemoAction, cls = '') => {
+        const b = h('button.cc2-skill' + cls, { style: `--sc:${hex(sd.color)}`, onclick: () => demo(sd.id, [act]) }, iconImg('sk_' + sd.icon, sd.color, 'icon'), h('span.key', key));
         attachTip(b, () => skillTipBody(c, sd, key));
         return b;
       };
+      /** A slot the class has no skill for yet. */
+      const emptySlot = (key: string, cls = '') => {
+        const b = h('div.cc2-skill.empty' + cls, h('span.key', key));
+        attachTip(b, () => h('div', tr('Способности для этого слота пока нет.', 'No skill for this slot yet.')));
+        return b;
+      };
+      const slotBtn = (i: number) => (c.skills[i] ? skill(c.skills[i], SLOT_KEYS[i], { k: 'skill', slot: i }) : emptySlot(SLOT_KEYS[i]));
       panel.append(
         h('div.cc2-head', { style: `--hc:${hex(c.color)}` }, classEmblem(c, 'cc2-emblem'), h('div', h('h2', L(c.name)), h('div.cc2-role', `${L(c.role)} · ${L(c.weapon)}`))),
         h('p.cc2-desc', L(c.desc)),
@@ -481,7 +501,11 @@ export class Menus {
         h('div.cc2-feat', h('b', L(c.passive.name)), h('span', L(c.passive.desc))),
         h('div.cc2-feat', { style: `--rc:${c.res.color}` }, h('b', tr('Ресурс: ', 'Resource: ') + L(c.res.name)), h('span', L(c.res.desc))),
         h('div.cc2-sec', tr('Основные навыки', 'Main skills')),
-        h('div.cc2-skills', ...c.skills.slice(0, 4).map((sd, i) => skill(sd, SLOT_KEYS[i], { k: 'skill', slot: i })), skill(c.ult, 'V', { k: 'ult' })),
+        h('div.cc2-skills', ...[0, 1, 2, 3].map(slotBtn)),
+        h('div.cc2-sec', tr('Дополнительные навыки', 'Extra skills')),
+        h('div.cc2-skills', ...[4, 5, 6, 7].map(slotBtn)),
+        h('div.cc2-sec', tr('Ультимативная способность', 'Ultimate')),
+        h('div.cc2-skills', c.ult ? skill(c.ult, 'V', { k: 'ult' }, '.ult') : emptySlot('V', '.ult')),
         h('div.cc2-hint', tr('Нажмите на навык, чтобы увидеть его в действии.', 'Click a skill to see it in action.')),
         h('div.cc2-sec', tr('Просмотр анимации', 'Animation preview')),
         st.anims,

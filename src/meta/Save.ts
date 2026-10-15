@@ -56,6 +56,8 @@ export interface Settings {
   music: number;
   sfx: number;
   ui: number;
+  /** World ambience (wind, water, birds and crickets). */
+  ambient: number;
   // video
   displayMode: DisplayMode;
   /** 'native' or "WxH" render resolution. */
@@ -83,6 +85,14 @@ export interface Settings {
   dayNight: string;
   /** Camera distance multiplier (wheel zoom), 0.75 (close) .. 1.35 (far). */
   cameraZoom: number;
+  /** Interface scale for the HUD and menus, 0.8 .. 1.3. */
+  uiScale: number;
+  /** Control hints when entering the world. */
+  showHints: boolean;
+  /** Left and right mouse buttons swapped. */
+  swapMouse: boolean;
+  /** Wheel zooms the other way. */
+  invertWheel: boolean;
   lang: Lang;
   keybinds: Keybinds;
 }
@@ -117,6 +127,7 @@ export function defaultSettings(): Settings {
     music: 0.6,
     sfx: 0.8,
     ui: 0.8,
+    ambient: 0.7,
     displayMode: 'windowed',
     resolution: 'native',
     vsync: true,
@@ -131,6 +142,10 @@ export function defaultSettings(): Settings {
     autoPause: true,
     dayNight: 'normal',
     cameraZoom: 1,
+    uiScale: 1,
+    showHints: true,
+    swapMouse: false,
+    invertWheel: false,
     lang,
     keybinds: defaultKeybinds(),
   };

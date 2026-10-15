@@ -1,7 +1,7 @@
 import { h, clear } from './dom';
-import { t } from '../i18n';
 import type { Run } from '../game/Run';
-import { settingsPanel, type MenuApi } from './Menus';
+import type { MenuApi } from './Menus';
+import { settingsPanel, leaveSettings } from './Settings';
 import { tr } from './ClassPreview';
 
 export interface PauseActions {
@@ -25,6 +25,9 @@ export class RunModals {
     this.root.classList.remove('open');
   }
 
+  /** Esc inside the pause menu; returns true when it was handled there (settings open). */
+  escape: () => boolean = () => false;
+
   get isOpen(): boolean {
     return this.root.classList.contains('open');
   }
@@ -41,6 +44,7 @@ export class RunModals {
     const btn = (icon: string, label: string, fn: () => void, primary = false) =>
       h('button.mm-btn' + (primary ? '.primary' : ''), { onclick: fn }, h('i.mm-glyph.g-' + icon), h('span.mm-label', label), h('span.mm-arrow', '›'));
     const showMain = () => {
+      this.escape = () => false;
       clear(side);
       side.append(
         h('h1.pz-title', tr('ПАУЗА', 'PAUSED')),
@@ -70,11 +74,13 @@ export class RunModals {
     };
     const showSettings = () => {
       clear(side);
-      side.append(
-        h('h1.pz-title', t('menu_settings')),
-        h('div.pz-settings', settingsPanel(this.api, showSettings, true)),
-        h('button.mm-btn.pz-back', { onclick: () => showMain() }, h('span.mm-label', t('btn_back'))),
-      );
+      side.append(h('div.pz-settings', settingsPanel(this.api, showSettings, showMain)));
+      this.escape = () => {
+        const dlg = this.root.closest('.app')?.querySelector('.st-dialog');
+        if (dlg) dlg.remove();
+        else leaveSettings(this.api, this.root, showMain);
+        return true;
+      };
     };
     showMain();
     this.open(h('div.pz', side));
