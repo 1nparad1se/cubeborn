@@ -17,7 +17,7 @@ import { h } from './ui/dom';
 import { t, L, setLang } from './i18n';
 import { HERO_BY_ID } from './data/heroes';
 import { CREATURES } from './data/bestiary';
-import { GREENVALE } from './data/maps';
+import { GREENVALE, SHOWCASE } from './data/maps';
 import { buildMenuGround, RIVER } from './game/map/greenvale';
 import { tr } from './ui/ClassPreview';
 
@@ -300,8 +300,8 @@ export class App implements MenuApi {
   }
 
   // ------------------------------------------------------------------ playing
-  /** Enters the world with a saved character. */
-  play(charId: string) {
+  /** Enters the world with a saved character (`mapId` 'showcase' opens «Витрина мира» instead). */
+  play(charId: string, mapId?: string) {
     const p = this.profile;
     const ch = p.data.chars.find((c) => c.id === charId);
     const hero = ch ? HERO_BY_ID[ch.cls] : null;
@@ -314,7 +314,7 @@ export class App implements MenuApi {
     const fx = new ProxyFx();
     const s = p.data.settings;
     const run = new Run({
-      map: GREENVALE,
+      map: mapId === SHOWCASE.id ? SHOWCASE : GREENVALE,
       hero,
       fx,
       settings: { damageNumbers: s.damageNumbers, dayLength: DAY_NIGHT.lengths[s.dayNight] ?? DAY_NIGHT.lengths[DAY_NIGHT.defaultLength] },
@@ -368,7 +368,7 @@ export class App implements MenuApi {
     ch.skills = [...run.action.levels];
     ch.tri = run.action.tri.map((x) => [x[0], x[1]]);
     ch.points = run.action.points;
-    if (run.state === 'playing') ch.pos = { x: +run.player.x.toFixed(2), z: +run.player.z.toFixed(2) };
+    if (run.state === 'playing' && run.map.id === GREENVALE.id) ch.pos = { x: +run.player.x.toFixed(2), z: +run.player.z.toFixed(2) };
     ch.playTime += Math.round(run.time - this.charTime);
     this.charTime = Math.round(run.time);
     ch.lastPlayed = Date.now();
@@ -551,7 +551,7 @@ export class App implements MenuApi {
       run.hitSoundBudget = run.killSoundBudget = run.xpSoundBudget = 0;
       const p = run.player;
       const rd = Math.abs(p.x - RIVER.centerX(p.z)) - RIVER.halfWidth(p.z);
-      const water = p.z < RIVER.sourceZ - 4 ? 0 : Math.max(0, 1 - Math.max(0, rd) / 18);
+      const water = run.map.id !== GREENVALE.id || p.z < RIVER.sourceZ - 4 ? 0 : Math.max(0, 1 - Math.max(0, rd) / 18);
       audio.setAmbience(!this.paused, 0.5, water, run.dayNight.enabled && run.dayNight.period === 'night', realDt);
     } else {
       audio.setAmbience(false, 0, 0, false, realDt);

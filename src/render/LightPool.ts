@@ -38,7 +38,7 @@ export class LightPool {
       scene.add(l);
       this.lights.push(l);
     }
-    for (let i = 0; i < 128; i++) this.reqs.push({ x: 0, y: 0, z: 0, color: 0, intensity: 0, radius: 0, score: 0 });
+    for (let i = 0; i < 256; i++) this.reqs.push({ x: 0, y: 0, z: 0, color: 0, intensity: 0, radius: 0, score: 0 });
   }
 
   begin() {
@@ -74,7 +74,25 @@ export class LightPool {
       }
       this.request(f.x, 1.2, f.z, f.color, f.intensity * (f.t / f.dur) * 1.5, f.radius, cx, cz);
     }
-    const used = this.reqs.slice(0, this.nReq).sort((a, b) => b.score - a.score);
+    const sorted = this.reqs.slice(0, this.nReq).sort((a, b) => b.score - a.score);
+    // dense night scenes (a lantern street, a camp ringed by torches): sources close to an already
+    // chosen light fold into it (brighter, wider) instead of taking a slot, so the few real lights
+    // spread over more of the scene
+    const used: Req[] = [];
+    for (const r of sorted) {
+      let host: Req | null = null;
+      for (const u of used)
+        if ((u.x - r.x) ** 2 + (u.z - r.z) ** 2 < 2.6 * 2.6) {
+          host = u;
+          break;
+        }
+      if (host) {
+        host.intensity = Math.min(host.intensity * 1.6, host.intensity + r.intensity * 0.35);
+        host.radius = Math.max(host.radius, r.radius) + 0.4;
+        continue;
+      }
+      if (used.length < this.lights.length) used.push({ ...r });
+    }
     for (let i = 0; i < this.lights.length; i++) {
       const l = this.lights[i];
       const r = used[i];

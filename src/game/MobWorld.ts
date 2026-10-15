@@ -64,7 +64,7 @@ export class MobWorld {
   onMeet: ((id: string) => void) | null = null;
 
   constructor(private run: Run) {
-    this.camps = buildCamps(run.terrain);
+    this.camps = run.map.noMobs ? [] : buildCamps(run.terrain);
     const defs = new Map<string, EnemyDef>();
     for (const camp of this.camps) {
       const c = camp.creature;

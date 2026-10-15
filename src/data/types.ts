@@ -133,5 +133,7 @@ export interface MapDef {
   music: { root: number; scale: string; tempo: number; mood: string };
   /** Damage per second on hazard tiles. */
   hazardDps?: number;
+  /** No creature camps (showcase maps). */
+  noMobs?: boolean;
 }
 

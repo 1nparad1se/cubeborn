@@ -11,28 +11,34 @@ import { ROAD_PROPS } from './roads';
 
 export * from './types';
 
-/** Every category's props, in sheet order. Each category edits only its own file. */
-const ALL: PropDef[] = [
-  ...TREE_PROPS,
-  ...WATER_PROPS,
-  ...STONE_PROPS,
-  ...VEGETATION_PROPS,
-  ...CAMP_PROPS,
-  ...LIGHT_PROPS,
-  ...CARGO_PROPS,
-  ...BRIDGE_PROPS,
-  ...ROAD_PROPS,
-];
-
-/** The prop registry by id. */
-export const PROPS: Record<string, PropDef> = {};
-for (const p of ALL) {
-  if (PROPS[p.id]) throw new Error(`duplicate prop id: ${p.id}`);
-  PROPS[p.id] = p;
+/**
+ * Every category's props, in sheet order. Each category edits only its own file.
+ * Built lazily on first use: camps.ts imports place.ts (which imports this file), so when a map
+ * imports camps first, this module runs before CAMP_PROPS exists — the arrays are only read later.
+ */
+let ALL: PropDef[] | null = null;
+const REG: Record<string, PropDef> = {};
+function all(): PropDef[] {
+  if (!ALL) {
+    ALL = [...TREE_PROPS, ...WATER_PROPS, ...STONE_PROPS, ...VEGETATION_PROPS, ...CAMP_PROPS, ...LIGHT_PROPS, ...CARGO_PROPS, ...BRIDGE_PROPS, ...ROAD_PROPS];
+    for (const p of ALL) {
+      if (REG[p.id]) throw new Error(`duplicate prop id: ${p.id}`);
+      REG[p.id] = p;
+    }
+  }
+  return ALL;
 }
 
+/** The prop registry by id (a plain-object view, filled on first access). */
+export const PROPS: Record<string, PropDef> = new Proxy(REG, {
+  get: (o, k) => (all(), Reflect.get(o, k)),
+  has: (o, k) => (all(), Reflect.has(o, k)),
+  ownKeys: (o) => (all(), Reflect.ownKeys(o)),
+  getOwnPropertyDescriptor: (o, k) => (all(), Reflect.getOwnPropertyDescriptor(o, k)),
+});
+
 export function propsOf(cat: PropCategory): PropDef[] {
-  return ALL.filter((p) => p.category === cat);
+  return all().filter((p) => p.category === cat);
 }
 
 export const PROP_CATEGORIES: PropCategory[] = ['trees', 'water', 'stone', 'vegetation', 'camps', 'lights', 'cargo', 'bridges', 'roads'];

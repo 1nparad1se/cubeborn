@@ -2,6 +2,8 @@ import { Rng, hash2 } from '../../core/Rng';
 import type { MapDef } from '../../data/types';
 import { CELL, Terrain, type TreeInst } from '../Terrain';
 import { paintRoad, placeProp } from '../../world/props/place';
+import { placeCamp, type CampKind, type CampSize } from '../../world/props/camps';
+import { buildCamps } from './greenvaleZones';
 
 /** Fixed seed: the world is the same on every launch. */
 const SEED = 250250;
@@ -285,8 +287,100 @@ export function buildGreenvale(map: MapDef): Terrain {
     const tr: TreeInst = { x, z, h: rng.int(2, 5), kind, leaf: kind === 'pine' ? 'pine' : 'leaves', trunk: 'trunk', v: rng.int(0, 3) };
     if (t.solidCell(x, z, tr.h)) placed.push(tr);
   }
-  for (const tr of placed) t.trees.push(tr);
+  // trees near the meadow use the world library's tree props (sheet 1); the far edge forest and the
+  // willows stay cheap voxel trees
+  for (const tr of placed) {
+    const d = Math.hypot(tr.x - SPAWN.x, tr.z - SPAWN.z);
+    if (tr.kind === 'willow' || d > 64) {
+      t.trees.push(tr);
+      continue;
+    }
+    const r = hash2(tr.x, tr.z, 91);
+    const id = tr.kind === 'pine' ? 'tree_pine' : r < 0.12 ? 'tree_birch' : r < 0.2 ? 'tree_oak_yellow' : r < 0.25 ? 'tree_oak_autumn' : r < 0.3 ? 'tree_oak_ivy' : 'tree_oak';
+    placeProp(t, id, tr.x + 0.5, tr.z + 0.5, { variant: tr.v % 3, yaw: (hash2(tr.x, tr.z, 92) - 0.5) * 0.6 });
+  }
+  scatterUndergrowth(t, water, noTree);
+  placeGreenvaleCamps(t);
   return t;
+}
+
+/** Bushes, flowers, ferns and mushrooms (vegetation props) under the groves near the meadow. */
+function scatterUndergrowth(t: Terrain, water: Float32Array, noTree: Uint8Array) {
+  const n = t.size;
+  const rng = new Rng(SEED + 9);
+  const forest = ['bush_low', 'bush_mid', 'bush_berry', 'fern', 'fern', 'mushrooms_small', 'stump', 'undergrowth', 'grass_tall'];
+  const meadow = ['flowers_white', 'flowers_yellow', 'flowers_red', 'flowers_blue', 'flowers_purple', 'bush_flower', 'grass_field', 'bush_low'];
+  let made = 0;
+  for (let k = 0; k < 6000 && made < 260; k++) {
+    const x = rng.int(RIM + 2, n - RIM - 3);
+    const z = rng.int(RIM + 2, n - RIM - 3);
+    const d = Math.hypot(x - SPAWN.x, z - SPAWN.z);
+    if (d < 9 || d > 66) continue;
+    const i = z * n + x;
+    if (!t.isFree(x, z) || noTree[i] || water[i] < 3 || t.elev[i] >= 8) continue;
+    if (t.reach && !t.reach[i]) continue;
+    const grove = fbm(x / 26, z / 26, SEED + 3);
+    const list = grove > 0.5 ? forest : meadow;
+    if (grove <= 0.5 && !rng.chance(0.35)) continue;
+    const id = list[rng.int(0, list.length - 1)];
+    // decoration only: plants never block a path or change where the creature camps go
+    const o = id === 'undergrowth' ? 1 : 0.5;
+    placeProp(t, id, x + o, z + o, { variant: rng.int(0, 2), yaw: rng.next() * 6.28, noCollide: true });
+    made++;
+  }
+}
+
+/**
+ * Themed camps (prop camps from sheet 5) beside some creature camps: an orc camp by the cave orcs,
+ * a bandit camp by the desert raiders, an abandoned camp in the woods. A camp only goes on flat,
+ * open, reachable ground well clear of every creature camp, so the creature layout (buildCamps on
+ * the finished terrain) and the walkable area stay exactly as before.
+ */
+function placeGreenvaleCamps(t: Terrain) {
+  const n = t.size;
+  const mobs = buildCamps(t);
+  const half: Record<CampSize, number> = { small: 4, medium: 6, large: 8 };
+  const fits = (x: number, z: number, size: CampSize) => {
+    const h = half[size] + 2;
+    let lo = 99;
+    let hi = -1;
+    let blocked = 0;
+    for (let dz = -h; dz <= h; dz++)
+      for (let dx = -h; dx <= h; dx++) {
+        const cx = x + dx;
+        const cz = z + dz;
+        if (!t.inBounds(cx, cz)) return false;
+        const i = cz * n + cx;
+        const c = t.cell[i];
+        if (c === CELL.liquid || c === CELL.wall || (t.reach && !t.reach[i] && c === CELL.floor)) return false;
+        // a few trees inside are fine (placeCamp skips blocked spots): a camp in a clearing
+        if (c !== CELL.floor) blocked++;
+        lo = Math.min(lo, t.elev[i]);
+        hi = Math.max(hi, t.elev[i]);
+      }
+    if (hi - lo > 1 || blocked > (2 * h + 1) ** 2 * 0.12) return false;
+    if (Math.hypot(x - SPAWN.x, z - SPAWN.z) < 30) return false;
+    // clear of the creature camps (their 5x5 centre and a margin to wander in)
+    return mobs.every((m) => Math.max(Math.abs(m.x - x), Math.abs(m.z - z)) > h + 5);
+  };
+  const near = (kind: CampKind, size: CampSize, ax: number, az: number, seed: number, rMin = 12, rMax = 60) => {
+    for (let r = rMin; r <= rMax; r += 2)
+      for (let k = 0; k < 24; k++) {
+        const a = (k / 24) * Math.PI * 2 + r;
+        const x = Math.round(ax + Math.cos(a) * r);
+        const z = Math.round(az + Math.sin(a) * r);
+        if (!fits(x, z, size)) continue;
+        placeCamp(t, kind, size, x, z, seed);
+        return true;
+      }
+    return false;
+  };
+  const by = (id: string) => mobs.find((m) => m.creature.id === id);
+  const orc = by('cave_orc');
+  if (orc) near('orc', 'medium', orc.x, orc.z, 11);
+  const raider = by('desert_raider');
+  if (raider) near('bandit', 'medium', raider.x, raider.z, 12);
+  near('abandoned', 'small', SPAWN.x - 34, SPAWN.z + 18, 13, 0, 30);
 }
 
 /** A small grass clearing for the menu backdrop (the campfire stands in the middle). */

@@ -19,8 +19,8 @@ export interface MenuApi {
   profile: Profile;
   version: string;
   sfx(id: string): void;
-  /** Enters the world with a saved character. */
-  play(charId: string): void;
+  /** Enters the world with a saved character (`mapId` 'showcase': the «Витрина мира» map). */
+  play(charId: string, mapId?: string): void;
   /** Captures the next key press for rebinding. */
   captureKey(cb: (code: string) => void): void;
   /** True when a setting changed that only applies after a restart. */
@@ -344,6 +344,7 @@ export class Menus {
         h('div.mc-kv', h('span', tr('Очки навыков', 'Skill points')), h('b', String(cur.points))),
         h('div.mc-kv', h('span', tr('Последняя игра', 'Last played')), h('b', new Date(cur.lastPlayed).toLocaleDateString())),
         h('button.mm-big', { onclick: () => this.api.play(cur.id) }, tr('Играть', 'Play')),
+        h('button.mm-small.mc-showcase', { title: tr('Все объекты мира на одной карте, без монстров', 'Every world object on one map, no monsters'), onclick: () => this.api.play(cur.id, 'showcase') }, tr('Витрина мира', 'World Showcase')),
         h('button.mm-small.danger', { onclick: () => this.deleteDialog(cur, render) }, tr('Удалить персонажа', 'Delete character')),
       );
       wrap.append(h('div.mc-col', h('div.mc-count', tr(`Персонажи: ${chars.length} / ${MAX_CHARS}`, `Characters: ${chars.length} / ${MAX_CHARS}`)), list), detail);

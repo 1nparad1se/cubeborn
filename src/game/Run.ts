@@ -19,6 +19,7 @@ import type { FxSink } from './types';
 import { Vfx } from './Vfx';
 import { ActionSystem, makeControls } from './action/ActionSystem';
 import { SPAWN, buildGreenvale } from './map/greenvale';
+import { SHOWCASE_SPAWN, buildShowcase } from './map/showcase';
 
 export type RunState = 'playing' | 'dead';
 
@@ -41,11 +42,19 @@ export interface RunOptions {
   char?: CharSave | null;
 }
 
-/** The terrain is built once per page: the world never changes. */
-let terrainCache: { id: string; terrain: Terrain } | null = null;
+/** Map generators by map id (Greenvale is the persistent world; the rest are side maps). */
+const WORLDS: Record<string, { build: (map: MapDef) => Terrain; spawn: { x: number; z: number } }> = {
+  greenvale: { build: buildGreenvale, spawn: SPAWN },
+  showcase: { build: buildShowcase, spawn: SHOWCASE_SPAWN },
+};
+const worldOf = (map: MapDef) => WORLDS[map.id] ?? WORLDS.greenvale;
+
+/** The terrain is built once per page per map: the world never changes. */
+const terrainCache = new Map<string, Terrain>();
 function worldTerrain(map: MapDef): Terrain {
-  if (terrainCache?.id !== map.id) terrainCache = { id: map.id, terrain: buildGreenvale(map) };
-  return terrainCache.terrain;
+  let t = terrainCache.get(map.id);
+  if (!t) terrainCache.set(map.id, (t = worldOf(map).build(map)));
+  return t;
 }
 
 /** A play session in the persistent world: owns every gameplay system and advances the simulation. */
@@ -94,9 +103,10 @@ export class Run {
     this.vfx = new Vfx(this);
     this.terrain = worldTerrain(o.map);
     const ch = o.char ?? null;
-    const pos = ch?.pos;
+    // the saved position belongs to the persistent world; side maps start at their spawn
+    const pos = o.map.id === 'greenvale' ? ch?.pos : undefined;
     const reach = this.terrain.reach;
-    const start = pos && this.terrain.walkableAt(pos.x, pos.z) && (!reach || reach[Math.floor(pos.z) * this.terrain.size + Math.floor(pos.x)]) ? pos : SPAWN;
+    const start = pos && this.terrain.walkableAt(pos.x, pos.z) && (!reach || reach[Math.floor(pos.z) * this.terrain.size + Math.floor(pos.x)]) ? pos : worldOf(o.map).spawn;
     this.player = new Player(this, start.x, start.z);
     if (ch) {
       this.player.level = ch.level;
@@ -182,7 +192,7 @@ export class Run {
 
   private respawn() {
     const p = this.player;
-    p.placeAt(SPAWN.x, SPAWN.z);
+    p.placeAt(worldOf(this.map).spawn.x, worldOf(this.map).spawn.z);
     p.dead = false;
     p.hp = p.stats.maxHp;
     p.invulnT = 2;

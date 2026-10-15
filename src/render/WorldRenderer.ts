@@ -7,6 +7,7 @@ import { TILE_COUNT, tileOf, treeVoxels, type Vox } from './VoxelFlora';
 import { unitCube } from './VoxelGeometry';
 import { DITHER } from './dither';
 import { PropKit } from '../world/render/PropRenderer';
+import { groundTile } from '../world/textures/groundTiles';
 
 type Slot = { x: number; z: number; build: () => void; objs: THREE.Mesh[] | null };
 
@@ -39,6 +40,23 @@ function tileAnim(name: string): number {
   return 0;
 }
 
+/**
+ * Water look per tile (src/world/textures/water.ts names `water_<type>_<depth>`): kind code for the
+ * shader (0 river/stream/plain, 1 swamp, 2 fast/mountain, 3 sea, 4 lake/lagoon) and depth 1..5
+ * (0 = unknown: the distance-to-shore estimate is used).
+ */
+export function waterLook(name: string): { kind: number; depth: number } {
+  const m = /^water_([a-z]+)_(\d)$/.exec(name);
+  const ty = m?.[1] ?? '';
+  const kind = ty === 'swamp' ? 1 : ty === 'fast' || ty === 'mountain' ? 2 : ty === 'sea' ? 3 : ty === 'lake' || ty === 'lagoon' ? 4 : 0;
+  return { kind, depth: m ? Number(m[2]) : 0 };
+}
+
+/** Calm water where the built-in lily pads may float (not rapids, mountain streams or the sea). */
+function lilyWater(name: string): boolean {
+  return /water/.test(name) && !/^water_(fast|mountain|sea)_/.test(name);
+}
+
 /** Surface height of liquid cells: water and lava sit below the banks, the void is a chasm. */
 function liquidLevel(name: string): number {
   if (/void/.test(name)) return -6;
@@ -66,9 +84,10 @@ function foliageRule(gen: string, tile: string): FoliageRule | null {
     // river banks: shorter, sparser grass thinning toward the water
     if (/bank/.test(tile)) return { density: 0.7, sprites: TUFTS };
     if (/sand/.test(tile)) return { density: 0.06, sprites: TUFTS };
-    return null;
-  }
-  return grassy ? { density: 1, sprites: TUFTS } : null;
+  } else if (grassy) return { density: 1, sprites: TUFTS };
+  // library ground tiles (roads, shores) declare their own tuft density
+  const f = groundTile(tile)?.foliage;
+  return f ? { density: f, sprites: TUFTS } : null;
 }
 
 function pickSprite(list: SpriteW, r: number): number {
@@ -320,9 +339,19 @@ vA = (1.0 - life) * smoothstep(0.0, 0.15, life);`,
     ao.needsUpdate = true;
 
     const atlas = makeGroundAtlas(t.tileNames, map.palette.tiles, map.palette.blocks);
-    const anims = new Float32Array(32);
-    t.tileNames.forEach((nm, i) => (anims[i] = tileAnim(nm)));
     const tileCount = Math.max(1, t.tileNames.length);
+    // per tile: animation kind, water kind, water depth (one texel each, any number of tiles)
+    const infoData = new Uint8Array(tileCount * 4);
+    t.tileNames.forEach((nm, i) => {
+      const w = waterLook(nm);
+      infoData[i * 4] = tileAnim(nm);
+      infoData[i * 4 + 1] = w.kind;
+      infoData[i * 4 + 2] = w.depth;
+      infoData[i * 4 + 3] = 255;
+    });
+    const info = new THREE.DataTexture(infoData, tileCount, 1, THREE.RGBAFormat);
+    info.magFilter = info.minFilter = THREE.NearestFilter;
+    info.needsUpdate = true;
 
     const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
     const u = this.uniforms;
@@ -334,7 +363,7 @@ vA = (1.0 - life) * smoothstep(0.0, 0.15, life);`,
       sh.uniforms.uSurge = u.uSurge;
       sh.uniforms.uFocus = u.uFocus;
       sh.uniforms.uCamDir = u.uCamDir;
-      sh.uniforms.uAnim = { value: anims };
+      sh.uniforms.uInfo = { value: info };
       sh.uniforms.uSize = { value: n };
       sh.uniforms.uTiles = { value: tileCount };
       sh.vertexShader = sh.vertexShader
@@ -354,7 +383,7 @@ uniform float uTime;
 uniform float uSurge;
 uniform vec3 uFocus;
 uniform vec2 uCamDir;
-uniform float uAnim[32];
+uniform sampler2D uInfo;
 uniform float uSize;
 uniform float uTiles;
 vec3 gEmit = vec3(0.0);
@@ -364,7 +393,8 @@ vec3 atlasAt(float tile, float row, vec2 l) {
   l = clamp(l, 0.001, 0.999);
   return texture2D(uAtlas, vec2((tile + l.x) / uTiles, 1.0 - (row + l.y) / ${GROUND_ROWS.toFixed(1)})).rgb;
 }
-float animOf(float tile) { float a = 0.0; for (int i = 0; i < 32; i++) { if (float(i) == tile) a = uAnim[i]; } return a; }
+vec3 infoOf(float tile) { return floor(texture2D(uInfo, vec2((tile + 0.5) / uTiles, 0.5)).rgb * 255.0 + 0.5); }
+float animOf(float tile) { return infoOf(tile).r; }
 float tileOf(vec4 c) { return floor(c.r * 255.0 + 0.5); }
 bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
         )
@@ -428,7 +458,12 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
     if (isLand(cell + vec2(1.0, 0.0))) ed = min(ed, 1.0 - lp.x);
     if (isLand(cell + vec2(0.0, -1.0))) ed = min(ed, lp.y);
     if (isLand(cell + vec2(0.0, 1.0))) ed = min(ed, 1.0 - lp.y);
+    vec3 tinfo = infoOf(tile);
+    float wk = tinfo.g;
+    float wd = tinfo.b;
     float depth = clamp((shore - 1.0 + ed) / 2.5, 0.0, 1.0);
+    // explicit depth level from the tile name: 1 light .. 5 dark, still lighter right at the bank
+    if (wd > 0.5) depth = clamp((wd - 1.0) / 4.0, 0.0, 1.0) * (0.55 + 0.45 * smoothstep(0.0, 0.5, ed + (shore - 1.0)));
     // churning foam at the foot of a waterfall (a neighbouring water cell high above)
     float fallEd = 1.0;
     if (cellAt(cell + vec2(-1.0, 0.0)).a > cd.a + 0.05) fallEd = min(fallEd, lp.x);
@@ -437,15 +472,26 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
     if (cellAt(cell + vec2(0.0, 1.0)).a > cd.a + 0.05) fallEd = min(fallEd, 1.0 - lp.y);
     vec2 bp = xz * 2.0;
     vec2 flow = fract(bp);
-    if (anim == 1.0 || anim == 2.0) flow = fract(bp + vec2(floor(uTime * (anim == 2.0 ? 5.0 : 9.0)) / 16.0, 0.0));
+    // flow speed per water kind: swamp creeps, rapids rush, lakes and the sea barely drift
+    float fs = anim == 2.0 ? 5.0 : wk == 1.0 ? 2.0 : wk == 2.0 ? 16.0 : wk == 3.0 ? 3.0 : wk == 4.0 ? 4.0 : 9.0;
+    if (anim == 1.0 || anim == 2.0) flow = fract(bp + vec2(floor(uTime * fs) / 16.0, 0.0));
     vec3 base = atlasAt(tile, mod(variant + floor(h21(floor(bp)) * 2.0), 4.0), flow);
     if (anim == 1.0) {
-      col = mix(base * 1.15, base * 0.62, depth);
+      col = wd > 0.5 ? base * (1.12 - 0.22 * depth) : mix(base * 1.15, base * 0.62, depth);
       float rip = sin((pxc.x + pxc.y) * 5.0 + uTime * 1.4 + vnoise(pxc * 1.7) * 6.0);
-      if (rip > 0.975) col += vec3(0.09, 0.11, 0.13);
-      float foamW = 0.06 + 0.04 * (0.5 + 0.5 * sin(uTime * 2.2 + (pxc.x - pxc.y) * 4.0));
-      if (ed < foamW) col = mix(col, vec3(0.9, 0.96, 1.0), 0.75);
-      else if (ed < foamW + 0.07 && h21(floor(pxc * 16.0) + floor(uTime * 3.0)) > 0.6) col = mix(col, vec3(0.85, 0.92, 1.0), 0.4);
+      if (rip > (wk == 2.0 ? 0.9 : 0.975)) col += vec3(0.09, 0.11, 0.13);
+      if (wk == 2.0) {
+        // rapids: bright streaks racing downstream
+        float sl = fract(pxc.x * 1.3 + uTime * 1.9 + h21(vec2(floor(pxc.y * 16.0), 5.0)) * 7.0);
+        if (sl > 0.86) col = mix(col, vec3(0.86, 0.94, 1.0), 0.55);
+      }
+      if (wk != 1.0) {
+        // swamp water has no foam; the sea has a wide, slow surf band
+        float sea = wk == 3.0 ? 1.0 : 0.0;
+        float foamW = mix(0.06, 0.15, sea) + mix(0.04, 0.06, sea) * (0.5 + 0.5 * sin(uTime * mix(2.2, 0.9, sea) + (pxc.x - pxc.y) * 4.0));
+        if (ed < foamW) col = mix(col, vec3(0.9, 0.96, 1.0), 0.75);
+        else if (ed < foamW + 0.07 && h21(floor(pxc * 16.0) + floor(uTime * mix(3.0, 1.5, sea))) > 0.6) col = mix(col, vec3(0.85, 0.92, 1.0), 0.4);
+      }
       float churn = (1.0 - smoothstep(0.0, 1.6, fallEd + h21(floor(pxc * 16.0) + floor(uTime * 8.0)) * 0.9));
       col = mix(col, vec3(0.92, 0.97, 1.0), churn * 0.9);
       gEmit = col * 0.16;
@@ -714,7 +760,7 @@ diffuseColor.rgb *= mix(0.72, 1.0, smoothstep(0.0, 1.0, vWPos.y));`);
     for (let z = 0; z < n; z++)
       for (let x = 0; x < n; x++) {
         const i = z * n + x;
-        if (t.cell[i] !== CELL.liquid || !/water/.test(t.tileNames[t.tile[i]] ?? '')) continue;
+        if (t.cell[i] !== CELL.liquid || !lilyWater(t.tileNames[t.tile[i]] ?? '')) continue;
         // calm water only: no lilies where a waterfall churns
         if (Math.max(this.level[i - 1] ?? 0, this.level[i + 1] ?? 0, this.level[i - n] ?? 0, this.level[i + n] ?? 0) > this.level[i] + 1) continue;
         const ly = this.level[i];

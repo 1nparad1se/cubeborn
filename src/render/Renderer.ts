@@ -270,7 +270,7 @@ export class Renderer {
   }
 
   private lightCount(): number {
-    return this.quality === 'low' ? 2 : this.quality === 'medium' ? 4 : 6;
+    return this.quality === 'low' ? 2 : this.quality === 'medium' ? 5 : 8;
   }
 
   /** Particle budget multiplier from the particle quality setting. */
