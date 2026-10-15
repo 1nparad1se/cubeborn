@@ -3990,3 +3990,7 @@ img.icon.hi.sm,
     grid-template-columns: 1fr;
   }
 }
+.minimap.big {
+  pointer-events: auto;
+  cursor: grab;
+}

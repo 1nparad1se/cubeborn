@@ -6,6 +6,8 @@
 import { Run } from '../src/game/Run';
 import { NullFx } from '../src/game/types';
 import { MAP_BY_ID } from '../src/data/maps';
+import { CONTINENT_MAP } from '../src/data/continentMap';
+import '../src/game/world/build/all';
 import { HEROES, HERO_BY_ID } from '../src/data/heroes';
 import { DIFFICULTY_BY_ID } from '../src/data/difficulty';
 import { PROG } from '../src/config/progression';
@@ -17,7 +19,7 @@ import type { Enemy } from '../src/game/Enemy';
 const arg = process.argv[2] ?? 'all';
 const ids = arg === 'all' ? HEROES.map((h) => h.id) : arg.split(',');
 const maxT = Number(process.env.MAXT ?? 600);
-const map = MAP_BY_ID[process.env.MAP ?? 'blightwood'];
+const map = process.env.MAP === 'eldoria' ? CONTINENT_MAP : MAP_BY_ID[process.env.MAP ?? 'blightwood'];
 const dt = 1 / 40;
 
 function hunt(run: Run, pref: number, st: { goal: { x: number; z: number } | null; path: number[]; pi: number; repath: number; home: boolean }): [number, number] {

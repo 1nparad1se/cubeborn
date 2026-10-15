@@ -84,9 +84,9 @@ export interface ContinentLayout {
 }
 
 // ------------------------------------------------------------------ prefab sets per style
-const HEART_HOUSES = ['house_cottage', 'house_big', 'house_survival', 'house_pretty', 'house_small', 'house_medieval', 'house_farm', 'house_country', 'house_little', 'house_medieval2', 'house_forest'];
-const NORTH_HOUSES = ['north_house', 'north_house', 'north_house', 'north_longhouse'];
-const SOUTH_HOUSES = ['desert_house', 'desert_house', 'desert_house2', 'desert_courtyard'];
+const HEART_HOUSES = ['house_cottage', 'house_big', 'house_survival', 'house_pretty', 'house_small', 'house_medieval', 'house_farm', 'house_country', 'house_little', 'house_medieval2', 'house_forest', 'house_v_1', 'house_v_2', 'house_v_3'];
+const NORTH_HOUSES = ['north_house', 'north_house', 'north_longhouse', 'north_house_v1', 'north_house_v2', 'north_house_v3', 'mountain_home_v1'];
+const SOUTH_HOUSES = ['desert_house', 'desert_house2', 'desert_courtyard', 'desert_house_v1', 'desert_house_v2', 'desert_house_v3'];
 
 /** Building of each service by style ('' = no building, the NPC stands on the square). */
 const SERVICE_BUILD: Record<Service, [string, string, string]> = {
@@ -376,7 +376,7 @@ function buildTown(g: Gen, s: SettlementDef, waystones: WaystoneRt[], npcs: NpcD
     }
     // houses
     const want = s.kind === 'capital' ? 40 : s.kind === 'city' ? 22 : s.kind === 'town' ? 14 : s.kind === 'village' ? 11 : s.kind === 'hamlet' ? 6 : 4;
-    const pool = st === 1 ? NORTH_HOUSES : st === 2 ? SOUTH_HOUSES : HEART_HOUSES.concat(s.kind === 'capital' || s.kind === 'city' ? ['house_mansion', 'house_mansion'] : []);
+    const pool = st === 1 ? NORTH_HOUSES : st === 2 ? SOUTH_HOUSES : HEART_HOUSES.concat(s.kind === 'capital' || s.kind === 'city' ? ['house_mansion', 'manor_v1'] : []);
     const near = s.kind === 'hamlet' || s.kind === 'village';
     let placed = 0;
     for (let k = 0; k < want * 3 && placed < want; k++) {
@@ -531,7 +531,7 @@ function walls(g: Gen, s: SettlementDef, x0: number, z0: number, x1: number, z1:
 
 function shoreBuilds(g: Gen, s: SettlementDef, seed: number) {
   const n = g.n;
-  const kinds = ['house_lake', 'house_water', 'dock', 'dock'];
+  const kinds = ['house_lake', 'house_water', 'dock', 'dock_v'];
   let k = 0;
   for (const kind of kinds) {
     if (!PREFABS[kind]) continue;
@@ -610,7 +610,7 @@ function streetLamps(g: Gen, s: SettlementDef, x0: number, z0: number, x1: numbe
 
 function ruins(g: Gen, s: SettlementDef, seed: number) {
   const st = styleIx(s);
-  const pool = st === 2 ? ['ruins_wall', 'ruined_tower', 'desert_house', 'ruins_wall'] : st === 1 ? ['ruins_wall', 'ruined_tower', 'ruins_wall', 'graveyard'] : ['ruins_wall', 'cart_wreck', 'ruined_tower', 'graveyard', 'house_small'];
+  const pool = st === 2 ? ['ruins_wall', 'ruined_tower', 'desert_house', 'ruins_wall'] : st === 1 ? ['ruins_wall', 'ruined_tower', 'ruins_wall', 'graveyard'] : ['ruins_wall', 'cart_wreck', 'ruined_tower', 'graveyard', 'abandoned_house_v1', 'ruins_v'];
   let placed = 0;
   for (let k = 0; k < 40 && placed < (s.kind === 'ruin' ? 14 : 6); k++) {
     const kind = pool[k % pool.length];

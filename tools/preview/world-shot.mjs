@@ -9,6 +9,8 @@ page.on('console', (m) => { if (m.type() === 'error' || m.text().startsWith('[w]
 page.on('pageerror', (e) => console.log('pageerror:', e.message, e.stack?.slice(0, 600)));
 await page.goto(base + '/', { waitUntil: 'load', timeout: 180000 });
 await page.waitForFunction(() => window.app, null, { timeout: 60000 });
+await page.keyboard.press('Enter');
+await page.waitForTimeout(800);
 const t0 = Date.now();
 await page.evaluate(() => window.app.startRunNow('berserker', 'blightwood', 'normal', 'world'));
 console.log('start ms', Date.now() - t0);
@@ -20,6 +22,10 @@ await page.evaluate(([x, z]) => {
 }, [tx, tz]);
 await page.waitForTimeout(6000);
 await page.screenshot({ path: out + '-a.png' });
+await page.keyboard.press('KeyM');
+await page.waitForTimeout(1500);
+await page.screenshot({ path: out + '-map.png' });
+await page.keyboard.press('KeyM');
 const info = await page.evaluate(() => { const r = window.app.run; return { fps: r ? 'ok' : 'no run', enemies: r.enemies.list.filter((e) => e.active).length, vis: r.world.visibleNpcs.length, st: r.world.nearStation()?.kind ?? null }; });
 console.log(JSON.stringify(info));
 await browser.close();

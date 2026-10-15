@@ -8,6 +8,8 @@ import { CAMPAIGN_WAVES, waveDensity, waveScale, type Wave } from './Waves';
 import type { Enemy } from './Enemy';
 import type { Run } from './Run';
 
+/** Enemies made for the continent factions and wilds, kept out of Endless guests. */
+const OPEN_WORLD_ONLY = /^(orc_|bandit_|clan_|raider_|sand_scorpion|dune_stalker|sun_mummy|forest_wolf|wild_boar|giant_spider|forest_bear)/;
 const RAIN_STYLE: Record<string, string> = { forest: 'spore', city: 'meteor', catacombs: 'meteor', volcano: 'meteor', tundra: 'ice', ruins: 'arcane' };
 
 /** Wave-driven enemy spawning, scripted map events, bosses and breakable props. */
@@ -75,7 +77,7 @@ export class Spawner {
       for (const seg of run.map.segments) for (const [id, wt] of seg.pool) all.set(id, Math.max(all.get(id) ?? 0, wt));
       base = [...all.entries()].map(([id, wt]) => [id, wt * run.rng.range(0.5, 1.5)] as [string, number]);
       if (w.n % 5 === 1 || !this.guests.length) {
-        const others = ENEMIES.filter((e) => e.behavior !== 'prop' && e.id !== 'treasure_sprite' && e.id !== 'shield_crystal' && !all.has(e.id) && !e.id.endsWith('let'));
+        const others = ENEMIES.filter((e) => e.behavior !== 'prop' && e.id !== 'treasure_sprite' && e.id !== 'shield_crystal' && !all.has(e.id) && !e.id.endsWith('let') && !OPEN_WORLD_ONLY.test(e.id));
         this.guests = [];
         const k = Math.min(3, 1 + Math.floor((w.n - 20) / 20));
         for (let i = 0; i < k && others.length; i++) this.guests.push(others.splice(Math.floor(run.rng.next() * others.length), 1)[0].id);
