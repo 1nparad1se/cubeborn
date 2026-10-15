@@ -11,7 +11,7 @@ import { berserkerRig } from './berserker';
  * layered over the body, with ambient occlusion in the seams.
  */
 
-const R = 0.45;
+const R = (globalThis as { __VOX_R?: number }).__VOX_R ?? 0.45;
 
 // palette (sheet swatches, sampled from the renders)
 const SKIN = 0xe0a487;

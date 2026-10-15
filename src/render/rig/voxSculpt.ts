@@ -28,7 +28,7 @@ const FACES: { n: V3; c: V3[] }[] = [
 ];
 
 export class Vox {
-  private cells = new Map<string, { c: number; g: number }>();
+  readonly cells = new Map<string, { c: number; g: number }>();
 
   /** `res`: voxel edge in bone units. */
   constructor(
