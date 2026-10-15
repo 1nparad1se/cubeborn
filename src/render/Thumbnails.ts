@@ -6,6 +6,8 @@ import { makeBlockTexture, makeHeroTexture } from './Textures';
 import { heroRig } from '../models/rigs';
 import { HeroRig } from './rig/HeroRig';
 import { HeroAnimator } from './rig/Animator';
+import { MOB_DEFS } from '../models/mobs';
+import { MobRig } from './rig/MobRig';
 
 let gl: THREE.WebGLRenderer | null = null;
 let scene: THREE.Scene;
@@ -45,6 +47,12 @@ export function modelThumb(id: string, opts: { silhouette?: boolean } = {}): str
   const key = id + (opts.silhouette ? ':s' : '');
   const hit = cache.get(key);
   if (hit) return hit;
+  if (MOB_DEFS[id]) {
+    if (!init() || !gl) return '';
+    const url = mobThumb(id);
+    cache.set(key, url);
+    return url;
+  }
   const rd = heroRig(id);
   if (rd) {
     if (!init() || !gl) return '';
@@ -101,6 +109,33 @@ function rigThumb(id: string, silhouette: boolean): string {
   const r = Math.max(size.x, size.y, size.z) * 0.56 + 0.04;
   const dist = r / Math.tan((camera.fov * Math.PI) / 360);
   camera.position.set(0, dist * 0.22, dist);
+  camera.lookAt(0, 0, 0);
+  gl!.setClearColor(0x000000, 0);
+  gl!.render(scene, camera);
+  const url = gl!.domElement.toDataURL('image/png');
+  scene.remove(pivot);
+  rig.dispose();
+  return url;
+}
+
+/** Bestiary creatures in their rest pose, 3/4 view, framed to fit. */
+function mobThumb(id: string): string {
+  heroTex ??= makeHeroTexture();
+  const def = MOB_DEFS[id];
+  const rig = new MobRig(def, heroTex, { rim: 0.3 });
+  rig.update(0);
+  const pivot = new THREE.Group();
+  pivot.add(rig.root);
+  pivot.rotation.y = def.yaw ?? 0.45;
+  scene.add(pivot);
+  pivot.updateMatrixWorld(true);
+  const bb = new THREE.Box3().setFromObject(pivot);
+  const center = bb.getCenter(new THREE.Vector3());
+  const size = bb.getSize(new THREE.Vector3());
+  rig.root.position.sub(pivot.worldToLocal(center.clone()));
+  const r = Math.max(size.x, size.y, size.z) * 0.56 + 0.04;
+  const dist = r / Math.tan((camera.fov * Math.PI) / 360);
+  camera.position.set(0, dist * 0.3, dist);
   camera.lookAt(0, 0, 0);
   gl!.setClearColor(0x000000, 0);
   gl!.render(scene, camera);

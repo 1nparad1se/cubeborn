@@ -8,7 +8,8 @@ import type { ClassDef } from '../game/action/types';
 import { SLOT_KEYS } from '../game/action/types';
 import { MAX_CHARS, REGION, type CharSave } from '../meta/Characters';
 import { SkillSandbox, type DemoAction } from '../render/SkillSandbox';
-import { BESTIARY_CATEGORIES, CREATURES } from '../data/bestiary';
+import { BESTIARY_CATEGORIES, CREATURES, type CreatureEntry } from '../data/bestiary';
+import { MobPreview } from '../render/MobPreview';
 import { settingsPanel, leaveSettings } from './Settings';
 import { attachTip, classStage, hideTip, skillTipBody, tr } from './ClassPreview';
 import { fmtTime } from './format';
@@ -573,21 +574,40 @@ export class Menus {
 
   // ------------------------------------------------------------------ bestiary
   /**
-   * Bestiary: categories on the left, the creature grid and a detail panel. The world has no
-   * creatures yet, so the grid shows that nothing has been discovered; entries come from
-   * data/bestiary.ts and are unlocked by `profile.data.bestiary` (ids of creatures met).
+   * Bestiary: categories on the left, the creature grid and a detail panel with a rotating 3D view.
+   * Entries come from data/bestiary.ts and are unlocked by `profile.data.bestiary` (ids of creatures
+   * met); entries marked `preview` (models made, not spawned in the world yet) are always shown.
    */
   private bestiaryScreen(): HTMLElement {
     const seen = new Set(this.api.profile.data.bestiary);
+    const known = (x: CreatureEntry) => seen.has(x.id) || !!x.preview;
     let cat = 'all';
+    let sel: string | null = null;
+    let view: MobPreview | null = null;
     const cats = h('div.mb-cats');
     const grid = h('div.mb-grid');
     const detail = h('div.mb-detail');
+    const showDetail = (x: CreatureEntry | undefined) => {
+      view?.dispose();
+      view = null;
+      clear(detail);
+      if (!x) {
+        detail.append(h('p.mb-detail-empty', tr('Выберите существо, чтобы рассмотреть его.', 'Pick a creature to take a closer look.')));
+        return;
+      }
+      view = new MobPreview(x.model);
+      const catDef = BESTIARY_CATEGORIES.find((c) => c.id === x.category);
+      detail.append(
+        h('div.mb-stage', view.canvas, h('small.mb-hint', tr('Потяните, чтобы повернуть', 'Drag to rotate'))),
+        h('h3.mb-name', L(x.name)),
+        h('div.mb-meta', catDef ? h('span.mb-tag', glyph(catDef.icon), L(catDef.name)) : '', x.preview && !seen.has(x.id) ? h('span.mb-tag.mb-preview', tr('Пока не встречается в мире', 'Not found in the world yet')) : ''),
+      );
+    };
     const render = () => {
       clear(cats);
       for (const c of BESTIARY_CATEGORIES) {
         const list = CREATURES.filter((x) => c.id === 'all' || x.category === c.id);
-        const found = list.filter((x) => seen.has(x.id)).length;
+        const found = list.filter(known).length;
         cats.append(
           h('button.mb-cat' + (cat === c.id ? '.sel' : ''), {
             onclick: () => {
@@ -600,14 +620,29 @@ export class Menus {
         );
       }
       clear(grid);
-      clear(detail);
-      const shown = CREATURES.filter((x) => (cat === 'all' || x.category === cat) && seen.has(x.id));
+      const shown = CREATURES.filter((x) => (cat === 'all' || x.category === cat) && known(x));
       if (!shown.length) {
+        view?.dispose();
+        view = null;
+        clear(detail);
         grid.append(h('div.mb-empty', glyph('skull'), h('p', tr('Существа пока не обнаружены', 'No creatures discovered yet'))));
         detail.append(h('p.mb-detail-empty', tr('Встреченные в мире существа появятся здесь: описание, характеристики, добыча и анимации.', 'Creatures you meet in the world appear here: description, stats, loot and animations.')));
         return;
       }
-      for (const x of shown) grid.append(h('div.mb-cell', thumbImg(x.model, 'mb-thumb'), h('span', L(x.name))));
+      if (!sel || !shown.some((x) => x.id === sel)) sel = shown[0].id;
+      for (const x of shown) {
+        grid.append(
+          h('button.mb-cell' + (x.id === sel ? '.sel' : ''), {
+            onclick: () => {
+              if (sel === x.id) return;
+              this.api.sfx('ui');
+              sel = x.id;
+              render();
+            },
+          }, thumbImg(x.model, 'mb-thumb'), h('span', L(x.name))),
+        );
+      }
+      showDetail(shown.find((x) => x.id === sel));
     };
     render();
     return this.frame(
