@@ -1,6 +1,7 @@
 import { Rng, hash2 } from '../../core/Rng';
 import type { MapDef } from '../../data/types';
 import { CELL, Terrain, type TreeInst } from '../Terrain';
+import { paintRoad, placeProp } from '../../world/props/place';
 
 /** Fixed seed: the world is the same on every launch. */
 const SEED = 250250;
@@ -186,6 +187,32 @@ function reachable(t: Terrain): Uint8Array {
   return seen;
 }
 
+/** A small camp by the spawn meadow showing the world prop library (lights and cargo). */
+function placeSpawnProps(t: Terrain) {
+  const X = Math.floor(SPAWN.x);
+  const Z = Math.floor(SPAWN.z);
+  paintRoad(t, 'road_stone', [[X - 12, Z + 4], [X + 14, Z + 4]], 3);
+  paintRoad(t, 'road_dirt', [[X + 6, Z + 4], [X + 8, Z - 8]], 2);
+  placeProp(t, 'campfire', X + 9, Z - 3);
+  placeProp(t, 'lamp_post', X - 3.5, Z + 2.5);
+  placeProp(t, 'lamp_post', X + 4.5, Z + 2.5, { rot: 2 });
+  placeProp(t, 'parapet_lantern', X - 9.5, Z + 6.5);
+  placeProp(t, 'fire_bowl', X + 12.5, Z + 6.5);
+  placeProp(t, 'hanging_lantern', X + 12.5, Z - 6.5, { rot: 2 });
+  placeProp(t, 'standing_torch', X + 5.5, Z - 5.5);
+  placeProp(t, 'cart', X + 12.5, Z - 1);
+  placeProp(t, 'crate_stack', X + 4, Z - 8);
+  placeProp(t, 'barrel', X + 6.5, Z - 8.5);
+  placeProp(t, 'sack_pile', X + 2, Z - 5.5);
+  placeProp(t, 'hay_bale', X + 13.5, Z - 4.5);
+  placeProp(t, 'crate_produce', X + 1.5, Z - 3.5);
+  placeProp(t, 'table_goods', X - 6, Z - 6);
+  placeProp(t, 'magic_crystal', X - 10.5, Z - 2.5);
+  placeProp(t, 'glow_mushrooms', X - 9.5, Z - 0.5);
+  placeProp(t, 'planks_loose', X + 9, Z + 0.5);
+  placeProp(t, 'fireflies', X - 4.5, Z - 9.5);
+}
+
 /**
  * Builds Greenvale: grass hills and mountains, groves of trees and one small river. No randomness between
  * launches (fixed seed), so positions saved in a character always point at the same ground.
@@ -229,6 +256,7 @@ export function buildGreenvale(map: MapDef): Terrain {
       else if (w <= 2.6 + hash2(x, z, 5) * 0.8) t.setTile(x, z, 'bank');
       else t.setTile(x, z, fbm(x / 11, z / 11, SEED) > 0.62 ? 'grass2' : 'grass');
     }
+  placeSpawnProps(t);
   t.reach = reachable(t);
 
   // trees: groves from noise plus lone trees, never closer than a few cells, with open lanes

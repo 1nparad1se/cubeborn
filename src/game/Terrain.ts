@@ -1,4 +1,5 @@
 import { WALLS } from '../config/walls';
+import type { PropInstance } from '../world/props/types';
 /** Replaces an array's contents in place (spread arguments overflow the stack on big maps). */
 export function replaceAll<T>(arr: T[], items: T[]) {
   arr.length = items.length;
@@ -65,6 +66,12 @@ export interface TerrainLight {
   y: number;
   color: number;
   intensity: number;
+  /** Reach in world units (default: the renderer's torch radius). */
+  radius?: number;
+  /** Flicker strength 0..1 (default 1, torch-like). */
+  flicker?: number;
+  /** Intensity multiplier by day (default 1). */
+  day?: number;
 }
 
 export class Terrain {
@@ -83,6 +90,14 @@ export class Terrain {
   readonly decor: Decor[] = [];
   readonly trees: TreeInst[] = [];
   readonly lights: TerrainLight[] = [];
+  /** World props placed by the map (src/world/props): drawn by the prop renderer. */
+  readonly props: PropInstance[] = [];
+  /**
+   * Cells covered by a walkable prop deck (bridge, boardwalk, stairs): the original ground
+   * (cell kind and elevation) under it. `cell`/`elev` hold the walking surface; the renderer draws
+   * the ground (water, chasm) from these originals.
+   */
+  readonly under = new Map<number, { cell: number; elev: number }>();
   /** Special markers used by events (rune circles etc). */
   readonly markers: { x: number; z: number; kind: string; sub?: string }[] = [];
   tileNames: string[] = [];

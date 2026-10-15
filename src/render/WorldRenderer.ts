@@ -5,10 +5,24 @@ import { hash2 } from '../core/Rng';
 import { ATLAS_VARIANTS, GROUND_ROWS, ROW_RIM, ROW_SOIL, ROW_STONE, SPRITE, SPRITE_COLORED, SPRITE_COUNT, makeBlockAtlas, makeFoliageAtlas, makeGroundAtlas } from './Textures';
 import { TILE_COUNT, tileOf, treeVoxels, type Vox } from './VoxelFlora';
 import { unitCube } from './VoxelGeometry';
+import { DITHER } from './dither';
+import { PropKit } from '../world/render/PropRenderer';
 
 type Slot = { x: number; z: number; build: () => void; objs: THREE.Mesh[] | null };
 
 const CHUNK = 16;
+
+/** The terrain as the ground renderer sees it: original ground (water, chasms) under prop decks. */
+function groundView(t: Terrain): Terrain {
+  if (!t.under.size) return t;
+  const cell = t.cell.slice();
+  const elev = t.elev.slice();
+  for (const [i, u] of t.under) {
+    cell[i] = u.cell;
+    elev[i] = u.elev;
+  }
+  return Object.assign(Object.create(t), { cell, elev }) as Terrain;
+}
 /** Ground chunks are larger: they are cheap merged quads. */
 const GCHUNK = 32;
 /** Depth of the cliffs around the map edge. */
@@ -75,20 +89,7 @@ float vnoise(vec2 p) {
   return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), f.x), f.y);
 }`;
 
-/** Ordered-dither fade for geometry between the camera and the hero. */
-const DITHER = `
-vec2 toCam = uCamDir;
-vec2 rel = vWPos.xz - uFocus.xz;
-float ahead = dot(rel, toCam);
-vec2 dd = vec2(dot(rel, vec2(-toCam.y, toCam.x)), (ahead - 2.2) * 0.75);
-float pd = length(dd);
-float relY = vWPos.y - uFocus.y;
-if (relY > 1.2 && pd < 5.0 && ahead > -0.6) {
-  float k = (1.0 - smoothstep(3.0, 5.0, pd)) * clamp((relY - 1.2) / 1.0, 0.0, 1.0) * 0.85;
-  int ix = int(mod(gl_FragCoord.x, 4.0)); int iy = int(mod(gl_FragCoord.y, 4.0));
-  float bayer = (ix == 0 ? (iy == 0 ? 0.0 : iy == 1 ? 12.0 : iy == 2 ? 3.0 : 15.0) : ix == 1 ? (iy == 0 ? 8.0 : iy == 1 ? 4.0 : iy == 2 ? 11.0 : 7.0) : ix == 2 ? (iy == 0 ? 2.0 : iy == 1 ? 14.0 : iy == 2 ? 1.0 : 13.0) : (iy == 0 ? 10.0 : iy == 1 ? 6.0 : iy == 2 ? 9.0 : 5.0)) / 16.0;
-  if (bayer < k) discard;
-}`;
+
 
 /**
  * Static voxel world in a painted dungeon-crawler style: textured ground with sunken water,
@@ -101,6 +102,7 @@ export class WorldRenderer {
     uSurge: { value: 0 },
     uFocus: { value: new THREE.Vector3(0, 0, 9999) },
     uCamDir: { value: new THREE.Vector2(Math.SQRT1_2, Math.SQRT1_2) },
+    uNight: { value: 0 },
   };
   private disposables: { dispose(): void }[] = [];
   /** Block and decor meshes with their chunk centers, for distance culling. */
@@ -118,12 +120,25 @@ export class WorldRenderer {
 
   constructor(terrain: Terrain, map: MapDef, _blockTex: THREE.Texture, quality: string, lazy = terrain.size > 420) {
     this.lazy = lazy;
+    const props = terrain.props;
+    terrain = groundView(terrain);
     this.level = this.computeLevels(terrain);
     this.buildGround(terrain, map, quality);
     this.buildBlocks(terrain, map, quality);
     this.buildDecor(terrain, quality);
     this.buildFoliage(terrain, map, quality);
     this.buildFalls(terrain, quality);
+    this.buildProps(props, quality);
+  }
+
+  /** World props (src/world/props): one merged mesh plus GPU particles per 16-cell chunk. */
+  private buildProps(props: Terrain['props'], quality: string) {
+    if (!props.length) return;
+    const kit = new PropKit(this.uniforms);
+    this.disposables.push(kit);
+    for (const c of kit.chunks(props, quality !== 'low')) this.defer(c.x, c.z, () => {
+      for (const m of c.build()) this.place(m, c.x, c.z);
+    });
   }
 
   /**
@@ -841,6 +856,7 @@ diffuseColor.rgb *= 0.78 + 0.22 * vH;`,
         const c = t.cell[i];
         const e = t.elev[i];
         if (c !== CELL.floor && c !== CELL.hazard && c !== CELL.ice) continue;
+        if (t.under.has(i)) continue;
         // nothing grows on the bare rock and snow of the peaks
         if (e >= 8) continue;
         const dens = rule.density * q;

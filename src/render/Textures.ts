@@ -1,3 +1,4 @@
+import { groundTile } from '../world/textures/groundTiles';
 import * as THREE from 'three';
 import { TILE_COUNT } from './VoxelFlora';
 import { hash2 } from '../core/Rng';
@@ -338,7 +339,8 @@ export function makeGroundAtlas(tileNames: string[], tiles: Record<string, numbe
     img.data[i + 3] = 255;
   };
   tileNames.forEach((name, ti) => {
-    const colors = tiles[name] ?? [0x777777];
+    const custom = groundTile(name);
+    const colors = tiles[name] ?? custom?.colors ?? [0x777777];
     const fam = groundFamily(name);
     const pat = PATTERN[fam];
     const [kind, soil, stone] = soilOf(fam, blocks, tiles);
@@ -348,7 +350,8 @@ export function makeGroundAtlas(tileNames: string[], tiles: Record<string, numbe
       const f = pat(11 + ti * 7 + v * 131);
       // variants stay close to the main colour so blocks read as one surface, not a checkerboard
       const c = vc.setHex(colors[0]).lerp(new THREE.Color(colors[v % colors.length]), 0.45).getHex();
-      for (let y = 0; y < TILE_PX; y++) for (let x = 0; x < TILE_PX; x++) put(ti, v, x, y, c, f(x, y));
+      if (custom) for (let y = 0; y < TILE_PX; y++) for (let x = 0; x < TILE_PX; x++) put(ti, v, x, y, custom.paint(x, y, v), 1);
+      else for (let y = 0; y < TILE_PX; y++) for (let x = 0; x < TILE_PX; x++) put(ti, v, x, y, c, f(x, y));
     }
     // rim: the top layer hanging over the soil in a ragged strip
     const topPat = pat(17 + ti * 7);

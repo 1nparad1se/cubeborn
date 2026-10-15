@@ -593,8 +593,11 @@ export class Renderer {
       const rad = 7 + nk * 2.5;
       for (const l of this.torchTerrain.lights) {
         if ((l.x - t.x) ** 2 + (l.z - t.z) ** 2 > 24 * 24) continue;
-        const flick = 0.85 + Math.sin(this.time * 9 + l.x * 3) * 0.08 + Math.sin(this.time * 23 + l.z) * 0.05;
-        lights.request(l.x, l.y, l.z, l.color, l.intensity * flick * boost, rad, t.x, t.z);
+        const f = l.flicker ?? 1;
+        const flick = 1 - f * 0.15 + f * (Math.sin(this.time * 9 + l.x * 3) * 0.08 + Math.sin(this.time * 23 + l.z) * 0.05);
+        const day = l.day ?? 1;
+        const dk = day + (1 - day) * nk;
+        lights.request(l.x, l.y, l.z, l.color, l.intensity * flick * boost * dk, l.radius ? l.radius * (1 + nk * 0.3) : rad, t.x, t.z);
       }
     }
     lights.end(dt, t.x, t.z);
@@ -728,6 +731,7 @@ export class Renderer {
     this.sun.position.set(cx + Math.cos(ang) * 17, t.y + elev, cz + Math.sin(ang) * 17);
     this.sun.target.position.set(cx, t.y, cz);
     this.world?.uniforms.uFocus.value.set(p.x, p.y, p.z);
+    if (this.world) this.world.uniforms.uNight.value = nightK;
     this.world?.uniforms.uCamDir.value.set(this.rig.toCam.x, this.rig.toCam.z);
     // a warm light pool follows the hero on dark maps
     if (pal.heroLight) this.lights.request(p.x, 2.6, p.z, pal.heroLight, 1.6 + nightK * 0.4, 9, t.x, t.z);

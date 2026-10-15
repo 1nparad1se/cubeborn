@@ -1,3 +1,4 @@
+import { groundTile } from '../world/textures/groundTiles';
 import type { Run } from '../game/Run';
 import { CELL } from '../game/Terrain';
 import { h } from './dom';
@@ -46,7 +47,7 @@ export class Minimap {
     const c = img.getContext('2d')!;
     const data = c.createImageData(W, W);
     const pal = run.map.palette;
-    const tileCol = t.tileNames.map((name) => (pal.tiles[name] ?? [0x555555])[0]);
+    const tileCol = t.tileNames.map((name) => (pal.tiles[name] ?? groundTile(name)?.colors ?? [0x555555])[0]);
     // blocked mask; small obstacle clusters (trees, rocks, props) are dropped so only
     // real walls, cliffs and water get contour lines
     const blocked = new Uint8Array(n * n);
