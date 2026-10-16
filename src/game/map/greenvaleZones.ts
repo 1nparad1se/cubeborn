@@ -12,6 +12,17 @@ export interface Camp {
   level: number;
   /** Number of members. */
   size: number;
+  /** Continent camps (world.json): id, level range top, aggro/leash radii, respawn, uniques, homes. */
+  id?: string;
+  lvMax?: number;
+  aggro?: number;
+  leash?: number;
+  respawn?: number;
+  unique?: boolean;
+  /** Home spot per member (else a ring around the centre). */
+  homes?: [number, number][];
+  /** Patrol loop the camp's members walk between rests. */
+  patrol?: [number, number][];
 }
 
 /** No camp closer than this to the spawn point: the meadow stays safe. */

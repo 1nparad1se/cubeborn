@@ -33,6 +33,12 @@ export class Mob {
   /** Seconds spent walking home without getting closer (cliffs): then it is put back at home. */
   stuckT = 0;
   bestD = 1e9;
+  /** Level of this member (camps span a level range). */
+  lv = 1;
+  /** Next patrol point index. */
+  pi = 0;
+  /** A unique creature that was killed: it never comes back. */
+  gone = false;
   constructor(readonly camp: Camp, readonly s: CreatureStats, readonly def: EnemyDef) {}
 }
 
@@ -63,8 +69,13 @@ export class MobWorld {
   private met = new Set<string>();
   onMeet: ((id: string) => void) | null = null;
 
-  constructor(private run: Run) {
-    this.camps = run.map.noMobs ? [] : buildCamps(run.terrain);
+  /** Unique camps killed (ids), kept by the character save: they never respawn. */
+  readonly uniquesDead = new Set<string>();
+  onUniqueKilled: ((id: string) => void) | null = null;
+
+  constructor(private run: Run, camps?: Camp[], uniquesDead: string[] = []) {
+    this.camps = run.map.noMobs ? [] : camps ?? buildCamps(run.terrain);
+    for (const id of uniquesDead) this.uniquesDead.add(id);
     const defs = new Map<string, EnemyDef>();
     for (const camp of this.camps) {
       const c = camp.creature;
@@ -82,10 +93,14 @@ export class MobWorld {
       for (let i = 0; i < camp.size; i++) {
         const m = new Mob(camp, s, def);
         const a = (i / camp.size) * Math.PI * 2 + camp.x;
-        m.hx = camp.x + Math.cos(a) * 2.2;
-        m.hz = camp.z + Math.sin(a) * 2.2;
+        const home = camp.homes?.[i];
+        m.hx = home ? home[0] : camp.x + Math.cos(a) * 2.2;
+        m.hz = home ? home[1] : camp.z + Math.sin(a) * 2.2;
+        m.lv = camp.level + (camp.lvMax && camp.lvMax > camp.level ? i % (camp.lvMax - camp.level + 1) : 0);
+        m.pi = i;
+        if (camp.unique && camp.id && this.uniquesDead.has(camp.id)) m.gone = true;
         this.mobs.push(m);
-        this.spawn(m);
+        if (this.loaded(m.hx, m.hz)) this.spawn(m);
       }
     }
   }
@@ -99,9 +114,32 @@ export class MobWorld {
     return this.byUid.get(e.uid);
   }
 
+  /** Whether a spot is inside the loaded terrain (streamed worlds keep only the hero's window). */
+  private loaded(x: number, z: number): boolean {
+    const t = this.run.terrain;
+    return x >= t.ox + 2 && z >= t.oz + 2 && x < t.ox + t.size - 2 && z < t.oz + t.size - 2;
+  }
+
+  /**
+   * The terrain window moved: creatures outside it are put away (they keep their slot and come
+   * back, full health, when their home is loaded again), the ones now inside appear.
+   */
+  onWindow() {
+    for (const m of this.mobs) {
+      const e = m.e;
+      if (e && e.active && e.uid === m.uid && !this.loaded(e.x, e.z)) {
+        this.byUid.delete(m.uid);
+        this.run.enemies.release(e);
+        m.e = null;
+        m.respawnT = 0;
+      }
+    }
+    for (const m of this.mobs) if (!m.e && !m.gone && m.respawnT <= 0 && this.loaded(m.hx, m.hz)) this.spawn(m);
+  }
+
   private spawn(m: Mob) {
-    const sc = mobScale(m.s, m.camp.level);
-    const e = this.run.enemies.spawn(m.def, m.hx, m.hz, { level: m.camp.level, hpMul: sc.hp / m.def.hp });
+    const sc = mobScale(m.s, m.lv);
+    const e = this.run.enemies.spawn(m.def, m.hx, m.hz, { level: m.lv, hpMul: sc.hp / m.def.hp });
     if (!e) return;
     e.damage = sc.damage;
     e.xp = sc.xp;
@@ -133,14 +171,24 @@ export class MobWorld {
       if (!e || !e.active || e.uid !== m.uid || e.dying > 0) {
         // dead: the camp brings it back after its respawn timer
         if (e) {
-          if (e.uid === m.uid && e.hp <= 0) this.meet(m);
+          const killed = e.uid === m.uid && e.hp <= 0;
+          if (killed) this.meet(m);
           this.byUid.delete(m.uid);
           m.e = null;
-          m.respawnT = m.s.respawn * (0.8 + Math.random() * 0.4);
+          m.respawnT = (m.camp.respawn ?? m.s.respawn) * (0.8 + Math.random() * 0.4);
+          if (killed && m.camp.unique && m.camp.id) {
+            // uniques stay dead once the whole camp is down
+            m.gone = true;
+            if (this.mobs.every((o) => o.camp.id !== m.camp.id || o.gone) && !this.uniquesDead.has(m.camp.id)) {
+              this.uniquesDead.add(m.camp.id);
+              this.onUniqueKilled?.(m.camp.id);
+            }
+          }
         }
+        if (m.gone) continue;
         m.respawnT -= dt;
-        // never pop back in under the hero's nose
-        if (m.respawnT <= 0 && (m.hx - p.x) ** 2 + (m.hz - p.z) ** 2 > 18 * 18) this.spawn(m);
+        // never pop back in under the hero's nose, nor outside the loaded terrain
+        if (m.respawnT <= 0 && (m.hx - p.x) ** 2 + (m.hz - p.z) ** 2 > 18 * 18 && this.loaded(m.hx, m.hz)) this.spawn(m);
         continue;
       }
       const dx = p.x - e.x;
@@ -184,7 +232,7 @@ export class MobWorld {
     const hdx = e.x - m.camp.x;
     const hdz = e.z - m.camp.z;
     const fromCamp = Math.hypot(hdx, hdz);
-    if (m.state !== 'chase' && m.state !== 'return' && !p.dead && (dist < s.aggro || hurt)) this.aggro(m);
+    if (m.state !== 'chase' && m.state !== 'return' && !p.dead && (dist < (m.camp.aggro ?? s.aggro) || hurt)) this.aggro(m);
     let speed = 0;
     let mx = 0;
     let mz = 0;
@@ -193,11 +241,20 @@ export class MobWorld {
         m.timer -= dt;
         if (m.timer <= 0) {
           m.state = 'wander';
-          const a = Math.random() * Math.PI * 2;
-          const r = Math.random() * 3.5;
-          m.tx = m.hx + Math.cos(a) * r;
-          m.tz = m.hz + Math.sin(a) * r;
-          m.timer = 6;
+          const pat = m.camp.patrol;
+          if (pat && pat.length && Math.random() < 0.35) {
+            // walk the camp's patrol loop a stop at a time
+            m.pi = (m.pi + 1) % pat.length;
+            m.tx = pat[m.pi][0] + (Math.random() - 0.5) * 3;
+            m.tz = pat[m.pi][1] + (Math.random() - 0.5) * 3;
+            m.timer = 20;
+          } else {
+            const a = Math.random() * Math.PI * 2;
+            const r = Math.random() * 3.5;
+            m.tx = m.hx + Math.cos(a) * r;
+            m.tz = m.hz + Math.sin(a) * r;
+            m.timer = 6;
+          }
         }
         break;
       case 'wander': {
@@ -216,7 +273,7 @@ export class MobWorld {
         break;
       }
       case 'chase': {
-        if (p.dead || fromCamp > LEASH + s.aggro) {
+        if (p.dead || fromCamp > (m.camp.leash ?? LEASH + s.aggro)) {
           this.goHome(m);
           break;
         }

@@ -24,12 +24,16 @@ export interface CharSave {
   lastPlayed: number;
   /** Where the hero stood when the game was saved (world cells); absent = the spawn point. */
   pos?: { x: number; z: number };
+  /** Position on the continent «Расколотые Земли» (world blocks); absent = Зеленодол. */
+  cpos?: { x: number; z: number };
+  /** Unique continent camps this character has cleared (they never respawn). */
+  uniq?: string[];
 }
 
 export const MAX_CHARS = 12;
 
 /** Region name shown on character cards (one world for now). */
-export const REGION: Loc = { ru: 'Зелёный Дол', en: 'Greenvale' };
+export const REGION: Loc = { ru: 'Расколотые Земли', en: 'Shattered Lands' };
 
 /** Class groups for character creation. */
 export const CLASS_GROUPS: { id: string; name: Loc; classes: string[] }[] = [
@@ -90,6 +94,8 @@ export function fixChar(raw: any): CharSave | null {
   c.skills = autoSkills(c.level, Array.isArray(raw.skills) && raw.skills.length === 8 ? raw.skills.map((v: any) => Math.max(0, Math.min(PROG.skillMax, Number(v) || 0))) : undefined);
   c.tri = Array.isArray(raw.tri) && raw.tri.length === 8 ? raw.tri.map((t: any) => (Array.isArray(t) ? [Number(t[0] ?? -1), Number(t[1] ?? -1)] : [-1, -1])) : d.tri;
   if (raw.pos && Number.isFinite(raw.pos.x) && Number.isFinite(raw.pos.z)) c.pos = { x: raw.pos.x, z: raw.pos.z };
+  if (raw.cpos && Number.isFinite(raw.cpos.x) && Number.isFinite(raw.cpos.z)) c.cpos = { x: raw.cpos.x, z: raw.cpos.z };
+  if (Array.isArray(raw.uniq)) c.uniq = raw.uniq.filter((v: unknown) => typeof v === 'string').slice(0, 256);
   // spent points can never exceed what the level earned
   const spent = c.skills.reduce((s, l, i) => s + Math.max(0, l - (c.level >= i + 1 ? 1 : 0)), 0);
   c.points = Math.max(0, pointsEarned(c.level) - spent);

@@ -21,6 +21,8 @@ import { Vfx } from './Vfx';
 import { ActionSystem, makeControls } from './action/ActionSystem';
 import { SPAWN, buildGreenvale } from './map/greenvale';
 import { SHOWCASE_SPAWN, buildShowcase } from './map/showcase';
+import { CONTINENT_SPAWN, continent, type ContinentStream } from './continent/stream';
+import { continentCamps } from './continent/camps';
 
 export type RunState = 'playing' | 'dead';
 
@@ -29,6 +31,8 @@ export interface RunEvents extends Record<string, unknown> {
   dayPeriod: DayPeriod;
   /** The hero fell and came back at the spawn point. */
   respawn: void;
+  /** The streamed terrain window moved (continent). */
+  terrain: void;
   /** A bestiary creature was met (aggro or kill): its id. */
   meet: string;
 }
@@ -66,7 +70,10 @@ export class Run {
   readonly hero: HeroDef;
   readonly rng = new Rng((Math.random() * 1e9) | 0);
   readonly fx: FxSink;
-  readonly terrain: Terrain;
+  /** The walkable world (a moving window on the streamed continent: see swapTerrain). */
+  terrain: Terrain;
+  /** The continent stream when playing «Расколотые Земли». */
+  readonly stream: ContinentStream | null;
   readonly events = new EventBus<RunEvents>();
   readonly stats = new RunStats();
   readonly player: Player;
@@ -104,12 +111,16 @@ export class Run {
     this.tr = o.tr;
     this.dayNight = new DayNight(this, o.clock ?? new GameClock());
     this.vfx = new Vfx(this);
-    this.terrain = worldTerrain(o.map);
     const ch = o.char ?? null;
+    this.stream = o.map.id === 'continent' ? continent() : null;
+    if (o.map.id === 'continent' && !this.stream) throw new Error('continent not loaded');
+    this.terrain = this.stream ? this.stream.terrain : worldTerrain(o.map);
     // the saved position belongs to the persistent world; side maps start at their spawn
-    const pos = o.map.id === 'greenvale' ? ch?.pos : undefined;
+    const pos = o.map.id === 'greenvale' ? ch?.pos : this.stream ? ch?.cpos : undefined;
     const reach = this.terrain.reach;
-    const start = pos && this.terrain.walkableAt(pos.x, pos.z) && (!reach || reach[Math.floor(pos.z) * this.terrain.size + Math.floor(pos.x)]) ? pos : worldOf(o.map).spawn;
+    const inWin = (q: { x: number; z: number }) => !this.stream || this.stream.covers(q.x, q.z);
+    let start = pos && inWin(pos) && this.terrain.walkableAt(pos.x, pos.z) && (!reach || reach[this.terrain.idx(Math.floor(pos.x), Math.floor(pos.z))]) ? pos : this.spawnPoint();
+    if (this.stream && !this.terrain.walkableAt(start.x, start.z)) start = this.stream.walkableNear(start.x, start.z);
     this.player = new Player(this, start.x, start.z);
     if (ch) {
       this.player.level = ch.level;
@@ -125,8 +136,20 @@ export class Run {
     this.projectiles = new Projectiles(this);
     this.allies = new Allies(this);
     this.combat = new Combat(this);
-    this.mobs = new MobWorld(this);
+    this.mobs = new MobWorld(this, this.stream ? continentCamps(this.stream.data) : undefined, ch?.uniq ?? []);
     this.mobs.onMeet = (id) => this.events.emit('meet', id);
+  }
+
+  /** Where the hero (re)appears: the map's spawn (Зеленодол on the continent). */
+  spawnPoint(): { x: number; z: number } {
+    return this.stream ? CONTINENT_SPAWN : worldOf(this.map).spawn;
+  }
+
+  /** Swaps in a new terrain window (continent streaming): creatures outside it are put away. */
+  swapTerrain(t: Terrain) {
+    this.terrain = t;
+    this.mobs.onWindow();
+    this.events.emit('terrain', undefined);
   }
 
   /** Recomputes player stats from the class and its skills. */
@@ -150,6 +173,10 @@ export class Run {
     this.time += dt;
     const p = this.player;
     if (this.weather.darkness > 0) this.weather.darkness -= dt;
+    if (this.stream) {
+      const nt = this.stream.update(p.x, p.z);
+      if (nt) this.swapTerrain(nt);
+    }
     if (!p.dead) p.update(dt, ix, iz);
     this.action.update(dt, this.ctl);
     // one-shot inputs are consumed by the first sub-step
@@ -195,7 +222,18 @@ export class Run {
 
   private respawn() {
     const p = this.player;
-    p.placeAt(worldOf(this.map).spawn.x, worldOf(this.map).spawn.z);
+    const sp = this.spawnPoint();
+    if (this.stream && !this.stream.covers(sp.x, sp.z)) {
+      // the spawn is far away: load its window first, then come to
+      this.stream.request(sp.x, sp.z);
+      const nt = this.stream.update(sp.x, sp.z);
+      if (nt) this.swapTerrain(nt);
+      if (!this.stream.covers(sp.x, sp.z)) {
+        this.respawnT = 0.1;
+        return;
+      }
+    }
+    p.placeAt(sp.x, sp.z);
     p.dead = false;
     p.hp = p.stats.maxHp;
     p.invulnT = 2;
