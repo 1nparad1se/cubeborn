@@ -94,7 +94,17 @@ export class Terrain {
    * Ground elevation in whole blocks (0 = the lowest floor). Every cell can be raised: walkers
    * step up and down one block at a time, jump up two, and fall off anything taller (see STEP).
    */
-  readonly elev: Uint8Array;
+  readonly elev: Uint8Array | Uint16Array;
+  /**
+   * World position of cell (0, 0): streamed worlds keep a window of cells around the hero and move
+   * it (see game/continent). Every coordinate method takes WORLD coordinates and subtracts this;
+   * index-based methods (centerY(i), passable(i, j), ...) and the arrays are window-local.
+   * Map builders run with the origin at 0, so their local cells are world cells.
+   */
+  ox = 0;
+  oz = 0;
+  /** Optional per-cell shade elevation for the ground shader (0..15 scale, snow/rock looks). */
+  shadeElev: Uint8Array | null = null;
   /** Cells the hero can reach from the spawn on foot or with jumps (1), set by the generator. */
   reach: Uint8Array | null = null;
   readonly blocks: Block[] = [];
@@ -123,18 +133,28 @@ export class Terrain {
   /** Walkable deck corners (bridges, stairs, platforms): the deck surface, set by placeProp. */
   readonly deckC = new Map<number, Float32Array>();
 
-  constructor(readonly size: number) {
+  constructor(readonly size: number, tall = false) {
     this.cell = new Uint8Array(size * size);
     this.tile = new Uint8Array(size * size);
     this.height = new Uint8Array(size * size);
-    this.elev = new Uint8Array(size * size);
+    this.elev = tall ? new Uint16Array(size * size) : new Uint8Array(size * size);
+  }
+
+  /** Window-local cell tests (no origin shift). */
+  inLocal(cx: number, cz: number): boolean {
+    return cx >= 0 && cz >= 0 && cx < this.size && cz < this.size;
+  }
+  blocksLocal(cx: number, cz: number): boolean {
+    if (!this.inLocal(cx, cz)) return true;
+    const c = this.cell[cz * this.size + cx];
+    return c === CELL.solid || c === CELL.liquid || c === CELL.wall;
   }
 
   /** Ground elevation of the cell under (x, z), 0 outside the map. */
   elevAt(x: number, z: number): number {
-    const cx = Math.floor(x);
-    const cz = Math.floor(z);
-    return this.inBounds(cx, cz) ? this.elev[cz * this.size + cx] : 0;
+    const cx = Math.floor(x - this.ox);
+    const cz = Math.floor(z - this.oz);
+    return this.inLocal(cx, cz) ? this.elev[cz * this.size + cx] : 0;
   }
 
   /** The four walking-surface corners of cell i (deck if any, else ground), or null before buildSurface. */
@@ -146,9 +166,12 @@ export class Terrain {
 
   /** Ground height (world y) under (x, z): the sloped surface (bilinear in the cell's corners). */
   groundY(x: number, z: number): number {
+    return this.groundL(x - this.ox, z - this.oz);
+  }
+  private groundL(x: number, z: number): number {
     const cx = Math.floor(x);
     const cz = Math.floor(z);
-    if (!this.inBounds(cx, cz)) return 0;
+    if (!this.inLocal(cx, cz)) return 0;
     const i = cz * this.size + cx;
     const c = this.cornersOf(i);
     if (!c) return this.elev[i];
@@ -161,9 +184,12 @@ export class Terrain {
 
   /** Surface gradient (dy/dx, dy/dz) at (x, z). */
   slopeAt(x: number, z: number): [number, number] {
+    return this.slopeL(x - this.ox, z - this.oz);
+  }
+  private slopeL(x: number, z: number): [number, number] {
     const cx = Math.floor(x);
     const cz = Math.floor(z);
-    if (!this.inBounds(cx, cz)) return [0, 0];
+    if (!this.inLocal(cx, cz)) return [0, 0];
     const c = this.cornersOf(cz * this.size + cx);
     if (!c) return [0, 0];
     const fx = x - cx;
@@ -193,17 +219,21 @@ export class Terrain {
    * SLOPE.maxTan; while airborne, anything up to STEP.air above the feet. Drops are always allowed.
    */
   canWalk(x0: number, z0: number, x1: number, z1: number, feet: number, airborne = false): boolean {
+    x0 -= this.ox;
+    x1 -= this.ox;
+    z0 -= this.oz;
+    z1 -= this.oz;
     const cx = Math.floor(x1);
     const cz = Math.floor(z1);
-    if (this.blocksWalker(cx, cz)) return false;
-    const g = this.groundY(x1, z1);
+    if (this.blocksLocal(cx, cz)) return false;
+    const g = this.groundL(x1, z1);
     if (airborne) return g <= feet + STEP.air;
     const rise = g - feet;
     if (rise <= 0.02) return true;
     if (rise > SLOPE.lip) return false;
     if (this.deckC.has(cz * this.size + cx)) return true;
     // climbing: the slope at the new spot must be walkable
-    const [gx, gz] = this.slopeAt(x1, z1);
+    const [gx, gz] = this.slopeL(x1, z1);
     const dx = x1 - x0;
     const dz = z1 - z0;
     const l = Math.hypot(dx, dz);
@@ -215,7 +245,9 @@ export class Terrain {
 
   /** Whether a walker standing at height `feet` may move into cell (cx, cz) (cell-level check). */
   canEnter(cx: number, cz: number, feet: number, airborne = false): boolean {
-    if (this.blocksWalker(cx, cz)) return false;
+    cx -= this.ox;
+    cz -= this.oz;
+    if (this.blocksLocal(cx, cz)) return false;
     return this.centerY(cz * this.size + cx) <= feet + (airborne ? STEP.air : SLOPE.lip + SLOPE.maxTan * 0.5);
   }
 
@@ -229,7 +261,7 @@ export class Terrain {
     const az = (i / n) | 0;
     const bx = j % n;
     const bz = (j / n) | 0;
-    if (this.blocksWalker(ax, az) || this.blocksWalker(bx, bz)) return false;
+    if (this.blocksLocal(ax, az) || this.blocksLocal(bx, bz)) return false;
     const dx = bx - ax;
     const dz = bz - az;
     const ha = this.centerY(i);
@@ -259,7 +291,11 @@ export class Terrain {
 
   /** Ground creatures and paths: neighbouring cells joined by walkable ground (see passable). */
   stepOk(ax: number, az: number, bx: number, bz: number): boolean {
-    if (!this.inBounds(ax, az) || !this.inBounds(bx, bz)) return false;
+    ax -= this.ox;
+    bx -= this.ox;
+    az -= this.oz;
+    bz -= this.oz;
+    if (!this.inLocal(ax, az) || !this.inLocal(bx, bz)) return false;
     if (ax === bx && az === bz) return true;
     if (Math.abs(ax - bx) > 1 || Math.abs(az - bz) > 1) return false;
     return this.passable(az * this.size + ax, bz * this.size + bx);
@@ -272,7 +308,7 @@ export class Terrain {
     const q = new Int32Array(n * n);
     let qh = 0;
     let qt = 0;
-    const s = Math.floor(sz) * n + Math.floor(sx);
+    const s = Math.floor(sz - this.oz) * n + Math.floor(sx - this.ox);
     seen[s] = 1;
     q[qt++] = s;
     while (qh < qt) {
@@ -475,7 +511,7 @@ export class Terrain {
               }
               continue;
             }
-            if (this.blocksWalker(ax, az) || !this.corner) continue;
+            if (this.blocksLocal(ax, az) || !this.corner) continue;
             const g = this.corner[a * 4 + (3 - j)];
             if (Math.abs(g - h) <= 0.75) {
               land += g;
@@ -489,29 +525,32 @@ export class Terrain {
   }
 
   idx(cx: number, cz: number): number {
-    return cz * this.size + cx;
+    return (cz - this.oz) * this.size + cx - this.ox;
   }
   inBounds(cx: number, cz: number): boolean {
-    return cx >= 0 && cz >= 0 && cx < this.size && cz < this.size;
+    return this.inLocal(cx - this.ox, cz - this.oz);
   }
   cellAt(x: number, z: number): number {
-    const cx = Math.floor(x);
-    const cz = Math.floor(z);
-    if (!this.inBounds(cx, cz)) return CELL.wall;
+    const cx = Math.floor(x - this.ox);
+    const cz = Math.floor(z - this.oz);
+    if (!this.inLocal(cx, cz)) return CELL.wall;
     return this.cell[cz * this.size + cx];
   }
   blocksWalker(cx: number, cz: number): boolean {
-    if (!this.inBounds(cx, cz)) return true;
-    const c = this.cell[cz * this.size + cx];
-    return c === CELL.solid || c === CELL.liquid || c === CELL.wall;
+    return this.blocksLocal(cx - this.ox, cz - this.oz);
   }
   blocksFlyer(cx: number, cz: number): boolean {
-    if (!this.inBounds(cx, cz)) return true;
+    cx -= this.ox;
+    cz -= this.oz;
+    if (!this.inLocal(cx, cz)) return true;
     return this.cell[cz * this.size + cx] === CELL.wall;
   }
   /** Cells that stop shots and sight lines (see WALLS): the border and tall solid obstacles. */
   blocksShot(cx: number, cz: number, y = Infinity): boolean {
-    if (!this.inBounds(cx, cz)) return true;
+    return this.shotL(cx - this.ox, cz - this.oz, y);
+  }
+  private shotL(cx: number, cz: number, y: number): boolean {
+    if (!this.inLocal(cx, cz)) return true;
     const i = cz * this.size + cx;
     // terrain rising above the shot's height (a hill or cliff face) stops it
     if ((this.corner ? this.maxCorner(i) : this.elev[i]) > y) return true;
@@ -528,6 +567,10 @@ export class Terrain {
    * shooters standing or hovering in an obstacle cell can still fire out of it.
    */
   shotRay(x0: number, z0: number, x1: number, z1: number, ignoreEnd = false, y = Infinity): number {
+    x0 -= this.ox;
+    x1 -= this.ox;
+    z0 -= this.oz;
+    z1 -= this.oz;
     let cx = Math.floor(x0);
     let cz = Math.floor(z0);
     const ex = Math.floor(x1);
@@ -555,7 +598,7 @@ export class Terrain {
       if (t > 1) return 1;
       const end = cx === ex && cz === ez;
       if (end && ignoreEnd) return 1;
-      if (this.blocksShot(cx, cz, y)) return t;
+      if (this.shotL(cx, cz, y)) return t;
       if (end) return 1;
     }
     return 1;

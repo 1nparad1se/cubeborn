@@ -344,8 +344,8 @@ export class Player {
       const g = this.ground;
       if (Math.abs(g - this.y) <= 0.12) this.y = g;
     }
-    this.x = clamp(this.x, 1, t.size - 1);
-    this.z = clamp(this.z, 1, t.size - 1);
+    this.x = clamp(this.x, t.ox + 1, t.ox + t.size - 1);
+    this.z = clamp(this.z, t.oz + 1, t.oz + t.size - 1);
   }
 
   clearPath() {

@@ -10,6 +10,9 @@ export class SpatialGrid {
   private items: Int32Array;
   private itemCell: Int32Array;
   private n = 0;
+  /** World position of the grid's (0, 0) corner (streamed worlds move it with the terrain window). */
+  ox = 0;
+  oz = 0;
 
   constructor(
     readonly width: number,
@@ -34,8 +37,8 @@ export class SpatialGrid {
   }
 
   cellOf(x: number, z: number): number {
-    let cx = Math.floor(x / this.cellSize);
-    let cz = Math.floor(z / this.cellSize);
+    let cx = Math.floor((x - this.ox) / this.cellSize);
+    let cz = Math.floor((z - this.oz) / this.cellSize);
     if (cx < 0) cx = 0;
     else if (cx >= this.cols) cx = this.cols - 1;
     if (cz < 0) cz = 0;
@@ -81,6 +84,8 @@ export class SpatialGrid {
   /** Calls fn for each item in cells overlapping the circle. Return true from fn to stop early. */
   query(x: number, z: number, r: number, fn: (i: number) => boolean | void): void {
     const cs = this.cellSize;
+    x -= this.ox;
+    z -= this.oz;
     let x0 = Math.floor((x - r) / cs);
     let x1 = Math.floor((x + r) / cs);
     let z0 = Math.floor((z - r) / cs);

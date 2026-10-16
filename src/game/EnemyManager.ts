@@ -173,6 +173,8 @@ export class EnemyManager {
         this.zs[i] = e.z;
       }
     }
+    this.grid.ox = this.run.terrain.ox;
+    this.grid.oz = this.run.terrain.oz;
     this.grid.rebuild(n, this.xs, this.zs, (i) => list[i].alive);
     for (let i = 0; i < n; i++) {
       const e = list[i];

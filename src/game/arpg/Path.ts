@@ -64,8 +64,9 @@ class Heap {
   }
 }
 
+// Everything below works in window-local cells (t.ox / t.oz subtracted by the exported wrappers).
 function walkable(t: Terrain, cx: number, cz: number): boolean {
-  return t.inBounds(cx, cz) && !t.blocksWalker(cx, cz);
+  return !t.blocksLocal(cx, cz);
 }
 
 /**
@@ -85,6 +86,9 @@ function enter(t: Terrain, from: number, cx: number, cz: number): boolean {
 
 /** True when a body of radius r can walk straight from a to b. */
 export function clearLine(t: Terrain, ax: number, az: number, bx: number, bz: number, r = 0.35): boolean {
+  return clearLineL(t, ax - t.ox, az - t.oz, bx - t.ox, bz - t.oz, r);
+}
+function clearLineL(t: Terrain, ax: number, az: number, bx: number, bz: number, r = 0.35): boolean {
   const d = Math.hypot(bx - ax, bz - az);
   const steps = Math.max(1, Math.ceil(d / 0.25));
   const nx = d > 0 ? -(bz - az) / d : 0;
@@ -101,7 +105,7 @@ export function clearLine(t: Terrain, ax: number, az: number, bx: number, bz: nu
     const z1 = Math.floor(z + nz * r);
     const x2 = Math.floor(x - nx * r);
     const z2 = Math.floor(z - nz * r);
-    if (!t.inBounds(x1, z1) || !t.inBounds(x2, z2)) return false;
+    if (!t.inLocal(x1, z1) || !t.inLocal(x2, z2)) return false;
     if (!enter(t, ca, x1, z1) || !enter(t, cb, x2, z2)) return false;
     ca = z1 * n + x1;
     cb = z2 * n + x2;
@@ -111,6 +115,10 @@ export function clearLine(t: Terrain, ax: number, az: number, bx: number, bz: nu
 
 /** Nearest walkable cell centre to (x, z) within a few cells, or null. */
 export function nearestWalkable(t: Terrain, x: number, z: number, maxR = 5): [number, number] | null {
+  const r = nearestL(t, x - t.ox, z - t.oz, maxR);
+  return r ? [r[0] + t.ox, r[1] + t.oz] : null;
+}
+function nearestL(t: Terrain, x: number, z: number, maxR = 5): [number, number] | null {
   const cx = Math.floor(x);
   const cz = Math.floor(z);
   if (walkable(t, cx, cz)) return [x, z];
@@ -140,10 +148,18 @@ export function nearestWalkable(t: Terrain, x: number, z: number, maxR = 5): [nu
  * explored cell is used so the hero still walks toward the click.
  */
 export function findPath(t: Terrain, sx: number, sz: number, tx: number, tz: number, budget = 6000): number[] {
-  const goal = nearestWalkable(t, tx, tz);
+  const out = findPathL(t, sx - t.ox, sz - t.oz, tx - t.ox, tz - t.oz, budget);
+  for (let i = 0; i < out.length; i += 2) {
+    out[i] += t.ox;
+    out[i + 1] += t.oz;
+  }
+  return out;
+}
+function findPathL(t: Terrain, sx: number, sz: number, tx: number, tz: number, budget: number): number[] {
+  const goal = nearestL(t, tx, tz);
   if (!goal) return [];
   [tx, tz] = goal;
-  if (clearLine(t, sx, sz, tx, tz)) return [tx, tz];
+  if (clearLineL(t, sx, sz, tx, tz)) return [tx, tz];
   const n = t.size * t.size;
   if (gScore.length !== n) {
     gScore = new Float32Array(n);
@@ -221,7 +237,7 @@ export function findPath(t: Terrain, sx: number, sz: number, tx: number, tz: num
   let i = 0;
   while (i < pts.length / 2) {
     let j = pts.length / 2 - 1;
-    while (j > i && !clearLine(t, ax, az, pts[j * 2], pts[j * 2 + 1])) j--;
+    while (j > i && !clearLineL(t, ax, az, pts[j * 2], pts[j * 2 + 1])) j--;
     out.push(pts[j * 2], pts[j * 2 + 1]);
     ax = pts[j * 2];
     az = pts[j * 2 + 1];
