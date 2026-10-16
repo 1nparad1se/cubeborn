@@ -87,6 +87,8 @@ export const CONTINENT: MapDef = {
       rock_cliff: [0x8a8690, 0x7e7a84, 0x96929c],
       sand_salt: [0xeeeae0, 0xe4e0d4],
       dirt: [0x8a6a44, 0x80603e],
+      dirt_road: [0xa88a5e, 0x9a7c52],
+      dirt_path: [0x8e7048, 0x82663e],
     },
     blocks: {
       trunk: [0x6a4a2c, 0x76522f], leaves: [0x4f8a34, 0x5a9a3a, 0x467e2e, 0x6aa63e], birch: [0xe8e4d8, 0xd8d2c4], pine: [0x2f6a3a, 0x36743f],

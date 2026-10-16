@@ -344,6 +344,7 @@ export class Menus {
         h('div.mc-kv', h('span', tr('Очки навыков', 'Skill points')), h('b', String(cur.points))),
         h('div.mc-kv', h('span', tr('Последняя игра', 'Last played')), h('b', new Date(cur.lastPlayed).toLocaleDateString())),
         h('button.mm-big', { onclick: () => this.api.play(cur.id) }, tr('Играть', 'Play')),
+        h('button.mm-small.mc-showcase', { title: tr('Прежняя карта: долина 250×250', 'The previous map: a 250×250 vale'), onclick: () => this.api.play(cur.id, 'greenvale') }, tr('Зелёный Дол', 'Greenvale')),
         h('button.mm-small.mc-showcase', { title: tr('Все объекты мира на одной карте, без монстров', 'Every world object on one map, no monsters'), onclick: () => this.api.play(cur.id, 'showcase') }, tr('Витрина мира', 'World Showcase')),
         h('button.mm-small.danger', { onclick: () => this.deleteDialog(cur, render) }, tr('Удалить персонажа', 'Delete character')),
       );

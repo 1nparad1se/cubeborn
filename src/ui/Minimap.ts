@@ -30,6 +30,13 @@ export class Minimap {
   /** Pixels per cell of the baked image (big worlds use fewer to keep the image small). */
   private px = PX_SMALL;
   big = false;
+  /** The terrain the images were baked from (streamed worlds re-bake when the window moves). */
+  private baked: Run['terrain'] | null = null;
+  private ox = 0;
+  private oz = 0;
+  /** The big map spans this many world units (the whole continent on «Расколотые Земли»). */
+  private bigN = 0;
+  private labels: { x: number; z: number; text: string }[] = [];
 
   constructor() {
     this.canvas = h('canvas.minimap-canvas') as HTMLCanvasElement;
@@ -56,8 +63,18 @@ export class Minimap {
     this.run = run;
     this.base = null;
     this.round = null;
+    this.baked = null;
+    this.labels = [];
     if (!run) return;
+    this.baked = run.terrain;
+    this.ox = run.terrain.ox;
+    this.oz = run.terrain.oz;
     this.round = this.bakeRound(run);
+    if (run.stream) {
+      this.bakeContinent(run);
+      return;
+    }
+    this.bigN = run.terrain.size;
     const t = run.terrain;
     const n = t.size;
     const PX = n > 500 ? 2 : PX_SMALL;
@@ -153,6 +170,47 @@ export class Minimap {
    * lighter, slopes facing north-west catch the light), dark rock for walls and cliffs, water in
    * its own colour and trees / props as darker green specks.
    */
+  /**
+   * The big map of the continent: the 2048² overview (sub-biome colours, water, roads, height
+   * shading) baked once into a 1024² image, with village and region names.
+   */
+  private bakeContinent(run: Run) {
+    const d = run.stream!.data;
+    const N = 1024;
+    const W = 8000;
+    const img = document.createElement('canvas');
+    img.width = img.height = N;
+    const c = img.getContext('2d')!;
+    const data = c.createImageData(N, N);
+    const pal = run.map.palette;
+    const names = run.terrain.tileNames;
+    const step = W / N;
+    for (let z = 0; z < N; z++)
+      for (let x = 0; x < N; x++) {
+        const wx = (x + 0.5) * step;
+        const wz = (z + 0.5) * step;
+        const m = d.mapAt(wx, wz);
+        const y = d.heightAt(wx, wz);
+        const road = (d.maps.data[(Math.floor((wz / W) * 2048) * 2048 + Math.floor((wx / W) * 2048)) * 4 + 1] >> 4) & 15;
+        let col = (pal.tiles[names[m.biome]] ?? [0x5a8a3a])[0];
+        if (m.water) col = m.water === 1 ? 0x2a6e9c : 0x3a8cc0;
+        else if (road) col = 0xb89a6a;
+        else if (y > 300) col = 0xe8eef4;
+        const shade = m.water ? 1 : Math.max(0.7, Math.min(1.25, 1 + (d.heightAt(wx - step, wz - step) - d.heightAt(wx + step, wz + step)) * 0.02));
+        const o = (z * N + x) * 4;
+        data.data[o] = Math.min(255, ((col >> 16) & 255) * shade);
+        data.data[o + 1] = Math.min(255, ((col >> 8) & 255) * shade);
+        data.data[o + 2] = Math.min(255, (col & 255) * shade);
+        data.data[o + 3] = 235;
+      }
+    c.putImageData(data, 0, 0);
+    this.base = img;
+    this.px = N / W;
+    this.bigN = W;
+    for (const v of d.world.villages) this.labels.push({ x: v.at[0], z: v.at[1], text: v.ru });
+    this.acc = 1;
+  }
+
   private bakeRound(run: Run): HTMLCanvasElement {
     const t = run.terrain;
     const n = t.size;
@@ -170,7 +228,7 @@ export class Minimap {
     let hi = -1e9;
     for (let z = 0; z < n; z++)
       for (let x = 0; x < n; x++) {
-        const y = t.groundY(x + 0.5, z + 0.5);
+        const y = t.groundY(x + t.ox + 0.5, z + t.oz + 0.5);
         hgt[z * n + x] = y;
         if (y < lo) lo = y;
         if (y > hi) hi = y;
@@ -245,7 +303,7 @@ export class Minimap {
       ctx.save();
       ctx.translate(cw / 2, ch / 2);
       ctx.scale(scale / PX_ROUND, scale / PX_ROUND);
-      ctx.translate(-p.x * PX_ROUND, -p.z * PX_ROUND);
+      ctx.translate(-(p.x - this.ox) * PX_ROUND, -(p.z - this.oz) * PX_ROUND);
       ctx.imageSmoothingEnabled = true;
       ctx.drawImage(this.round, 0, 0);
       ctx.restore();
@@ -306,6 +364,13 @@ export class Minimap {
   update(dt: number) {
     const run = this.run;
     if (!run || !this.base) return;
+    if (run.terrain !== this.baked) {
+      // the streamed window moved: re-bake the corner map around the hero
+      this.baked = run.terrain;
+      this.ox = run.terrain.ox;
+      this.oz = run.terrain.oz;
+      this.round = this.bakeRound(run);
+    }
     this.acc += dt;
     if (this.acc < 1 / 15) return;
     this.acc = 0;
@@ -321,7 +386,7 @@ export class Minimap {
       return;
     }
     const ctx = this.ctx;
-    const n = run.terrain.size;
+    const n = this.bigN;
     const p = run.player;
     // view: centre (world) and scale (canvas px per world unit)
     const cx = n / 2;
@@ -341,9 +406,22 @@ export class Minimap {
     ctx.rotate(yaw);
     ctx.scale(scale / this.px, scale / this.px);
     ctx.translate(-cx * this.px, -cz * this.px);
-    ctx.imageSmoothingEnabled = !this.big;
+    ctx.imageSmoothingEnabled = !this.big || !!run.stream;
     ctx.drawImage(this.base, 0, 0);
     ctx.restore();
+    // place names (continent)
+    if (this.labels.length) {
+      ctx.font = `600 ${Math.round(11 * dpr)}px Rubik, sans-serif`;
+      ctx.textAlign = 'center';
+      for (const l of this.labels) {
+        const [lx, ly] = toScreen(l.x, l.z);
+        ctx.fillStyle = 'rgba(0,0,0,0.75)';
+        ctx.fillText(l.text, lx + dpr, ly - 6 * dpr + dpr);
+        ctx.fillStyle = '#fff4d0';
+        ctx.fillText(l.text, lx, ly - 6 * dpr);
+        ctx.fillRect(lx - 2 * dpr, ly - 2 * dpr, 4 * dpr, 4 * dpr);
+      }
+    }
 
     const u = dpr * (this.big ? 1.2 : 1);
     const outline = (draw: () => void, fill: string) => {

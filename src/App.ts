@@ -17,7 +17,9 @@ import { h } from './ui/dom';
 import { t, L, setLang } from './i18n';
 import { HERO_BY_ID } from './data/heroes';
 import { CREATURES } from './data/bestiary';
-import { GREENVALE, SHOWCASE } from './data/maps';
+import { CONTINENT, GREENVALE, SHOWCASE } from './data/maps';
+import { ContinentData, browserIO } from './game/continent/data';
+import { CONTINENT_SPAWN, ContinentStream, setContinent } from './game/continent/stream';
 import { buildMenuGround, RIVER } from './game/map/greenvale';
 import { tr } from './ui/ClassPreview';
 
@@ -303,8 +305,50 @@ export class App implements MenuApi {
   }
 
   // ------------------------------------------------------------------ playing
-  /** Enters the world with a saved character (`mapId` 'showcase' opens «Витрина мира» instead). */
+  private continentData: Promise<ContinentData> | null = null;
+  private continentStream: ContinentStream | null = null;
+  private loading = false;
+
+  /**
+   * Enters the world with a saved character: «Расколотые Земли» (the continent, streamed; loaded
+   * first), or `mapId` 'greenvale' / 'showcase' for the earlier maps.
+   */
   play(charId: string, mapId?: string) {
+    const ch = this.profile.data.chars.find((c) => c.id === charId);
+    if (!ch || !HERO_BY_ID[ch.cls] || this.loading) return;
+    if (mapId === GREENVALE.id || mapId === SHOWCASE.id) {
+      this.startPlay(charId, mapId);
+      return;
+    }
+    // the continent: data, then the window around the saved position (or Зеленодол)
+    this.loading = true;
+    const veil = document.createElement('div');
+    veil.className = 'fatal';
+    veil.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(10,16,28,.82);color:#fff;font:600 18px Rubik,sans-serif;z-index:50';
+    veil.textContent = tr('Загрузка: Расколотые Земли…', 'Loading: Shattered Lands…');
+    this.root.appendChild(veil);
+    const at = ch.cpos ?? CONTINENT_SPAWN;
+    this.continentData ??= ContinentData.load(browserIO());
+    this.continentData
+      .then(async (d) => {
+        if (!this.continentStream) this.continentStream = await ContinentStream.open(d, at.x, at.z);
+        else await this.continentStream.jump(at.x, at.z);
+        setContinent(this.continentStream);
+        veil.remove();
+        this.loading = false;
+        this.startPlay(charId, CONTINENT.id);
+      })
+      .catch((err) => {
+        console.error(err);
+        this.continentData = null;
+        this.loading = false;
+        veil.textContent = tr('Не удалось загрузить континент — открыт Зелёный Дол', 'Could not load the continent — opening Greenvale');
+        setTimeout(() => veil.remove(), 2500);
+        this.startPlay(charId, GREENVALE.id);
+      });
+  }
+
+  private startPlay(charId: string, mapId: string) {
     const p = this.profile;
     const ch = p.data.chars.find((c) => c.id === charId);
     const hero = ch ? HERO_BY_ID[ch.cls] : null;
@@ -317,7 +361,7 @@ export class App implements MenuApi {
     const fx = new ProxyFx();
     const s = p.data.settings;
     const run = new Run({
-      map: mapId === SHOWCASE.id ? SHOWCASE : GREENVALE,
+      map: mapId === SHOWCASE.id ? SHOWCASE : mapId === CONTINENT.id ? CONTINENT : GREENVALE,
       hero,
       fx,
       settings: { damageNumbers: s.damageNumbers },
@@ -373,6 +417,8 @@ export class App implements MenuApi {
     ch.tri = run.action.tri.map((x) => [x[0], x[1]]);
     ch.points = run.action.points;
     if (run.state === 'playing' && run.map.id === GREENVALE.id) ch.pos = { x: +run.player.x.toFixed(2), z: +run.player.z.toFixed(2) };
+    if (run.state === 'playing' && run.map.id === CONTINENT.id) ch.cpos = { x: +run.player.x.toFixed(2), z: +run.player.z.toFixed(2) };
+    if (run.mobs.uniquesDead.size) ch.uniq = [...run.mobs.uniquesDead];
     ch.playTime += Math.round(run.time - this.charTime);
     this.charTime = Math.round(run.time);
     ch.lastPlayed = Date.now();

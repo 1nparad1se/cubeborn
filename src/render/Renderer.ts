@@ -4,6 +4,8 @@ import type { MapDef } from '../data/types';
 import type { FxSink, ParticleKind } from '../game/types';
 import type { Terrain } from '../game/Terrain';
 import { CameraRig } from './CameraRig';
+import { ContinentLod } from './ContinentLod';
+import { NpcRenderer } from './NpcRenderer';
 import { WorldRenderer } from './WorldRenderer';
 import { GROUND } from './ground';
 import { EntityRenderer } from './EntityRenderer';
@@ -318,7 +320,7 @@ export class Renderer {
     if (this.ao) this.ao.enabled = st.effects !== 'low';
     if (this.ao) this.ao.material.uniforms.uSteps.value = st.effects === 'high' ? 2 : 1;
     this.viewMul = { near: 0.8, medium: 1, far: 1.3, max: 1.7 }[st.viewDistance] ?? 1;
-    this.rig.camera.far = 240 * this.viewMul;
+    this.applyFar();
     this.rig.camera.updateProjectionMatrix();
     this.rig.shake = st.screenShake;
     this.overlay.showNumbers = st.damageNumbers;
@@ -399,6 +401,12 @@ export class Renderer {
     this.overlay.resize(w, h, window.devicePixelRatio || 1);
   }
 
+  /** Camera far plane: the continent's LOD reaches the horizon. */
+  private applyFar() {
+    this.rig.camera.far = this.lod ? 9000 : 240 * this.viewMul;
+    this.rig.camera.updateProjectionMatrix();
+  }
+
   private setAtmosphere(map: MapDef) {
     const p = map.palette;
     this.scene.background = new THREE.Color(p.fog);
@@ -409,6 +417,12 @@ export class Renderer {
     this.sun.color.setHex(p.sun).lerp(this.cA.setHex(MCD.sun), MCD.sunMix);
     this.sun.intensity = p.sunIntensity * 2.4 * MCD.sunMul;
   }
+
+  /** Far LOD of the streamed continent (null on fixed maps). */
+  private lod: ContinentLod | null = null;
+  private npcs: NpcRenderer | null = null;
+  /** Near-world rebuilds this run (window shifts), for stats. */
+  worldBuilds = 0;
 
   private buildWorld(terrain: Terrain, map: MapDef) {
     this.disposeWorld();
@@ -430,9 +444,18 @@ export class Renderer {
     this.clearShowcase();
     this.clearCamp();
     this.run = run;
-    const terrain = run.terrain;
-    GROUND.fn = (x, z) => terrain.groundY(x, z);
+    // the terrain can change under a run (streamed continent windows): always ask the current one
+    GROUND.fn = (x, z) => run.terrain.groundY(x, z);
     this.buildWorld(run.terrain, run.map);
+    this.worldBuilds = 0;
+    if (run.stream) {
+      this.lod = new ContinentLod(run.stream.data, run.map);
+      this.lod.setWindow(run.terrain.ox, run.terrain.oz, run.terrain.size);
+      this.scene.add(this.lod.mesh);
+      this.npcs = new NpcRenderer(run);
+      this.scene.add(this.npcs.group);
+    }
+    this.applyFar();
     this.entities = new EntityRenderer(this.scene, run, this.blockTex, this.blobTex, this.detail === 'high' && this.s.shadows !== 'low' ? 'high' : this.detail === 'low' ? 'low' : 'medium', this.lights);
     this.particles = new Particles(this.scene, this.blockTex, this.blobTex, this.s.particles);
     this.ambient = new AmbientFx(this.scene, run.map.generator, this.quality, this.particleMul);
@@ -482,7 +505,18 @@ export class Renderer {
     this.ambient?.dispose();
     this.ambient = null;
     this.disposeWorld();
+    if (this.lod) {
+      this.scene.remove(this.lod.mesh);
+      this.lod.dispose();
+      this.lod = null;
+    }
+    if (this.npcs) {
+      this.scene.remove(this.npcs.group);
+      this.npcs.dispose();
+      this.npcs = null;
+    }
     this.run = null;
+    this.applyFar();
     GROUND.fn = null;
     this.overlay.clear();
   }
@@ -591,13 +625,18 @@ export class Renderer {
       const nk = this.run ? this.run.dayNight.night : 0;
       const boost = 1 + nk * 0.45;
       const rad = 7 + nk * 2.5;
+      // terrain lights are window-local on streamed worlds
+      const lox = this.torchTerrain.ox;
+      const loz = this.torchTerrain.oz;
       for (const l of this.torchTerrain.lights) {
-        if ((l.x - t.x) ** 2 + (l.z - t.z) ** 2 > 24 * 24) continue;
+        const lx = l.x + lox;
+        const lz = l.z + loz;
+        if ((lx - t.x) ** 2 + (lz - t.z) ** 2 > 24 * 24) continue;
         const f = l.flicker ?? 1;
-        const flick = 1 - f * 0.15 + f * (Math.sin(this.time * 9 + l.x * 3) * 0.08 + Math.sin(this.time * 23 + l.z) * 0.05);
+        const flick = 1 - f * 0.15 + f * (Math.sin(this.time * 9 + lx * 3) * 0.08 + Math.sin(this.time * 23 + lz) * 0.05);
         const day = l.day ?? 1;
         const dk = day + (1 - day) * nk;
-        lights.request(l.x, l.y, l.z, l.color, l.intensity * flick * boost * dk, l.radius ? l.radius * (1 + nk * 0.3) : rad, t.x, t.z);
+        lights.request(lx, l.y, lz, l.color, l.intensity * flick * boost * dk, l.radius ? l.radius * (1 + nk * 0.3) : rad, t.x, t.z);
       }
     }
     lights.end(dt, t.x, t.z);
@@ -671,6 +710,13 @@ export class Renderer {
   private runFrame(dt: number) {
     const run = this.run!;
     const p = run.player;
+    if (run.terrain !== this.torchTerrain) {
+      // the streamed continent moved its window: rebuild the near world around the hero
+      this.buildWorld(run.terrain, run.map);
+      this.world?.cull(p.x, p.z, 70, 0);
+      this.lod?.setWindow(run.terrain.ox, run.terrain.oz, run.terrain.size);
+      this.worldBuilds++;
+    }
     const lead = { x: p.vx * 0.18, z: p.vz * 0.18 };
     this.rig.zoom += (this.zoomLevel - this.rig.zoom) * (1 - Math.exp(-10 * Math.max(dt, 1 / 120)));
     this.rig.update(dt, p.x, p.z, lead, p.jumpPhase === 'air' ? Math.min(p.y, p.ground + 0.5) : p.ground);
@@ -731,6 +777,8 @@ export class Renderer {
     this.sun.position.set(cx + Math.cos(ang) * 17, t.y + elev, cz + Math.sin(ang) * 17);
     this.sun.target.position.set(cx, t.y, cz);
     this.world?.uniforms.uFocus.value.set(p.x, p.y, p.z);
+    if (this.lod) this.lod.uHaze.value.copy(fog.color);
+    this.npcs?.update(dt, run.dayNight.clock.minutes / 60);
     if (this.world) this.world.uniforms.uNight.value = nightK;
     this.world?.uniforms.uCamDir.value.set(this.rig.toCam.x, this.rig.toCam.z);
     // a warm light pool follows the hero on dark maps

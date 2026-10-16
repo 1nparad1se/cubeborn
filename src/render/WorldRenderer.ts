@@ -122,7 +122,14 @@ export class WorldRenderer {
     uFocus: { value: new THREE.Vector3(0, 0, 9999) },
     uCamDir: { value: new THREE.Vector2(Math.SQRT1_2, Math.SQRT1_2) },
     uNight: { value: 0 },
+    /** World position of the terrain's cell (0, 0) (streamed windows; 0 on fixed maps). */
+    uOrigin: { value: new THREE.Vector2(0, 0) },
   };
+  /** uFocus in window-local coordinates (props and foliage are built local). */
+  private readonly localU = { ...this.uniforms, uFocus: { value: new THREE.Vector3(0, 0, 9999) } };
+  /** The terrain window origin: the group is offset by it, culling works in local cells. */
+  readonly ox: number;
+  readonly oz: number;
   private disposables: { dispose(): void }[] = [];
   /** Block and decor meshes with their chunk centers, for distance culling. */
   private chunks: { mesh: THREE.Object3D; x: number; z: number }[] = [];
@@ -139,6 +146,10 @@ export class WorldRenderer {
 
   constructor(terrain: Terrain, map: MapDef, _blockTex: THREE.Texture, quality: string, lazy = terrain.size > 420) {
     this.lazy = lazy;
+    this.ox = terrain.ox;
+    this.oz = terrain.oz;
+    this.group.position.set(this.ox, 0, this.oz);
+    this.uniforms.uOrigin.value.set(this.ox, this.oz);
     const props = terrain.props;
     terrain = groundView(terrain);
     this.level = this.computeLevels(terrain);
@@ -153,7 +164,7 @@ export class WorldRenderer {
   /** World props (src/world/props): one merged mesh plus GPU particles per 16-cell chunk. */
   private buildProps(props: Terrain['props'], quality: string) {
     if (!props.length) return;
-    const kit = new PropKit(this.uniforms);
+    const kit = new PropKit(this.localU);
     this.disposables.push(kit);
     for (const c of kit.chunks(props, quality !== 'low')) this.defer(c.x, c.z, () => {
       for (const m of c.build()) this.place(m, c.x, c.z);
@@ -301,9 +312,9 @@ vA = (1.0 - life) * smoothstep(0.0, 0.15, life);`,
       const x = i % n;
       const z = (i / n) | 0;
       data[i * 4] = t.tile[i];
-      data[i * 4 + 1] = Math.floor(hash2(x, z, 5) * ATLAS_VARIANTS);
+      data[i * 4 + 1] = Math.floor(hash2(x + t.ox, z + t.oz, 5) * ATLAS_VARIANTS);
       data[i * 4 + 2] = wet(i) ? 40 * Math.max(1, shore[i] || 5) : 0;
-      data[i * 4 + 3] = Math.min(255, t.elev[i] * 16);
+      data[i * 4 + 3] = t.shadeElev ? t.shadeElev[i] : Math.min(255, t.elev[i] * 16);
     }
     const cells = new THREE.DataTexture(data, n, n, THREE.RGBAFormat);
     cells.magFilter = cells.minFilter = THREE.NearestFilter;
@@ -364,6 +375,7 @@ vA = (1.0 - life) * smoothstep(0.0, 0.15, life);`,
       sh.uniforms.uTime = u.uTime;
       sh.uniforms.uSurge = u.uSurge;
       sh.uniforms.uFocus = u.uFocus;
+      sh.uniforms.uOrigin = u.uOrigin;
       sh.uniforms.uCamDir = u.uCamDir;
       sh.uniforms.uInfo = { value: info };
       sh.uniforms.uSize = { value: n };
@@ -385,6 +397,7 @@ uniform sampler2D uAO;
 uniform float uTime;
 uniform float uSurge;
 uniform vec3 uFocus;
+uniform vec2 uOrigin;
 uniform vec2 uCamDir;
 uniform sampler2D uInfo;
 uniform float uSize;
@@ -406,7 +419,7 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
           '#include <map_fragment>',
           `{
   bool side = vSide > 0.5;
-  vec2 xz = side ? vWPos.xz - vN.xz * 0.05 : vWPos.xz;
+  vec2 xz = (side ? vWPos.xz - vN.xz * 0.05 : vWPos.xz) - uOrigin;
   vec2 cell = floor(xz);
   vec4 cd = cellAt(cell);
   bool liquid = cd.b > 0.05;
@@ -575,8 +588,9 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
     const C = t.corner;
     const liq = (i: number) => t.cell[i] === CELL.liquid;
     /** Height of corner k (dx + 2 dz) of cell (x, z): water flat at its level, the edge skirt below. */
-    const ch = (x: number, z: number, k: number) => {
-      if (x < 0 || z < 0 || x >= n || z >= n) return SKIRT;
+    const ch = (x: number, z: number, k: number): number => {
+      // streamed windows: a short skirt under the edge (the far LOD continues beyond it)
+      if (x < 0 || z < 0 || x >= n || z >= n) return t.shadeElev ? ch(Math.max(0, Math.min(n - 1, x)), Math.max(0, Math.min(n - 1, z)), k) - 6 : SKIRT;
       const i = z * n + x;
       return liq(i) || !C ? level[i] : C[i * 4 + k];
     };
@@ -947,7 +961,7 @@ transformed.z += cos(uTime * 1.7 + ph) * 0.08 * position.y * aSway;`,
     const mat = new THREE.MeshLambertMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide });
     mat.onBeforeCompile = (sh) => {
       sh.uniforms.uTime = u.uTime;
-      sh.uniforms.uFocus = u.uFocus;
+      sh.uniforms.uFocus = this.localU.uFocus;
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform vec3 uFocus;\nattribute float aSprite;\nvarying float vSpr;\nvarying float vH;')
         .replace(
@@ -1069,6 +1083,8 @@ diffuseColor.rgb *= 0.78 + 0.22 * vH;`,
 
   /** Hides block/decor chunks farther than radius from the camera target. */
   cull(x: number, z: number, radius: number, budgetMs = 6) {
+    x -= this.ox;
+    z -= this.oz;
     const r2 = (radius + 24) ** 2;
     for (const c of this.chunks) c.mesh.visible = (c.x - x) ** 2 + (c.z - z) ** 2 < r2;
     if (!this.lazy) return;
@@ -1108,6 +1124,8 @@ diffuseColor.rgb *= 0.78 + 0.22 * vH;`,
   }
 
   update(time: number, surge: number) {
+    const f = this.uniforms.uFocus.value;
+    this.localU.uFocus.value.set(f.x - this.ox, f.y, f.z - this.oz);
     this.uniforms.uTime.value = time;
     this.uniforms.uSurge.value = surge;
   }

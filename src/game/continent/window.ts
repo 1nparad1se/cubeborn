@@ -17,7 +17,7 @@ export const WIN = 512;
 export const MAT_TILES = [
   'sand_deep', 'sand_shore', 'sand_beach', 'grass', 'grass_forest', 'moss_swamp', 'grass_hills', 'grass_conifer', 'grass_steppe', 'moss_taiga',
   'snow', 'snow_rock', 'ice_glacier', 'stone_waste', 'sand', 'rock_red', 'grass_oasis', 'rock_cliff', 'sand_salt', 'dirt',
-  'water_river_3', 'water_lake_4', 'water_sea_4', 'water_swamp_2', 'road_dirt', 'path_forest',
+  'water_river_3', 'water_lake_4', 'water_sea_4', 'water_swamp_2', 'dirt_road', 'dirt_path',
 ];
 
 /** Building looks per village (wall, roof, trim materials) and their height. */
