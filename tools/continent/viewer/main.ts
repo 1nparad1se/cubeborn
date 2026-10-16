@@ -229,10 +229,15 @@ async function main() {
   const detailMat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide });
   const bldMats = new Map<string, THREE.Material>();
   const bldMat = (t: string) => { let m = bldMats.get(t); if (!m) { m = new THREE.MeshLambertMaterial({ color: t === 'pen' ? '#8a6a3e' : t === 'well' ? '#8d8d8d' : t === 'watchtower' || t === 'guard_post' ? '#6e5a44' : t === 'tavern' ? '#b0442c' : t === 'smithy' ? '#4a4a52' : '#c0703a' }); bldMats.set(t, m); } return m; };
+  const atlasCache = new Map<string, Promise<ImageData>>();
   async function tileData(tx: number, ty: number) {
-    const img = await loadImageData(`./data/tiles/t_${tx}_${ty}.png`);
+    // tiles are packed 4x4 into 1024² atlases (static hosting caps the file count)
+    const ak = `a_${tx >> 2}_${ty >> 2}`;
+    let ap = atlasCache.get(ak); if (!ap) { ap = loadImageData(`./data/atlas/${ak}.png`); atlasCache.set(ak, ap); }
+    const img = await ap; const W = img.width;
     const T = manifest!.tile; const hh = new Int16Array(T * T), mm = new Uint8Array(T * T);
-    for (let i = 0; i < T * T; i++) { hh[i] = Math.floor(((img.data[i * 4] << 8) | img.data[i * 4 + 1]) / 16); mm[i] = img.data[i * 4 + 2]; }
+    const ox = (tx & 3) * T, oy = (ty & 3) * T;
+    for (let z = 0; z < T; z++) for (let x = 0; x < T; x++) { const i = z * T + x, o = ((oy + z) * W + ox + x) * 4; hh[i] = Math.floor(((img.data[o] << 8) | img.data[o + 1]) / 16); mm[i] = img.data[o + 2]; }
     return { hh, mm };
   }
   function buildVoxel(tx: number, ty: number, hh: Int16Array, mm: Uint8Array) {
