@@ -2,13 +2,17 @@
  * Детерминированная запекалка континента: design.ts → карты высот/биомов/воды/дорог/регионов + проверки.
  * Запуск: npx tsx tools/continent/bake.ts
  */
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as D from './design';
 import { clamp, lerp, pointInPoly, polyDist, segDist, smooth, spline, polyArea, type P } from './geom';
 import { fbm, ridged, vnoise } from './noise';
 import { encodePNG } from './png';
+import { createHash } from 'node:crypto';
+import { SIDE_ROADS } from './world/roads';
+import { mesaHeight, mulberry32 } from './relief';
+import { REGION_POLYS } from './world/regions';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(HERE, '..', '..');
@@ -106,6 +110,7 @@ for (let cy = 0; cy < N; cy++) for (let cx = 0; cx < N; cx++) {
 log('base done');
 
 // ───────────── 3. Хребты, отроги, пики ─────────────
+let erosionStats: Record<string, number> = {};
 const R = new Float32Array(N * N); // абсолютная высота гор (0 = нет)
 const RS = new Float32Array(N * N), RU = new Float32Array(N * N); // дуговая координата вдоль гребня (со сдвигом по склону) и относительное удаление
 for (const r of D.RIDGES) {
@@ -157,14 +162,14 @@ for (const p of D.PLATEAUS) {
     if (top > h[i]) h[i] = h[i] + (top - h[i]) * Math.pow(v, 2.6);
   });
 }
+const mesaMask = new Uint8Array(N * N);
+const mesaFoot: Record<string, number> = {};
 for (const m of D.MESAS) {
-  const ext = m.r + m.edge * 3;
+  const foot = base[idx(cxOf(m.at[0]), cxOf(m.at[1]))]; mesaFoot[m.id] = +foot.toFixed(2);
+  const ext = m.r * 1.5 + m.edge * 3.5;
   box(m.at[0] - ext, m.at[1] - ext, m.at[0] + ext, m.at[1] + ext, (i, x, y) => {
-    const d = Math.hypot(x - m.at[0], y - m.at[1]) * (1 + 0.12 * fbm(x / 90, y / 90, SEED + 18));
-    const sd = m.r - d; let s: number;
-    if (sd >= 0) s = 1; else { const k = clamp(1 + sd / (m.edge * 3), 0, 1); s = Math.pow(k, 3); s = Math.floor(s * 4) / 4 * 0.6 + s * 0.4; }
-    const v = base[i] + (m.top - base[i]) * s;
-    if (v > h[i] + 0.5) { h[i] = v; if (sd < 0) canyonMask[i] = 1; }
+    const r = mesaHeight(m, foot, x, y); if (!r) return;
+    if (r.v > h[i] + 0.3) { h[i] = r.v; if (r.zone > 0) canyonMask[i] = 1; mesaMask[i] = 1; }
   });
 }
 for (const c of D.CRATERS) {
@@ -185,16 +190,6 @@ for (const l of D.LOWLANDS) {
     const m = smooth(-220, 120, sd + 60 * fbm(x / 300, y / 300, SEED + 20)); if (m <= 0) return;
     lowMask[i] = m; h[i] = lerp(h[i], l.y + 1.6 * fbm(x / 70, y / 70, SEED + 21), m);
     if (m > 0.7 && fbm(x / 60, y / 60, SEED + 22) > 0.22) { h[i] = l.y - 1.2; water[i] = 4; wlevel[i] = l.y; }
-  });
-}
-for (const f of D.DUNE_FIELDS) {
-  const xs = f.poly.map(q => q[0]), ys = f.poly.map(q => q[1]);
-  box(Math.min(...xs) - 200, Math.min(...ys) - 200, Math.max(...xs) + 200, Math.max(...ys) + 200, (i, x, y) => {
-    const sd = pointInPoly(x, y, f.poly) ? polyDist(x, y, f.poly) : -polyDist(x, y, f.poly);
-    const m = smooth(-200, 200, sd); if (m <= 0) return;
-    const ph = (x * 0.8 + y * 0.6) / 70 + 2.2 * fbm(x / 400, y / 400, SEED + 23);
-    const dune = Math.pow(Math.abs(Math.sin(ph)), 1.5) * (0.6 + 0.4 * vnoise(x / 200, y / 200, SEED + 24));
-    h[i] += f.amp * m * dune;
   });
 }
 log('plateaus/mesas/crater/lowland done');
@@ -237,6 +232,119 @@ for (const r of D.RAMPS) {
   });
 }
 log('passes/canyons done');
+
+// ───────────── 6b. Пустынный рельеф: холмы, бедленды, уступы ─────────────
+const polyMask = (poly: P[], x: number, y: number, fade: number) => { const sd = pointInPoly(x, y, poly) ? polyDist(x, y, poly) : -polyDist(x, y, poly); return smooth(-fade, fade, sd); };
+for (const f of D.HILL_FIELDS) {
+  const xs = f.poly.map(q => q[0]), ys = f.poly.map(q => q[1]); const sp = f.spacing;
+  const add = new Float32Array(N * N);
+  for (let gy = Math.floor(Math.min(...ys) / sp); gy <= Math.ceil(Math.max(...ys) / sp); gy++) for (let gx = Math.floor(Math.min(...xs) / sp); gx <= Math.ceil(Math.max(...xs) / sp); gx++) {
+    const r1 = vnoise(gx * 7.31, gy * 3.17, SEED + 70), r2 = vnoise(gx * 5.13, gy * 9.71, SEED + 71), r3 = vnoise(gx * 2.7, gy * 6.1, SEED + 72);
+    const cx0 = (gx + 0.15 + 0.7 * r1) * sp, cy0 = (gy + 0.15 + 0.7 * r2) * sp, rad = sp * (0.45 + 0.35 * r3), hh = f.h * (0.45 + 0.75 * r3);
+    box(cx0 - rad * 1.6, cy0 - rad * 1.6, cx0 + rad * 1.6, cy0 + rad * 1.6, (i, x, y) => {
+      const d = Math.hypot(x - cx0, (y - cy0) * 1.3) / rad; if (d > 1.6) return;
+      const v = hh * Math.exp(-d * d * 1.6); if (v > add[i]) add[i] = v;
+    });
+  }
+  box(Math.min(...xs) - 150, Math.min(...ys) - 150, Math.max(...xs) + 150, Math.max(...ys) + 150, (i, x, y) => { if (add[i] > 0 && land[i]) h[i] += add[i] * polyMask(f.poly, x, y, 150); });
+}
+for (const b of D.BADLANDS) {
+  const xs = b.poly.map(q => q[0]), ys = b.poly.map(q => q[1]);
+  box(Math.min(...xs) - 120, Math.min(...ys) - 120, Math.max(...xs) + 120, Math.max(...ys) + 120, (i, x, y) => {
+    const m = polyMask(b.poly, x, y, 120); if (m <= 0) return;
+    const v = ridged(x / b.scale, y / b.scale, SEED + 73, 4);
+    const cut = b.depth * Math.pow(clamp(1 - v * 1.6, 0, 1), 1.3);
+    const lift = b.depth * 0.5 * smooth(0.3, 0.8, v);
+    h[i] += m * (lift - cut); canyonMask[i] = canyonMask[i] || (m > 0.5 && cut > 4 ? 1 : 0);
+  });
+}
+for (const e of D.ESCARPMENTS) {
+  const xs = e.pts.map(q => q[0]), ys = e.pts.map(q => q[1]); const ext = e.fade + 50;
+  let total = 0; const segL = e.pts.slice(1).map((q, k) => { const l = Math.hypot(q[0] - e.pts[k][0], q[1] - e.pts[k][1]); total += l; return l; });
+  box(Math.min(...xs) - ext, Math.min(...ys) - ext, Math.max(...xs) + ext, Math.max(...ys) + ext, (i, x, y) => {
+    let best = Infinity, sideBest = 0, arcBest = 0, arc = 0;
+    for (let k = 0; k + 1 < e.pts.length; k++) {
+      const a = e.pts[k], b = e.pts[k + 1]; const [d, t] = segDist(x, y, a[0], a[1], b[0], b[1]);
+      if (d < best) { best = d; sideBest = (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]) < 0 ? 1 : -1; arcBest = (arc + t * segL[k]) / total; }
+      arc += segL[k];
+    }
+    const sdv = sideBest * best + 10 * fbm(x / 60, y / 60, SEED + 74);
+    const rise = e.h * smooth(-e.edge, e.edge, sdv) * (1 - smooth(e.fade * 0.4, e.fade, best)) * smooth(0, 0.12, arcBest) * (1 - smooth(0.88, 1, arcBest));
+    if (rise > 0.05) h[i] += rise;
+  });
+}
+log('desert relief done');
+
+// ───────────── 6c. Эрозия: капельная (гидравлическая) + термическая, с масками ─────────────
+const emask = new Float32Array(N * N);
+for (let i = 0; i < N * N; i++) emask[i] = land[i] ? (1 - lowMask[i]) * (mesaMask[i] ? 0.12 : canyonMask[i] ? 0.35 : 1) : 0;
+for (const p of D.PASSES) box(p.at[0] - p.r, p.at[1] - p.r, p.at[0] + p.r, p.at[1] + p.r, (i, x, y) => { emask[i] *= 0.25 + 0.75 * smooth(p.r * 0.3, p.r, Math.hypot(x - p.at[0], y - p.at[1])); });
+for (const r of D.RAMPS) box(Math.min(r.a[0], r.b[0]) - 40, Math.min(r.a[1], r.b[1]) - 40, Math.max(r.a[0], r.b[0]) + 40, Math.max(r.a[1], r.b[1]) + 40, (i) => { emask[i] = 0; });
+for (const v of D.VILLAGES) box(v.at[0] - v.pad * 1.6, v.at[1] - v.pad * 1.6, v.at[0] + v.pad * 1.6, v.at[1] + v.pad * 1.6, (i) => { emask[i] *= 0.2; });
+const preErosion = h.slice();
+{
+  const rnd = mulberry32(SEED + 77);
+  const brush: [number, number, number][] = []; let ws = 0;
+  for (let oy = -2; oy <= 2; oy++) for (let ox = -2; ox <= 2; ox++) { const d = Math.hypot(ox, oy); if (d <= 2.2) { const w = 2.3 - d; brush.push([ox, oy, w]); ws += w; } }
+  for (const b of brush) b[2] /= ws;
+  const inertia = 0.06, capF = 4.5, minCap = 0.02, depoS = 0.25, eroS = 0.45, evap = 0.025, grav = 3, maxSteps = 70;
+  const DROPS = 3_500_000; let used = 0;
+  for (let n = 0; n < DROPS; n++) {
+    let x = 2 + rnd() * (N - 5), y = 2 + rnd() * (N - 5);
+    const r0 = rnd(); const i0 = (y | 0) * N + (x | 0);
+    if (emask[i0] < 0.3 || h[i0] < SEA + 6) continue;
+    if (r0 > clamp((h[i0] - SEA - 10) / 140, 0.05, 1)) continue;
+    used++;
+    let dx = 0, dy = 0, sp = 1, wat = 1, sed = 0;
+    for (let st = 0; st < maxSteps; st++) {
+      const ix = x | 0, iy = y | 0, fx = x - ix, fy = y - iy, k = iy * N + ix;
+      const a = h[k], b = h[k + 1], c = h[k + N], d = h[k + N + 1];
+      const gx = (b - a) * (1 - fy) + (d - c) * fy, gy = (c - a) * (1 - fx) + (d - b) * fx;
+      const hOld = a * (1 - fx) * (1 - fy) + b * fx * (1 - fy) + c * (1 - fx) * fy + d * fx * fy;
+      dx = dx * inertia - gx * (1 - inertia); dy = dy * inertia - gy * (1 - inertia);
+      const len = Math.hypot(dx, dy); if (len < 1e-6) break; dx /= len; dy /= len;
+      x += dx; y += dy; if (x < 2 || y < 2 || x > N - 3 || y > N - 3) break;
+      const jx = x | 0, jy = y | 0, gx2 = x - jx, gy2 = y - jy, j = jy * N + jx;
+      if (h[j] < SEA) break;
+      const hNew = h[j] * (1 - gx2) * (1 - gy2) + h[j + 1] * gx2 * (1 - gy2) + h[j + N] * (1 - gx2) * gy2 + h[j + N + 1] * gx2 * gy2;
+      const dh = hNew - hOld; const em = emask[k];
+      const cap = Math.max(-dh * sp * wat * capF, minCap);
+      if (sed > cap || dh > 0) {
+        const dep = dh > 0 ? Math.min(dh, sed) : (sed - cap) * depoS; sed -= dep;
+        const de = dep * em;
+        h[k] += de * (1 - fx) * (1 - fy); h[k + 1] += de * fx * (1 - fy); h[k + N] += de * (1 - fx) * fy; h[k + N + 1] += de * fx * fy;
+      } else {
+        const ero = Math.min((cap - sed) * eroS, -dh) * em;
+        for (const [ox, oy, w] of brush) { const q = (iy + oy) * N + ix + ox; const take = Math.min(ero * w, Math.max(0, h[q] - SEA - 1)); h[q] -= take; sed += take; }
+      }
+      sp = Math.min(10, Math.sqrt(Math.max(0, sp * sp - dh * grav))); wat *= 1 - evap;
+    }
+  }
+  // термическая эрозия: осыпи у подножий
+  const talus = Math.tan(34 * Math.PI / 180) * CS;
+  for (let it = 0; it < 6; it++) for (let cy = 1; cy < N - 1; cy++) for (let cx = 1; cx < N - 1; cx++) {
+    const i = cy * N + cx; const em = emask[i]; if (em < 0.2) continue;
+    let md = 0, mj = -1; for (const j of [i + 1, i - 1, i + N, i - N]) { const dd = h[i] - h[j]; if (dd > md) { md = dd; mj = j; } }
+    if (mj >= 0 && md > talus) { const mv = (md - talus) * 0.22 * em; h[i] -= mv; h[mj] += mv; }
+  }
+  let sumAbs = 0, maxCut = 0; for (let i = 0; i < N * N; i++) { const dlt = preErosion[i] - h[i]; sumAbs += Math.abs(dlt); if (dlt > maxCut) maxCut = dlt; }
+  erosionStats = { droplets: used, meanChange: +(sumAbs / (N * N)).toFixed(3), maxCut: +maxCut.toFixed(1) };
+}
+log('erosion done', erosionStats);
+
+// ───────────── 6d. Дюны: направленные гряды (пологий наветренный склон, крутой подветренный) ─────────────
+for (const f of D.DUNE_FIELDS) {
+  const xs = f.poly.map(q => q[0]), ys = f.poly.map(q => q[1]);
+  const ux = Math.cos(f.dir * Math.PI / 180), uy = Math.sin(f.dir * Math.PI / 180);
+  box(Math.min(...xs) - 200, Math.min(...ys) - 200, Math.max(...xs) + 200, Math.max(...ys) + 200, (i, x, y) => {
+    const m = polyMask(f.poly, x, y, 200); if (m <= 0 || !land[i]) return;
+    const along = (x * ux + y * uy) / f.wl + 1.3 * fbm(x / 520, y / 520, SEED + 23); const trans = -x * uy + y * ux;
+    const fr = along - Math.floor(along);
+    const prof = fr < 0.72 ? smooth(0, 0.72, fr) : 1 - smooth(0.72, 1, fr);
+    const cres = 0.4 + 0.6 * vnoise(trans / 170, Math.floor(along) * 0.7, SEED + 24);
+    h[i] += f.amp * m * prof * cres;
+  });
+}
 
 // ───────────── 7. Реки: русло монотонно не поднимается вниз по течению ─────────────
 interface RiverOut { id: string; ru: string; mouth: string; pts: [number, number, number, number][]; } // x, y, уровень воды, полуширина
@@ -328,6 +436,19 @@ for (const l of D.LAKES) {
   lakesOut.push({ id: l.id, ru: l.ru, at: l.at, r: l.r, level: +level.toFixed(1), water: l.water });
 }
 
+// ───────────── 8b. Площадки деревень ─────────────
+const padsOut: { id: string; at: P; r: number; y: number }[] = [];
+for (const v of D.VILLAGES) {
+  const hs: number[] = [];
+  box(v.at[0] - v.pad, v.at[1] - v.pad, v.at[0] + v.pad, v.at[1] + v.pad, (i, x, y) => { if (!water[i] && Math.hypot(x - v.at[0], y - v.at[1]) < v.pad) hs.push(h[i]); });
+  hs.sort((a, b) => a - b); const target = hs[Math.floor(hs.length / 2)];
+  box(v.at[0] - v.pad * 1.7, v.at[1] - v.pad * 1.7, v.at[0] + v.pad * 1.7, v.at[1] + v.pad * 1.7, (i, x, y) => {
+    if (water[i]) return; const d = Math.hypot(x - v.at[0], y - v.at[1]); const m = 1 - smooth(v.pad, v.pad * 1.7, d); if (m <= 0) return;
+    h[i] = lerp(h[i], target + 0.4 * fbm(x / 60, y / 60, SEED + 80), m);
+  });
+  padsOut.push({ id: v.id, at: v.at, r: v.pad, y: +target.toFixed(1) });
+}
+
 // ───────────── 9. Море: заливка от открытого моря по всему, что ниже уровня ─────────────
 {
   const q: number[] = [];
@@ -348,10 +469,24 @@ log('lakes/sea done');
 const T = new Float32Array(N * N);
 const isLand = (i: number) => water[i] !== 1;
 const landIdx: number[] = [];
+// влага: расстояние до рек и озёр (зелёные полосы вдоль рек, уходящих в пустыню)
+const wetSrc = new Uint8Array(N * N); for (let i = 0; i < N * N; i++) wetSrc[i] = water[i] === 2 || water[i] === 3 ? 1 : 0;
+const wetDist = edt(wetSrc);
+// крупномасштабный рельеф (НЧ-фильтр) — долины ниже окрестностей суше и теплее: языки степи
+const LP = 128, lp = new Float32Array(LP * LP);
+for (let y = 0; y < LP; y++) for (let x = 0; x < LP; x++) { let s2 = 0; for (let k = 0; k < 16; k++) for (let q = 0; q < 16; q++) s2 += Math.max(SEA, h[(y * 16 + k) * N + x * 16 + q]); lp[y * LP + x] = s2 / 256; }
+for (let it = 0; it < 3; it++) { const c = lp.slice(); for (let y = 1; y < LP - 1; y++) for (let x = 1; x < LP - 1; x++) lp[y * LP + x] = (c[y * LP + x] * 4 + c[y * LP + x - 1] + c[y * LP + x + 1] + c[(y - 1) * LP + x] + c[(y + 1) * LP + x]) / 8; }
+const lpAt = (x: number, y: number) => { const fx = clamp(x / W * LP - 0.5, 0, LP - 1.001), fy = clamp(y / W * LP - 0.5, 0, LP - 1.001); const ix = fx | 0, iy = fy | 0, tx = fx - ix, ty = fy - iy; const k = iy * LP + ix; return lerp(lerp(lp[k], lp[k + 1], tx), lerp(lp[k + LP], lp[k + LP + 1], tx), ty); };
 for (let cy = 0; cy < N; cy++) for (let cx = 0; cx < N; cx++) {
   const i = idx(cx, cy), x = (cx + 0.5) * CS, y = (cy + 0.5) * CS;
   let bias = 0; for (const [bx, by, dt, br] of D.CLIMATE) bias += dt * Math.exp(-((x - bx) ** 2 + (y - by) ** 2) / (br * br));
-  T[i] = y / W + bias + 0.07 * fbm(x / 2200, y / 2200, SEED + 30) + 0.055 * fbm(x / 1000, y / 1000, SEED + 44) + 0.03 * fbm(x / 380, y / 380, SEED + 31) - 0.0006 * Math.max(0, h[i] - 70);
+  const yw = y + 260 * fbm(x / 900, y / 900, SEED + 60) + 90 * fbm(x / 260, y / 260, SEED + 61);
+  const lat = yw / W; const south = smooth(0.52, 0.72, lat);
+  const moist = canyonMask[i] ? 0 : Math.exp(-wetDist[i] * CS / 210);
+  const valley = clamp(lpAt(x, y) - Math.max(SEA, h[i]), 0, 50);
+  const sandTongue = Math.max(0, ridged(x / 820, y / 820, SEED + 62) - 0.42);
+  T[i] = lat + bias + 0.07 * fbm(x / 2200, y / 2200, SEED + 30) + 0.04 * fbm(x / 1000, y / 1000, SEED + 44) + 0.025 * fbm(x / 380, y / 380, SEED + 31)
+    - 0.0006 * Math.max(0, h[i] - 70) - 0.1 * moist * south + 0.0011 * valley * south + 0.09 * sandTongue * south;
   if (isLand(i)) landIdx.push(i);
 }
 const sortedT = landIdx.map(i => T[i]).sort((a, b) => a - b);
@@ -401,18 +536,23 @@ for (let cy = 0; cy < N; cy++) for (let cx = 0; cx < N; cx++) {
 log('biomes done', { TW: TW.toFixed(4), TD: TD.toFixed(4) });
 
 // ───────────── 11. Регионы ─────────────
-const seedMajor = D.REGIONS.map(r => major[idx(cxOf(r.seed[0]), cxOf(r.seed[1]))]);
+// полигоны из world/regions.ts (порядок = D.REGIONS); щели между соседними полигонами заполняются ближайшим регионом
 const region = new Uint8Array(N * N).fill(255);
-for (const i of landIdx) {
-  const x = ((i % N) + 0.5) * CS, y = (Math.floor(i / N) + 0.5) * CS;
-  const wx = x + 220 * fbm(x / 900, y / 900, SEED + 42), wy = y + 220 * fbm(x / 900, y / 900, SEED + 43);
-  let best = -1, bd = Infinity, bestAny = -1, bdAny = Infinity;
-  for (let k = 0; k < D.REGIONS.length; k++) {
-    const d = Math.hypot(wx - D.REGIONS[k].seed[0], wy - D.REGIONS[k].seed[1]);
-    if (d < bdAny) { bdAny = d; bestAny = k; }
-    if (seedMajor[k] === major[i] && d < bd) { bd = d; best = k; }
+REGION_POLYS.forEach((rp, k) => {
+  for (let cy = 0; cy < N; cy++) {
+    const y = (cy + 0.5) * CS; const xs: number[] = [];
+    for (let i = 0, j = rp.poly.length - 1; i < rp.poly.length; j = i++) { const [xi, yi] = rp.poly[i], [xj, yj] = rp.poly[j]; if ((yi > y) !== (yj > y)) xs.push(xi + ((y - yi) / (yj - yi)) * (xj - xi)); }
+    xs.sort((q, w) => q - w);
+    for (let m = 0; m + 1 < xs.length; m += 2) for (let cx = cxOf(xs[m]); cx <= cxOf(xs[m + 1]); cx++) { const i = cy * N + cx; if (isLand(i) && region[i] === 255) region[i] = k; }
   }
-  region[i] = best >= 0 && bd < bdAny + 1400 ? best : bestAny;
+});
+{
+  let frontier: number[] = []; for (const i of landIdx) if (region[i] !== 255) frontier.push(i);
+  while (frontier.length) {
+    const next: number[] = [];
+    for (const i of frontier) { const cx = i % N, cy = (i / N) | 0; for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = cx + dx, ny = cy + dy; if (nx < 0 || ny < 0 || nx >= N || ny >= N) continue; const j = ny * N + nx; if (region[j] === 255 && isLand(j)) { region[j] = region[i]; next.push(j); } } }
+    frontier = next;
+  }
 }
 log('regions done');
 
@@ -428,9 +568,9 @@ class Heap { a: number[] = []; f: number[] = [];
   push(n: number, f: number) { const a = this.a, F = this.f; a.push(n); F.push(f); let i = a.length - 1; while (i > 0) { const p = (i - 1) >> 1; if (F[p] <= F[i]) break; [a[p], a[i]] = [a[i], a[p]]; [F[p], F[i]] = [F[i], F[p]]; i = p; } }
   pop(): number { const a = this.a, F = this.f; const top = a[0]; const ln = a.pop()!, lf = F.pop()!; if (a.length) { a[0] = ln; F[0] = lf; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < a.length && F[l] < F[m]) m = l; if (r < a.length && F[r] < F[m]) m = r; if (m === i) break; [a[m], a[i]] = [a[i], a[m]]; [F[m], F[i]] = [F[i], F[m]]; i = m; } } return top; }
   get size() { return this.a.length; } }
-const MAX_ROAD_SLOPE = Math.tan(28 * Math.PI / 180);
 const roadUse = new Uint8Array(G * G); // повторное использование трасс дешевле — дороги сливаются в сеть
-function astar(a: P, b: P): P[] {
+function astar(a: P, b: P, maxDeg = 28, soft = false): P[] {
+  const MAXS = Math.tan(maxDeg * Math.PI / 180);
   const sx = clamp(Math.floor(a[0] / GC), 0, G - 1), sy = clamp(Math.floor(a[1] / GC), 0, G - 1);
   const tx = clamp(Math.floor(b[0] / GC), 0, G - 1), ty = clamp(Math.floor(b[1] / GC), 0, G - 1);
   const g = new Float32Array(G * G).fill(Infinity), from = new Int32Array(G * G).fill(-1), closed = new Uint8Array(G * G);
@@ -444,7 +584,7 @@ function astar(a: P, b: P): P[] {
       const n = ny * G + nx; if (closed[n]) continue;
       const wn = gw[n]; if (wn === 1 || wn === 3) continue;
       const len = dl * GC; const sl = Math.abs(gh[n] - gh[c]) / len;
-      if (sl > MAX_ROAD_SLOPE && n !== t) continue;
+      if (sl > MAXS && n !== t) continue;
       let cost = len * (1 + 30 * sl * sl + (wn === 4 ? 2 : 0));
       if (wn === 2 && gw[c] !== 2) cost += 260; // въезд на мост/брод
       if (roadUse[n]) cost *= 0.6;
@@ -452,7 +592,7 @@ function astar(a: P, b: P): P[] {
       if (ng < g[n]) { g[n] = ng; from[n] = c; hp.push(n, ng + Math.hypot(nx - tx, ny - ty) * GC); }
     }
   }
-  if (from[t] < 0 && t !== s) throw new Error(`Дорога не найдена: ${a} → ${b}`);
+  if (from[t] < 0 && t !== s) { if (soft) return []; throw new Error(`Дорога не найдена: ${a} → ${b}`); }
   const path: P[] = []; for (let c = t; c >= 0; c = from[c]) { path.push([(c % G + 0.5) * GC, (((c / G) | 0) + 0.5) * GC]); roadUse[c] = 1; if (c === s) break; }
   return path.reverse();
 }
@@ -497,6 +637,28 @@ for (const r of D.ROUTES) {
     legs.push({ mode: sg.mode, label: sg.label, pts }); cur = sg.to;
   }
   routesOut.push({ id: r.id, ru: r.ru, kind: r.kind, note: r.note, legs, length: Math.round(length), maxSlopeDeg: 0 });
+}
+// Второстепенные дороги, тропы, караванные пути, заброшенные дороги (world/roads.ts)
+const SIDE_DEG: Record<string, number> = { secondary: 25, forest_path: 28, mountain_path: 33, caravan: 22, abandoned: 28 };
+const sideFails: string[] = [];
+for (const r of SIDE_ROADS) {
+  const legs: RouteOut['legs'] = []; let length = 0;
+  for (let k = 0; k + 1 < r.pts.length; k++) {
+    let raw = astar(r.pts[k], r.pts[k + 1], SIDE_DEG[r.kind], true);
+    if (!raw.length) raw = astar(r.pts[k], r.pts[k + 1], 36, true);
+    if (!raw.length) { sideFails.push(`${r.id}: ${r.pts[k]} → ${r.pts[k + 1]}`); continue; }
+    const pts = smoothPath(raw);
+    length += pts.reduce((acc, p, q) => q ? acc + Math.hypot(p[0] - pts[q - 1][0], p[1] - pts[q - 1][1]) : 0, 0);
+    let inRiver = false, start: P = pts[0];
+    for (let q = 0; q < pts.length; q++) {
+      const w = water[idx(cxOf(pts[q][0]), cxOf(pts[q][1]))] === 2;
+      if (w && !inRiver) { inRiver = true; start = pts[q]; }
+      if (!w && inRiver) { inRiver = false; const at: P = [(start[0] + pts[q][0]) / 2, (start[1] + pts[q][1]) / 2]; if (!bridges.some(b => Math.hypot(b.at[0] - at[0], b.at[1] - at[1]) < 120)) bridges.push({ at, kind: r.kind === 'secondary' || r.kind === 'caravan' ? 'river' : 'ford', route: r.id, ru: r.kind === 'secondary' || r.kind === 'caravan' ? 'Мост' : 'Брод', length: Math.round(Math.hypot(start[0] - pts[q][0], start[1] - pts[q][1]) + 10) }); }
+    }
+    for (let q = 0; q + 1 < pts.length; q++) { const n = Math.ceil(Math.hypot(pts[q + 1][0] - pts[q][0], pts[q + 1][1] - pts[q][1]) / 2); for (let s2 = 0; s2 <= n; s2++) paint(lerp(pts[q][0], pts[q + 1][0], s2 / n), lerp(pts[q][1], pts[q + 1][1], s2 / n), 4); }
+    legs.push({ mode: 'road', pts });
+  }
+  routesOut.push({ id: r.id, ru: r.ru, kind: r.kind, note: r.reason ?? '', legs, length: Math.round(length), maxSlopeDeg: 0 });
 }
 function smoothPath(p: P[]): P[] {
   if (p.length < 5) return p;
@@ -605,6 +767,21 @@ let unreachableLandPct = 0; { let u = 0, l = 0; for (let i = 0; i < G * G; i++) 
 
 // ───────────── 14. Вывод ─────────────
 const hU16 = new Uint16Array(N * N); for (let i = 0; i < N * N; i++) hU16[i] = clamp(Math.round(h[i] * 64), 0, 65535);
+const heightHash = createHash('sha256').update(Buffer.from(hU16.buffer)).digest('hex');
+// Рельеф утверждён и заморожен: tools/continent/frozen.json хранит хеш. Любое изменение высот — ошибка (если не передан --unfreeze).
+const frozenPath = join(HERE, 'frozen.json');
+if (existsSync(frozenPath) && !process.argv.includes('--unfreeze')) {
+  const fr = JSON.parse(readFileSync(frozenPath, 'utf8'));
+  if (fr.overview2048 !== heightHash) { console.error(`РЕЛЬЕФ ЗАМОРОЖЕН: хеш высот изменился (${heightHash} ≠ ${fr.overview2048}). Отмените изменения design.ts/bake.ts, влияющие на высоты.`); process.exit(2); }
+}
+const wU16 = new Uint16Array(N * N); for (let i = 0; i < N * N; i++) wU16[i] = water[i] ? clamp(Math.round(wlevel[i] * 64), 0, 65535) : 0;
+writeFileSync(join(OUT, 'waterlevel_2048.png'), encodePNG(N, N, wU16, 1, 16));
+writeFileSync(join(OUT, 'canyonmask_2048.png'), encodePNG(N, N, canyonMask, 1, 8));
+writeFileSync(join(OUT, 'vectors.json'), JSON.stringify({
+  rivers: riversOut.map(r => ({ id: r.id, pts: r.pts.map(p => p.map(v => +v.toFixed(2))) })),
+  roads: routesOut.flatMap(r => r.legs.filter(l => l.mode === 'road').map(l => ({ route: r.id, kind: r.kind, pts: l.pts.map(p => [+p[0].toFixed(1), +p[1].toFixed(1)]) }))),
+  lakes: lakesOut, pads: padsOut, mesaFoot,
+}));
 writeFileSync(join(OUT, 'heightmap_2048.png'), encodePNG(N, N, hU16, 1, 16));
 writeFileSync(join(OUT, 'biome_2048.png'), encodePNG(N, N, biome, 1, 8));
 writeFileSync(join(OUT, 'water_2048.png'), encodePNG(N, N, water, 1, 8));
@@ -637,15 +814,17 @@ const stats = {
   bridges, tunnels,
   reachability: { walkSlopeDeg: 40, grid: G, withRoads: reachRoads.villages, terrainOnly: reachTerrain.villages, unreachableLandPct, unreachableAreas: unreach.slice(0, 15) },
   regions: regionStats,
+  heightHash: { overview2048: heightHash, encoding: 'sha256 of Uint16LE heightmap_2048 (Y*64)', frozen: existsSync(frozenPath), tiles1block: existsSync(frozenPath) ? JSON.parse(readFileSync(frozenPath, 'utf8')).tiles1block : null, tilesNote: 'sha256 по строкам «имя:sha256(высоты Uint16LE + материалы)» всех 1024 тайлов 256² (tiles.ts --all)' },
+  erosion: erosionStats, villagePads: padsOut, sideRoadFailures: sideFails,
   checks: { failed: fails },
 };
 writeFileSync(join(DOCS, 'stats.json'), JSON.stringify(stats, null, 1));
 const feat = {
   world: W, sea: SEA, grid: N, sub: SUB, stats: { biomes: stats.biomes, landSharePct: stats.landSharePct },
   rivers: riversOut.map(r => ({ id: r.id, ru: r.ru, pts: r.pts.filter((_, k) => k % 4 === 0 || k === r.pts.length - 1).map(p => p.map(v => Math.round(v * 10) / 10)) })),
-  routes: routesOut.map(r => ({ id: r.id, ru: r.ru, kind: r.kind, legs: r.legs.map(l => ({ mode: l.mode, label: l.label, pts: l.pts.map(p => [Math.round(p[0]), Math.round(p[1])]) })) })),
+  routes: routesOut.map(r => ({ id: r.id, ru: r.ru, kind: r.kind, note: r.note, legs: r.legs.map(l => ({ mode: l.mode, label: l.label, pts: l.pts.map(p => [Math.round(p[0]), Math.round(p[1])]) })) })),
   bridges, tunnels, passes: D.PASSES.map(p => ({ ru: p.ru, at: p.at })), villages: D.VILLAGES, landmarks: D.LANDMARKS, waterfalls, lakes: lakesOut,
-  regions: regionStats.map(r => ({ id: r.id, ru: r.ru, lv: r.lv, biome: r.biome, centroid: r.centroid })),
+  regions: regionStats.map((r, k) => ({ id: r.id, ru: r.ru, lv: r.lv, biome: REGION_POLYS[k].biome, centroid: r.centroid, poly: REGION_POLYS[k].poly })),
   ridges: D.RIDGES.map(r => ({ ru: r.ru, at: r.pts[Math.floor(r.pts.length / 2)].slice(0, 2) })),
   canyons: D.CANYONS.map(c => ({ ru: c.ru, pts: c.pts.map(p => [p[0], p[1]]) })),
   coastAreaCheck: Math.round(polyArea(D.COAST)),

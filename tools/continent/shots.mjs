@@ -23,9 +23,11 @@ page.on('console', m => { if (m.type() === 'error') console.log('console:', m.te
 page.on('pageerror', e => console.log('pageerror:', e.message));
 await page.goto(`http://localhost:${port}/index.html`);
 await page.waitForFunction(() => window.continent && window.continent.ready, null, { timeout: 180000 });
-const shots = (process.env.SHOTS || 'overview,topBiome,topHeight,north,canyon,falls,rift,zelenodol,snezhny,peschany').split(',');
+const custom = process.env.CUSTOM ? JSON.parse(process.env.CUSTOM) : null; // {name: {t,d,az,el,mode}}
+const shots = custom ? Object.keys(custom) : (process.env.SHOTS || 'overview,topBiome,topHeight,north,canyon,falls,rift,zelenodol,snezhny,peschany').split(',');
 for (const v of shots) {
-  await page.evaluate(n => window.continent.setView(n), v);
+  await page.evaluate(n => window.continent.setView(n), custom ? custom[v] : v);
+  await page.waitForTimeout(200); await page.waitForFunction(() => !window.continent.busy(), null, { timeout: 300000 }); await page.evaluate(() => window.continent.renderNow());
   await page.screenshot({ timeout: 300000, animations: 'disabled', path: join(out, `${v}.jpg`), type: 'jpeg', quality: 85 });
   console.log('shot', v);
 }

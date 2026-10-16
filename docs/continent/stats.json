@@ -6,7 +6,7 @@
  "blocksPerSample": 3.90625,
  "seaLevel": 40,
  "heightEncoding": "uint16 = round(Y*64)",
- "landSharePct": 75.8,
+ "landSharePct": 75.92,
  "biomes": {
   "landPct": {
    "green": 55,
@@ -19,104 +19,104 @@
    "desert": 25
   },
   "thresholds": {
-   "TW": 0.19796402752399445,
-   "TD": 0.713381290435791
+   "TW": 0.19632422924041748,
+   "TD": 0.7042555809020996
   },
   "maxY": {
-   "green": 203,
-   "winter": 516,
-   "desert": 209
+   "green": 202,
+   "winter": 483,
+   "desert": 206
   },
   "maxAt": {
    "green": [
-    3838,
-    2217
+    2490,
+    2221
    ],
    "winter": [
     4299,
-    998
+    994
    ],
    "desert": [
-    5736,
-    6916
+    5959,
+    6873
    ]
   },
   "meanY": {
    "green": 80,
-   "winter": 156,
-   "desert": 82
+   "winter": 152,
+   "desert": 84
   }
  },
  "subBiomes": [
   {
    "id": 2,
    "ru": "Пляж",
-   "landPct": 0.4
+   "landPct": 0.41
   },
   {
    "id": 3,
    "ru": "Луга",
-   "landPct": 32.41
+   "landPct": 31.78
   },
   {
    "id": 4,
    "ru": "Лиственный лес",
-   "landPct": 9.53
+   "landPct": 9.46
   },
   {
    "id": 5,
    "ru": "Болото",
-   "landPct": 1.81
+   "landPct": 1.84
   },
   {
    "id": 6,
    "ru": "Холмы",
-   "landPct": 3.67
+   "landPct": 3.36
   },
   {
    "id": 7,
    "ru": "Смешанный хвойный лес",
-   "landPct": 3.22
+   "landPct": 3.26
   },
   {
    "id": 8,
    "ru": "Сухая степь",
-   "landPct": 3.55
+   "landPct": 4.19
   },
   {
    "id": 9,
    "ru": "Тайга",
-   "landPct": 2.57
+   "landPct": 2.92
   },
   {
    "id": 10,
    "ru": "Снежная равнина",
-   "landPct": 12.25
+   "landPct": 12.54
   },
   {
    "id": 11,
    "ru": "Заснеженные скалы",
-   "landPct": 4.37
+   "landPct": 4.1
   },
   {
    "id": 12,
    "ru": "Ледник",
-   "landPct": 0.81
+   "landPct": 0.43
   },
   {
    "id": 13,
    "ru": "Каменистая пустошь",
-   "landPct": 9.14
+   "landPct": 8.98
   },
   {
    "id": 14,
    "ru": "Песок",
-   "landPct": 12.43
+   "landPct": 11.02
   },
   {
    "id": 15,
    "ru": "Красные скалы (каньон)",
-   "landPct": 2.68
+   "landPct": 4.24
   },
   {
    "id": 16,
@@ -126,7 +126,7 @@
   {
    "id": 17,
    "ru": "Скалы",
-   "landPct": 0.4
+   "landPct": 0.7
   },
   {
    "id": 18,
@@ -141,7 +141,7 @@
    "source": [
     3600,
     1180,
-    212
+    202
    ],
    "mouthAt": [
     960,
@@ -150,7 +150,7 @@
    ],
    "mouth": "Светлая губа (западное море)",
    "lengthBlocks": 6494,
-   "drop": 172,
+   "drop": 162,
    "monotonic": true,
    "maxRise": 0,
    "samplesWithBedAboveWater": 0
@@ -161,7 +161,7 @@
    "source": [
     1620,
     1960,
-    117
+    121
    ],
    "mouthAt": [
     2900,
@@ -170,7 +170,7 @@
    ],
    "mouth": "впадает в Светлую у Гнилых Топей",
    "lengthBlocks": 3057,
-   "drop": 68,
+   "drop": 73,
    "monotonic": true,
    "maxRise": 0,
    "samplesWithBedAboveWater": 0
@@ -181,7 +181,7 @@
    "source": [
     6300,
     1300,
-    156
+    167
    ],
    "mouthAt": [
     7420,
@@ -190,7 +190,7 @@
    ],
    "mouth": "восточное море у Тура",
    "lengthBlocks": 2730,
-   "drop": 116,
+   "drop": 127,
    "monotonic": true,
    "maxRise": 0,
    "samplesWithBedAboveWater": 0
@@ -201,7 +201,7 @@
    "source": [
     5250,
     1320,
-    172
+    189
    ],
    "mouthAt": [
     1050,
@@ -210,7 +210,7 @@
    ],
    "mouth": "море через каньон Багровый Разлом",
    "lengthBlocks": 8699,
-   "drop": 132,
+   "drop": 149,
    "monotonic": true,
    "maxRise": 0,
    "samplesWithBedAboveWater": 0
@@ -221,7 +221,7 @@
    "source": [
     4750,
     1300,
-    222
+    209
    ],
    "mouthAt": [
     5210,
@@ -230,7 +230,7 @@
    ],
    "mouth": "Озеро Белой Тишины → Золотая",
    "lengthBlocks": 852,
-   "drop": 97,
+   "drop": 83,
    "monotonic": true,
    "maxRise": 0,
    "samplesWithBedAboveWater": 0
@@ -240,82 +240,42 @@
   {
    "river": "Светлая",
    "at": [
-    3596,
-    1187
+    3535,
+    1273
    ],
-   "top": 212,
-   "bottom": 194,
-   "height": 18
-  },
-  {
-   "river": "Светлая",
-   "at": [
-    3502,
-    1313
-   ],
-   "top": 194,
-   "bottom": 119,
-   "height": 75
-  },
-  {
-   "river": "Светлая",
-   "at": [
-    3543,
-    1958
-   ],
-   "top": 118,
-   "bottom": 97,
-   "height": 22
-  },
-  {
-   "river": "Быстрянка",
-   "at": [
-    6295,
-    1325
-   ],
-   "top": 156,
-   "bottom": 124,
-   "height": 32
+   "top": 195,
+   "bottom": 132,
+   "height": 64
   },
   {
    "river": "Быстрянка",
    "at": [
     6271,
-    2573
+    2578
    ],
-   "top": 124,
-   "bottom": 89,
-   "height": 35
+   "top": 147,
+   "bottom": 85,
+   "height": 62
   },
   {
    "river": "Золотая",
    "at": [
-    5248,
-    1340
-   ],
-   "top": 172,
-   "bottom": 145,
-   "height": 27
-  },
-  {
-   "river": "Золотая",
-   "at": [
-    4794,
-    5633
+    4796,
+    5629
    ],
    "top": 67,
-   "bottom": 44,
-   "height": 23
+   "bottom": 46,
+   "height": 20
   },
   {
    "river": "Холодная",
    "at": [
-    4776,
-    1377
+    4785,
+    1397
    ],
-   "top": 222,
-   "bottom": 129,
-   "height": 93
+   "top": 199,
+   "bottom": 135,
+   "height": 64
   }
  ],
  "lakes": [
@@ -327,7 +287,7 @@
     1760
    ],
    "r": 190,
-   "level": 128.1,
+   "level": 129.5,
    "water": true
   },
   {
@@ -375,63 +335,266 @@
    "water": false
   }
  ],
- "belowSeaDryCells": 3015,
+ "belowSeaDryCells": 1114,
  "roads": [
   {
    "id": "north_main",
    "ru": "Северный тракт через Перевал Ветров",
    "kind": "main",
-   "lengthBlocks": 3722,
-   "maxGradedSlopeDeg": 22.3
+   "lengthBlocks": 3716,
+   "maxGradedSlopeDeg": 33.5
   },
   {
    "id": "north_gorge",
    "ru": "Тропа Волчьего Ущелья",
    "kind": "danger",
-   "lengthBlocks": 2498,
-   "maxGradedSlopeDeg": 5.2
+   "lengthBlocks": 2507,
+   "maxGradedSlopeDeg": 5.4
   },
   {
    "id": "north_mine",
    "ru": "Тайный ход через Старую Штольню",
    "kind": "secret",
-   "lengthBlocks": 2627,
-   "maxGradedSlopeDeg": 7.9
+   "lengthBlocks": 2584,
+   "maxGradedSlopeDeg": 9.5
   },
   {
    "id": "south_main",
    "ru": "Южный тракт через Мост над Бездной",
    "kind": "main",
-   "lengthBlocks": 3416,
-   "maxGradedSlopeDeg": 4.7
+   "lengthBlocks": 3344,
+   "maxGradedSlopeDeg": 7.8
   },
   {
    "id": "south_detour",
    "ru": "Восточный объезд через Суховейные Ворота",
    "kind": "alt",
-   "lengthBlocks": 3694,
-   "maxGradedSlopeDeg": 14.2
+   "lengthBlocks": 3667,
+   "maxGradedSlopeDeg": 14
   },
   {
    "id": "south_smuggler",
    "ru": "Козья тропа контрабандистов",
    "kind": "danger",
-   "lengthBlocks": 4615,
+   "lengthBlocks": 4560,
    "maxGradedSlopeDeg": 9.1
   },
   {
    "id": "east_road",
    "ru": "Дорога к Грохочущему Водопаду",
    "kind": "alt",
-   "lengthBlocks": 3156,
-   "maxGradedSlopeDeg": 7.4
+   "lengthBlocks": 3132,
+   "maxGradedSlopeDeg": 8.3
+  },
+  {
+   "id": "r_kolosok",
+   "ru": "Полевая дорога к Хутору Колосок",
+   "kind": "secondary",
+   "lengthBlocks": 299,
+   "maxGradedSlopeDeg": 0.9
+  },
+  {
+   "id": "r_apiary",
+   "ru": "Тропа к Пасеке",
+   "kind": "forest_path",
+   "lengthBlocks": 323,
+   "maxGradedSlopeDeg": 0.8
+  },
+  {
+   "id": "r_berezka",
+   "ru": "Дорога к Ферме Берёзка",
+   "kind": "secondary",
+   "lengthBlocks": 216,
+   "maxGradedSlopeDeg": 1.8
+  },
+  {
+   "id": "r_goblin",
+   "ru": "Лесная тропа к Норе Кривого Клыка",
+   "kind": "forest_path",
+   "lengthBlocks": 829,
+   "maxGradedSlopeDeg": 2.7
+  },
+  {
+   "id": "r_roots",
+   "ru": "Тропа Корневиков через Дремучий Лес",
+   "kind": "forest_path",
+   "lengthBlocks": 1567,
+   "maxGradedSlopeDeg": 2.5
+  },
+  {
+   "id": "r_barrow",
+   "ru": "Курганная дорога",
+   "kind": "secondary",
+   "lengthBlocks": 1101,
+   "maxGradedSlopeDeg": 9
+  },
+  {
+   "id": "r_chapel",
+   "ru": "Гать к Затопленной часовне",
+   "kind": "forest_path",
+   "lengthBlocks": 1006,
+   "maxGradedSlopeDeg": 6.5
+  },
+  {
+   "id": "r_battlefield",
+   "ru": "Дорога на Поле Вороньей Битвы",
+   "kind": "secondary",
+   "lengthBlocks": 647,
+   "maxGradedSlopeDeg": 2
+  },
+  {
+   "id": "r_grotto",
+   "ru": "Тропа к Тихому Гроту",
+   "kind": "forest_path",
+   "lengthBlocks": 790,
+   "maxGradedSlopeDeg": 29.7
+  },
+  {
+   "id": "r_lighthouse",
+   "ru": "Береговая дорога к маяку",
+   "kind": "secondary",
+   "lengthBlocks": 2229,
+   "maxGradedSlopeDeg": 10.9
+  },
+  {
+   "id": "r_copper",
+   "ru": "Серпантин к Медному руднику",
+   "kind": "mountain_path",
+   "lengthBlocks": 301,
+   "maxGradedSlopeDeg": 6.2
+  },
+  {
+   "id": "r_reindeer",
+   "ru": "Дорога к Оленьему загону",
+   "kind": "secondary",
+   "lengthBlocks": 301,
+   "maxGradedSlopeDeg": 13.1
+  },
+  {
+   "id": "r_wolf",
+   "ru": "Тропа к Логову Серой Стаи",
+   "kind": "mountain_path",
+   "lengthBlocks": 508,
+   "maxGradedSlopeDeg": 15.3
+  },
+  {
+   "id": "r_silence",
+   "ru": "Горная тропа к Озёрной Тиши",
+   "kind": "mountain_path",
+   "lengthBlocks": 1933,
+   "maxGradedSlopeDeg": 10.4
+  },
+  {
+   "id": "r_citadel",
+   "ru": "Серпантин к Ледяной Цитадели",
+   "kind": "mountain_path",
+   "lengthBlocks": 630,
+   "maxGradedSlopeDeg": 15.2
+  },
+  {
+   "id": "r_spring",
+   "ru": "Тропа к Роднику Светлой",
+   "kind": "mountain_path",
+   "lengthBlocks": 215,
+   "maxGradedSlopeDeg": 12.2
+  },
+  {
+   "id": "r_east_gate",
+   "ru": "Дорога через Восточные Ворота",
+   "kind": "secondary",
+   "lengthBlocks": 1104,
+   "maxGradedSlopeDeg": 12.7
+  },
+  {
+   "id": "r_observatory",
+   "ru": "Тропа на Высокогорье Тура",
+   "kind": "mountain_path",
+   "lengthBlocks": 1090,
+   "maxGradedSlopeDeg": 17.5
+  },
+  {
+   "id": "r_pass_tower",
+   "ru": "Подъём к Сторожевой башне",
+   "kind": "mountain_path",
+   "lengthBlocks": 236,
+   "maxGradedSlopeDeg": 22.3
+  },
+  {
+   "id": "r_caravan_mesa",
+   "ru": "Караванный путь к Одинокой Месе",
+   "kind": "caravan",
+   "lengthBlocks": 1418,
+   "maxGradedSlopeDeg": 5.4
+  },
+  {
+   "id": "r_caravan_salt",
+   "ru": "Соляной караванный путь",
+   "kind": "caravan",
+   "lengthBlocks": 2235,
+   "maxGradedSlopeDeg": 29.7
+  },
+  {
+   "id": "r_caravan_waste",
+   "ru": "Караванный путь в Пустошь",
+   "kind": "caravan",
+   "lengthBlocks": 1483,
+   "maxGradedSlopeDeg": 18.8
+  },
+  {
+   "id": "r_dates",
+   "ru": "Тропа к Финиковой роще",
+   "kind": "secondary",
+   "lengthBlocks": 319,
+   "maxGradedSlopeDeg": 3.9
+  },
+  {
+   "id": "r_sun_city",
+   "ru": "Тропа к Городу Солнца",
+   "kind": "caravan",
+   "lengthBlocks": 322,
+   "maxGradedSlopeDeg": 1.1
+  },
+  {
+   "id": "r_dry_wind",
+   "ru": "Тропа через Перевал Суховей",
+   "kind": "mountain_path",
+   "lengthBlocks": 1257,
+   "maxGradedSlopeDeg": 22.2
+  },
+  {
+   "id": "r_abyss_tower",
+   "ru": "Подъезд к Башне над Бездной",
+   "kind": "secondary",
+   "lengthBlocks": 68,
+   "maxGradedSlopeDeg": 0.3
+  },
+  {
+   "id": "r_old_canyon",
+   "ru": "Старый Каньонный тракт",
+   "kind": "abandoned",
+   "lengthBlocks": 2029,
+   "maxGradedSlopeDeg": 9.3
+  },
+  {
+   "id": "r_old_fjords",
+   "ru": "Заброшенная дорога к Северным Фьордам",
+   "kind": "abandoned",
+   "lengthBlocks": 1991,
+   "maxGradedSlopeDeg": 31.7
+  },
+  {
+   "id": "r_old_quarry",
+   "ru": "Карьерная дорога",
+   "kind": "abandoned",
+   "lengthBlocks": 372,
+   "maxGradedSlopeDeg": 4.3
   }
  ],
- "maxRoadSlopeDeg": 22.3,
+ "maxRoadSlopeDeg": 33.5,
  "bridges": [
   {
    "at": [
-    3860.809326171875,
+    3860.2447509765625,
     3070.3125
    ],
    "kind": "ford",
@@ -451,7 +614,7 @@
   },
   {
    "at": [
-    3883.087158203125,
+    3882.9345703125,
     4089.84375
    ],
    "kind": "river",
@@ -468,7 +631,7 @@
    "route": "south_main",
    "ru": "Мост над Бездной",
    "length": 335,
-   "heightAbove": 48
+   "heightAbove": 47
   },
   {
    "at": [
@@ -492,13 +655,83 @@
   },
   {
    "at": [
-    5292.96875,
-    3021.2249755859375
+    5269.53125,
+    3075.775146484375
    ],
    "kind": "river",
    "route": "east_road",
    "ru": "Мост",
+   "length": 29
+  },
+  {
+   "at": [
+    2097.65625,
+    3327.4688720703125
+   ],
+   "kind": "ford",
+   "route": "r_roots",
+   "ru": "Брод",
    "length": 28
+  },
+  {
+   "at": [
+    6276.67236328125,
+    2656.25
+   ],
+   "kind": "river",
+   "route": "r_lighthouse",
+   "ru": "Мост",
+   "length": 18
+  },
+  {
+   "at": [
+    3335.9375,
+    1601.5625
+   ],
+   "kind": "ford",
+   "route": "r_copper",
+   "ru": "Брод",
+   "length": 19
+  },
+  {
+   "at": [
+    4875,
+    1552.764892578125
+   ],
+   "kind": "ford",
+   "route": "r_silence",
+   "ru": "Брод",
+   "length": 19
+  },
+  {
+   "at": [
+    5341.339111328125,
+    2894.53125
+   ],
+   "kind": "river",
+   "route": "r_east_gate",
+   "ru": "Мост",
+   "length": 27
+  },
+  {
+   "at": [
+    6292.96875,
+    2065.0634765625
+   ],
+   "kind": "ford",
+   "route": "r_observatory",
+   "ru": "Брод",
+   "length": 28
+  },
+  {
+   "at": [
+    1757.8125,
+    2618.0419921875
+   ],
+   "kind": "ford",
+   "route": "r_old_fjords",
+   "ru": "Брод",
+   "length": 18
   }
  ],
  "tunnels": [
@@ -529,75 +762,75 @@
    "snezhny": true,
    "peschany": true
   },
-  "unreachableLandPct": 1.26,
+  "unreachableLandPct": 0.8,
   "unreachableAreas": [
    {
     "at": [
      4301,
-     996
+     1004
     ],
-    "peakY": 511,
-    "areaBlocks2": 6531,
+    "peakY": 480,
+    "areaBlocks2": 6470,
     "nearest": "Пик Белый Клык"
    },
    {
     "at": [
-     2598,
-     1059
+     3090,
+     1004
     ],
-    "peakY": 454,
-    "areaBlocks2": 4028,
+    "peakY": 362,
+    "areaBlocks2": 3357,
     "nearest": "Корона Ветров"
    },
    {
     "at": [
-     5738,
-     6910
+     6035,
+     6871
     ],
-    "peakY": 209,
-    "areaBlocks2": 109680,
+    "peakY": 206,
+    "areaBlocks2": 118225,
     "nearest": "Одинокая Меса"
    },
    {
     "at": [
-     3113,
-     7043
+     6121,
+     6770
     ],
-    "peakY": 158,
-    "areaBlocks2": 21179,
+    "peakY": 171,
+    "areaBlocks2": 3906,
+    "nearest": "Останец Палец"
+   },
+   {
+    "at": [
+     5676,
+     7129
+    ],
+    "peakY": 166,
+    "areaBlocks2": 5432,
+    "nearest": "Останец Сторож"
+   },
+   {
+    "at": [
+     3152,
+     7066
+    ],
+    "peakY": 157,
+    "areaBlocks2": 24475,
     "nearest": "Столовая гора Плаха"
    },
    {
     "at": [
-     3277,
-     6629
+     3410,
+     7168
     ],
-    "peakY": 150,
-    "areaBlocks2": 25635,
-    "nearest": "Столовая гора Наковальня"
+    "peakY": 138,
+    "areaBlocks2": 3052,
+    "nearest": "Останец Близнец (запад)"
    },
    {
     "at": [
-     3527,
-     6824
-    ],
-    "peakY": 142,
-    "areaBlocks2": 14587,
-    "nearest": "Столовая гора Сундук"
-   },
-   {
-    "at": [
-     4473,
-     637
-    ],
-    "peakY": 109,
-    "areaBlocks2": 191101,
-    "nearest": "Пик Белый Клык"
-   },
-   {
-    "at": [
-     6066,
-     7949
+     6074,
+     7941
     ],
     "peakY": 50,
     "areaBlocks2": 43213,
@@ -642,18 +875,18 @@
    ],
    "relief": "пойма Светлой, луга, пологие холмы",
    "biome": "green",
-   "areaKm2Blocks": 1727875,
+   "areaKm2Blocks": 1725555,
    "bbox": [
-    3133,
-    3277,
-    4848,
-    4578
+    3129,
+    3281,
+    4840,
+    4586
    ],
    "centroid": [
-    3967,
-    3967
+    3959,
+    3961
    ],
-   "maxY": 78
+   "maxY": 77
   },
   {
    "id": "old_forest",
@@ -664,16 +897,16 @@
    ],
    "relief": "сплошной лесной массив, долина Тихоструйки",
    "biome": "green",
-   "areaKm2Blocks": 1448212,
+   "areaKm2Blocks": 1452240,
    "bbox": [
     1969,
-    2906,
-    3348,
+    2910,
+    3344,
     4438
    ],
    "centroid": [
-    2676,
-    3696
+    2671,
+    3698
    ],
    "maxY": 92
   },
@@ -686,18 +919,18 @@
    ],
    "relief": "широкие луга, Берёзовая Роща",
    "biome": "green",
-   "areaKm2Blocks": 2992599,
+   "areaKm2Blocks": 3089081,
    "bbox": [
-    3328,
-    1738,
-    5902,
-    3547
+    3336,
+    1691,
+    5848,
+    3555
    ],
    "centroid": [
-    4596,
-    2702
+    4597,
+    2677
    ],
-   "maxY": 203
+   "maxY": 201
   },
   {
    "id": "rot_marsh",
@@ -708,16 +941,16 @@
    ],
    "relief": "болотная низина, бочаги, Зеркальное Озеро",
    "biome": "green",
-   "areaKm2Blocks": 2205719,
+   "areaKm2Blocks": 2397583,
    "bbox": [
     1469,
     4230,
-    3234,
-    6094
+    3250,
+    6336
    ],
    "centroid": [
-    2401,
-    5087
+    2423,
+    5157
    ],
    "maxY": 92
   },
@@ -730,18 +963,18 @@
    ],
    "relief": "увалы, кратер Око Земли",
    "biome": "green",
-   "areaKm2Blocks": 2938080,
+   "areaKm2Blocks": 2961166,
    "bbox": [
-    4594,
-    2676,
-    6676,
-    5215
+    4590,
+    2699,
+    6688,
+    5223
    ],
    "centroid": [
     5579,
-    4129
+    4131
    ],
-   "maxY": 150
+   "maxY": 147
   },
   {
    "id": "west_coast",
@@ -752,18 +985,18 @@
    ],
    "relief": "залив, устье Светлой, Кремнёвый Бор",
    "biome": "green",
-   "areaKm2Blocks": 1506592,
+   "areaKm2Blocks": 1496841,
    "bbox": [
     426,
-    3480,
-    2148,
-    5063
+    3469,
+    2145,
+    5059
    ],
    "centroid": [
-    1316,
-    4187
+    1313,
+    4191
    ],
-   "maxY": 67
+   "maxY": 69
   },
   {
    "id": "east_shore",
@@ -774,16 +1007,16 @@
    ],
    "relief": "приморская дубрава, мыс Буревестник",
    "biome": "green",
-   "areaKm2Blocks": 4094040,
+   "areaKm2Blocks": 4023407,
    "bbox": [
-    5699,
-    1617,
-    7996,
-    4965
+    5703,
+    1629,
+    7977,
+    4789
    ],
    "centroid": [
-    6939,
-    3240
+    6927,
+    3219
    ],
    "maxY": 175
   },
@@ -796,18 +1029,18 @@
    ],
    "relief": "хребет-граница, перевал, ущелье, штольня",
    "biome": "green",
-   "areaKm2Blocks": 1486084,
+   "areaKm2Blocks": 1464355,
    "bbox": [
-    1934,
-    1629,
-    3977,
+    1938,
+    1719,
+    3785,
     3215
    ],
    "centroid": [
-    2871,
-    2455
+    2831,
+    2465
    ],
-   "maxY": 202
+   "maxY": 230
   },
   {
    "id": "west_ridge",
@@ -818,18 +1051,18 @@
    ],
    "relief": "меридиональный хребет, Седловина Кремня",
    "biome": "green",
-   "areaKm2Blocks": 3060028,
+   "areaKm2Blocks": 2957520,
    "bbox": [
-    156,
-    1605,
-    2395,
-    3734
+    422,
+    1629,
+    2402,
+    3746
    ],
    "centroid": [
-    1324,
-    2726
+    1336,
+    2738
    ],
-   "maxY": 200
+   "maxY": 202
   },
   {
    "id": "dry_steppe",
@@ -840,18 +1073,18 @@
    ],
    "relief": "ковыльная степь, переход к пустыне",
    "biome": "green",
-   "areaKm2Blocks": 1722336,
+   "areaKm2Blocks": 2304733,
    "bbox": [
-    2988,
+    2941,
     4500,
-    5082,
-    5793
+    5070,
+    6090
    ],
    "centroid": [
-    3976,
-    5086
+    3958,
+    5238
    ],
-   "maxY": 86
+   "maxY": 92
   },
   {
    "id": "flint_cape",
@@ -862,18 +1095,18 @@
    ],
    "relief": "полуостров, береговые утёсы",
    "biome": "green",
-   "areaKm2Blocks": 1741287,
+   "areaKm2Blocks": 1570801,
    "bbox": [
     445,
-    4750,
-    2266,
-    6449
+    4746,
+    2129,
+    6406
    ],
    "centroid": [
-    1244,
-    5657
+    1190,
+    5603
    ],
-   "maxY": 85
+   "maxY": 87
   },
   {
    "id": "snow_vale",
@@ -884,18 +1117,18 @@
    ],
    "relief": "высокая долина, горная Светлая, рудник",
    "biome": "winter",
-   "areaKm2Blocks": 1339096,
+   "areaKm2Blocks": 1353790,
    "bbox": [
-    2480,
-    684,
-    4098,
-    2297
+    2516,
+    691,
+    4133,
+    2277
    ],
    "centroid": [
-    3300,
-    1646
+    3344,
+    1637
    ],
-   "maxY": 374
+   "maxY": 365
   },
   {
    "id": "tur",
@@ -906,18 +1139,18 @@
    ],
    "relief": "плато с обрывом, Грохочущий Водопад",
    "biome": "winter",
-   "areaKm2Blocks": 643234,
+   "areaKm2Blocks": 659439,
    "bbox": [
-    5746,
-    1504,
-    7098,
-    2305
+    5766,
+    1500,
+    7074,
+    2297
    ],
    "centroid": [
-    6340,
-    1911
+    6341,
+    1914
    ],
-   "maxY": 175
+   "maxY": 177
   },
   {
    "id": "white_silence",
@@ -928,18 +1161,18 @@
    ],
    "relief": "ледниковое озеро, отроги",
    "biome": "winter",
-   "areaKm2Blocks": 1066940,
+   "areaKm2Blocks": 991058,
    "bbox": [
-    4117,
-    961,
+    4129,
+    969,
     5828,
-    2082
+    2086
    ],
    "centroid": [
-    5070,
-    1638
+    5094,
+    1611
    ],
-   "maxY": 346
+   "maxY": 337
   },
   {
    "id": "north_fjords",
@@ -950,18 +1183,18 @@
    ],
    "relief": "фьорды, скалистые мысы",
    "biome": "winter",
-   "areaKm2Blocks": 1550339,
+   "areaKm2Blocks": 1590286,
    "bbox": [
     449,
     531,
     2094,
-    2742
+    2465
    ],
    "centroid": [
-    1251,
-    1284
+    1267,
+    1283
    ],
-   "maxY": 274
+   "maxY": 266
   },
   {
    "id": "frost_waste",
@@ -972,18 +1205,18 @@
    ],
    "relief": "тундра северо-востока",
    "biome": "winter",
-   "areaKm2Blocks": 1196701,
+   "areaKm2Blocks": 1199066,
    "bbox": [
-    6441,
+    6438,
     488,
     7656,
-    1855
+    1840
    ],
    "centroid": [
-    7015,
-    1142
+    7012,
+    1139
    ],
-   "maxY": 326
+   "maxY": 313
   },
   {
    "id": "ice_crown",
@@ -994,18 +1227,18 @@
    ],
    "relief": "главный хребет, Ледяное Плато",
    "biome": "winter",
-   "areaKm2Blocks": 1446152,
+   "areaKm2Blocks": 1407074,
    "bbox": [
-    1738,
-    121,
-    3371,
-    1855
+    1734,
+    457,
+    3379,
+    1898
    ],
    "centroid": [
-    2493,
-    1092
+    2483,
+    1131
    ],
-   "maxY": 461
+   "maxY": 432
   },
   {
    "id": "white_fang",
@@ -1016,18 +1249,18 @@
    ],
    "relief": "высочайшие пики, ледники",
    "biome": "winter",
-   "areaKm2Blocks": 1427856,
+   "areaKm2Blocks": 1404526,
    "bbox": [
-    3367,
+    3375,
     367,
-    5102,
-    1781
+    5094,
+    1766
    ],
    "centroid": [
     4255,
-    933
+    928
    ],
-   "maxY": 516
+   "maxY": 483
   },
   {
    "id": "east_peaks",
@@ -1038,18 +1271,18 @@
    ],
    "relief": "восточная Корона",
    "biome": "winter",
-   "areaKm2Blocks": 1230820,
+   "areaKm2Blocks": 1223282,
    "bbox": [
-    5105,
+    5090,
     441,
-    6527,
-    1711
+    6516,
+    1715
    ],
    "centroid": [
-    5892,
+    5890,
     1036
    ],
-   "maxY": 440
+   "maxY": 411
   },
   {
    "id": "ash_ridge",
@@ -1060,18 +1293,18 @@
    ],
    "relief": "хребет-граница, Перевал Суховей",
    "biome": "green",
-   "areaKm2Blocks": 1560135,
+   "areaKm2Blocks": 1259796,
    "bbox": [
-    5086,
+    5063,
     4563,
-    7566,
-    5855
+    7539,
+    5633
    ],
    "centroid": [
-    6437,
-    5265
+    6340,
+    5170
    ],
-   "maxY": 187
+   "maxY": 184
   },
   {
    "id": "crimson_rift",
@@ -1082,18 +1315,18 @@
    ],
    "relief": "гигантский каньон, Козья тропа",
    "biome": "desert",
-   "areaKm2Blocks": 1225647,
+   "areaKm2Blocks": 688446,
    "bbox": [
-    2344,
-    5402,
-    4293,
-    6547
+    2559,
+    5852,
+    4129,
+    6555
    ],
    "centroid": [
-    3347,
-    6036
+    3380,
+    6221
    ],
-   "maxY": 94
+   "maxY": 101
   },
   {
    "id": "oasis",
@@ -1104,18 +1337,18 @@
    ],
    "relief": "оазис, сухие русла",
    "biome": "desert",
-   "areaKm2Blocks": 3687881,
+   "areaKm2Blocks": 3454086,
    "bbox": [
-    3934,
-    5152,
-    5793,
+    3938,
+    5195,
+    5777,
     7730
    ],
    "centroid": [
-    4877,
-    6546
+    4888,
+    6621
    ],
-   "maxY": 153
+   "maxY": 166
   },
   {
    "id": "dune_sea",
@@ -1126,18 +1359,18 @@
    ],
    "relief": "дюны, Солёная Чаша",
    "biome": "desert",
-   "areaKm2Blocks": 2163696,
+   "areaKm2Blocks": 2374710,
    "bbox": [
-    703,
-    6027,
-    2965,
+    715,
+    5879,
+    2969,
     7723
    ],
    "centroid": [
-    2006,
-    6884
+    1974,
+    6847
    ],
-   "maxY": 98
+   "maxY": 108
   },
   {
    "id": "rust_waste",
@@ -1148,18 +1381,18 @@
    ],
    "relief": "каменистая пустошь, Красные Скалы, Одинокая Меса",
    "biome": "desert",
-   "areaKm2Blocks": 3691559,
+   "areaKm2Blocks": 3973389,
    "bbox": [
-    5461,
-    5313,
+    5484,
+    5410,
     7652,
-    7996
+    7711
    ],
    "centroid": [
-    6602,
-    6660
+    6614,
+    6558
    ],
-   "maxY": 209
+   "maxY": 206
   },
   {
    "id": "table_mountains",
@@ -1170,20 +1403,63 @@
    ],
    "relief": "меса, Каменная Арка",
    "biome": "desert",
-   "areaKm2Blocks": 1359146,
+   "areaKm2Blocks": 1352646,
    "bbox": [
-    2766,
-    6418,
-    4156,
+    2770,
+    6441,
+    4172,
     7695
    ],
    "centroid": [
-    3444,
-    7073
+    3446,
+    7076
    ],
    "maxY": 158
   }
  ],
+ "heightHash": {
+  "overview2048": "ba3a99f6b0739a001e492c768c81304120de63e965e7ce781c0d86ada40b7c9c",
+  "encoding": "sha256 of Uint16LE heightmap_2048 (Y*64)",
+  "frozen": true,
+  "tiles1block": "2a3a657d152c253fba571c61ef0770447d6f580d7fb37e2e17508b996f31aaae",
+  "tilesBytes": 23761038,
+  "tilesNote": "sha256 по строкам «имя:sha256(высоты Uint16LE + материалы)» всех 1024 тайлов, отсортированных по имени"
+ },
+ "erosion": {
+  "droplets": 820131,
+  "meanChange": 2.042,
+  "maxCut": 77.1
+ },
+ "villagePads": [
+  {
+   "id": "zelenodol",
+   "at": [
+    3780,
+    3930
+   ],
+   "r": 125,
+   "y": 60.4
+  },
+  {
+   "id": "snezhny",
+   "at": [
+    3230,
+    1700
+   ],
+   "r": 90,
+   "y": 120.4
+  },
+  {
+   "id": "peschany",
+   "at": [
+    4400,
+    6630
+   ],
+   "r": 95,
+   "y": 114.5
+  }
+ ],
+ "sideRoadFailures": [],
  "checks": {
   "failed": []
  }

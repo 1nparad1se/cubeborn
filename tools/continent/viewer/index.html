@@ -32,6 +32,8 @@
   .lbl.region small { display: block; text-align: center; font-size: 10px; font-weight: 600; letter-spacing: 0; color: #ffd98a; text-transform: none; }
   .lbl.pass { color: #ffd0f0; font-size: 11px; } .lbl.pass::after { content: '⌒'; display: block; text-align: center; }
   .lbl.bridge { color: #ffffff; font-size: 10px; } .lbl.tunnel { color: #e0b0ff; font-size: 10px; }
+  .lbl.cave { color: #ffd39a; font-size: 11px; } .lbl.cave small, .lbl.camp small { display: block; text-align: center; font-size: 9px; color: #eee; font-weight: 500; }
+  .lbl.camp { font-size: 11px; } .lbl.site { color: #f3e6c8; font-size: 10px; }
   .lbl.ridge { color: #dfe7f0; font-size: 11px; font-style: italic; transform: translate(-50%, -50%); }
   #hint { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); color: var(--muted); font-size: 11px; }
   #loading { position: absolute; inset: 0; display: grid; place-items: center; font-size: 16px; color: var(--accent); }
@@ -44,7 +46,7 @@
 <div id="loading">Загрузка рельефа…</div>
 <div id="ui" class="panel">
   <h1>Континент · 8000×8000</h1>
-  <div style="color:var(--muted)">Этап 2: рельефная схема. Без построек, деревьев и мобов.</div>
+  <div style="color:var(--muted)">Этапы 1–5: рельеф (заморожен), регионы, деревни, пещеры, лагеря мобов. Без деревьев и детальных построек.</div>
   <h2>Вид</h2>
   <div class="btns" id="views"></div>
   <h2>Окраска</h2>
@@ -56,6 +58,8 @@
   <input id="ex" type="range" min="0.5" max="4" step="0.1" value="1.5">
   <label><input type="checkbox" id="top"> Режим 2D (сверху)</label>
   <label><input type="checkbox" id="hi" checked> Детальная сетка (1024²)</label>
+  <label><input type="checkbox" id="blocks" checked> Блочная детализация вблизи (1 блок)</label>
+  <div style="color:var(--muted);font-size:11px">Двойной щелчок по карте — загрузить блоки вокруг точки.</div>
   <h2>Слои</h2>
   <label><input type="checkbox" data-layer="water" checked> Реки, озёра, море</label>
   <label><input type="checkbox" data-layer="roads" checked> Дороги, мосты, перевалы, туннели</label>
@@ -64,6 +68,11 @@
   <label><input type="checkbox" data-layer="places" checked> Деревни и ориентиры</label>
   <label><input type="checkbox" data-layer="ridges"> Названия хребтов</label>
   <label><input type="checkbox" data-layer="grid"> Сетка секторов 1000 блоков</label>
+  <label><input type="checkbox" data-layer="side" checked> Второстепенные дороги и тропы</label>
+  <label><input type="checkbox" data-layer="buildings" checked> Здания деревень</label>
+  <label><input type="checkbox" data-layer="caves" checked> Пещеры и подземелья</label>
+  <label><input type="checkbox" data-layer="camps" checked> Лагеря мобов (цвет = уровень)</label>
+  <label><input type="checkbox" data-layer="regionPoly"> Полигоны регионов (авторские)</label>
 </div>
 <div id="legend" class="panel"></div>
 <div id="hint">ЛКМ — вращение · ПКМ — сдвиг · колесо — масштаб</div>

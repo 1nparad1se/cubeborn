@@ -1,0 +1,17 @@
+{
+ "ok": true,
+ "heightHash": "ba3a99f6b0739a001e492c768c81304120de63e965e7ce781c0d86ada40b7c9c",
+ "counts": {
+  "villages": 3,
+  "buildings": 42,
+  "sites": 39,
+  "caves": 18,
+  "camps": 85,
+  "mobs": 373,
+  "speciesUsed": 20
+ },
+ "errors": [],
+ "warnings": [
+  "c75: giant_bat без привязки к пещере/руине"
+ ]
+}

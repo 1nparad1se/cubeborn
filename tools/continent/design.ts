@@ -131,14 +131,28 @@ export const PLATEAUS: Plateau[] = [
   { id: 'ice_plateau', ru: 'Ледяное Плато', top: 215, edge: 90, poly: [[2170, 1450], [2370, 1480], [2520, 1390], [2720, 1420], [2780, 1530], [2840, 1620], [2670, 1660], [2520, 1720], [2380, 1640], [2220, 1670], [2140, 1560]] },
 ];
 
-// Меса — столовые горы пустыни (терраса по склону).
-export interface Mesa { id: string; ru: string; at: P; r: number; top: number; edge: number; }
+// Меса и останцы (бьютты): неровный план (лопасти + промоины), слоистые уступы, осыпной шлейф у подножия.
+// layers — число пластов в обрыве; lobes — крупные выступы плана; notches — промоины, врезанные в обрыв.
+export interface Mesa { id: string; ru: string; at: P; r: number; top: number; edge: number; layers: number; lobes: number; notches: number; kind: 'mesa' | 'butte'; }
 export const MESAS: Mesa[] = [
-  { id: 'lone_mesa', ru: 'Одинокая Меса', at: [5900, 6900], r: 170, top: 205, edge: 30 },
-  { id: 'table1', ru: 'Столовая гора Наковальня', at: [3300, 6700], r: 85, top: 150, edge: 18 },
-  { id: 'table2', ru: 'Столовая гора Сундук', at: [3560, 6880], r: 65, top: 142, edge: 16 },
-  { id: 'table3', ru: 'Столовая гора Плаха', at: [3180, 7020], r: 75, top: 156, edge: 18 },
-  { id: 'table4', ru: 'Столовая гора Башмак', at: [6400, 6250], r: 90, top: 160, edge: 20 },
+  { id: 'lone_mesa', ru: 'Одинокая Меса', at: [5900, 6900], r: 170, top: 205, edge: 34, layers: 6, lobes: 4, notches: 7, kind: 'mesa' },
+  { id: 'table1', ru: 'Столовая гора Наковальня', at: [3300, 6700], r: 88, top: 150, edge: 22, layers: 4, lobes: 3, notches: 5, kind: 'mesa' },
+  { id: 'table2', ru: 'Столовая гора Сундук', at: [3560, 6880], r: 66, top: 142, edge: 18, layers: 4, lobes: 2, notches: 4, kind: 'mesa' },
+  { id: 'table3', ru: 'Столовая гора Плаха', at: [3180, 7020], r: 76, top: 156, edge: 20, layers: 5, lobes: 3, notches: 5, kind: 'mesa' },
+  { id: 'table4', ru: 'Столовая гора Башмак', at: [6400, 6250], r: 92, top: 160, edge: 22, layers: 5, lobes: 3, notches: 6, kind: 'mesa' },
+  // останцы рядом с месами
+  { id: 'butte_a', ru: 'Останец Палец', at: [6130, 6760], r: 28, top: 170, edge: 10, layers: 4, lobes: 2, notches: 2, kind: 'butte' },
+  { id: 'butte_b', ru: 'Останец Сторож', at: [5680, 7120], r: 34, top: 165, edge: 12, layers: 4, lobes: 2, notches: 3, kind: 'butte' },
+  { id: 'butte_c', ru: 'Останец Близнец (запад)', at: [3420, 7150], r: 24, top: 138, edge: 9, layers: 3, lobes: 2, notches: 2, kind: 'butte' },
+  { id: 'butte_d', ru: 'Останец Близнец (восток)', at: [3500, 7185], r: 22, top: 134, edge: 9, layers: 3, lobes: 2, notches: 2, kind: 'butte' },
+  { id: 'butte_e', ru: 'Останец Кувшин', at: [6650, 6050], r: 30, top: 150, edge: 10, layers: 4, lobes: 2, notches: 3, kind: 'butte' },
+  { id: 'butte_f', ru: 'Останец Свеча', at: [3050, 6850], r: 20, top: 140, edge: 8, layers: 3, lobes: 1, notches: 2, kind: 'butte' },
+];
+// Каменные арки — нависающие формы, которые карта высот не передаёт; ставятся объектами (prop rock_arch / ruin_arch).
+export const ARCHES: { id: string; ru: string; at: P; span: number; height: number; prop: string }[] = [
+  { id: 'stone_arch', ru: 'Каменная Арка', at: [3460, 7168], span: 40, height: 32, prop: 'rock_arch' },
+  { id: 'wind_arch', ru: 'Арка Ветров', at: [6240, 6830], span: 24, height: 20, prop: 'rock_arch' },
+  { id: 'red_gate', ru: 'Красные Врата', at: [6950, 6350], span: 18, height: 16, prop: 'rock_arch' },
 ];
 
 // Кратер с озером.
@@ -197,7 +211,14 @@ export const RIVERS: River[] = [
 // Сухое русло пустыни (вырезано, без воды).
 export const DRY_BEDS: { id: string; ru: string; pts: P[]; w: number; depth: number }[] = [
   { id: 'old_bed', ru: 'Высохшее Русло', w: 18, depth: 4, pts: [[4650, 6850], [4800, 7100], [5050, 7300], [5150, 7700]] },
+  { id: 'old_bed_w', ru: 'Высохшее Русло (западный рукав)', w: 9, depth: 3, pts: [[4350, 7150], [4600, 7250], [4900, 7250], [5050, 7300]] },
+  { id: 'old_bed_e', ru: 'Высохшее Русло (восточный рукав)', w: 8, depth: 3, pts: [[5400, 7050], [5250, 7200], [5100, 7380]] },
   { id: 'snake_bed', ru: 'Змеиное Русло', w: 12, depth: 3, pts: [[6300, 5900], [6100, 6300], [6500, 6700], [6700, 7200], [6650, 7560]] },
+  { id: 'snake_bed_1', ru: 'Змеиное Русло (приток)', w: 7, depth: 2.5, pts: [[6900, 6750], [6750, 6900], [6640, 7000]] },
+  { id: 'snake_bed_2', ru: 'Змеиное Русло (приток)', w: 7, depth: 2.5, pts: [[5900, 6400], [6150, 6550], [6400, 6600]] },
+  { id: 'dune_wash', ru: 'Сухой Лог', w: 10, depth: 3, pts: [[3000, 6550], [2800, 6900], [2650, 7250], [2700, 7640]] },
+  { id: 'dune_wash_1', ru: 'Сухой Лог (приток)', w: 6, depth: 2, pts: [[3300, 7300], [3000, 7350], [2700, 7350]] },
+  { id: 'steppe_wash', ru: 'Ковыльная Балка', w: 8, depth: 3, pts: [[4300, 5100], [4200, 5450], [4100, 5800], [4060, 5980]] },
 ];
 
 // Озёра: уровень воды определяется руслом (если на реке) или задан. r — радиус котловины.
@@ -219,11 +240,11 @@ export const FORESTS: { id: string; ru: string; poly: P[] }[] = [
 ];
 
 // ───────────────────────── Деревни ─────────────────────────
-export interface Village { id: string; ru: string; at: P; biome: 'green' | 'winter' | 'desert'; note: string; }
+export interface Village { id: string; ru: string; at: P; biome: 'green' | 'winter' | 'desert'; note: string; pad: number; }
 export const VILLAGES: Village[] = [
-  { id: 'zelenodol', ru: 'Зеленодол', at: [3780, 3930], biome: 'green', note: 'Стартовая деревня: западный берег Светлой, опушка Дремучего Леса.' },
-  { id: 'snezhny', ru: 'Снежный Предел', at: [3230, 1700], biome: 'winter', note: 'Укрытая долина между Короной и Сторожевым Кряжем, у горной Светлой; рядом рудник Старая Штольня.' },
-  { id: 'peschany', ru: 'Песчаный Приют', at: [4440, 6700], biome: 'desert', note: 'У оазиса Пальмовый Ключ, к югу от Багрового Разлома.' },
+  { id: 'zelenodol', ru: 'Зеленодол', at: [3780, 3930], biome: 'green', pad: 125, note: 'Стартовая деревня: западный берег Светлой, опушка Дремучего Леса.' },
+  { id: 'snezhny', ru: 'Снежный Предел', at: [3230, 1700], biome: 'winter', pad: 90, note: 'Укрытая долина между Короной и Сторожевым Кряжем, у горной Светлой; рядом рудник Старая Штольня.' },
+  { id: 'peschany', ru: 'Песчаный Приют', at: [4400, 6630], biome: 'desert', pad: 95, note: 'У оазиса Пальмовый Ключ, к югу от Багрового Разлома.' },
 ];
 
 // ───────────────────────── Достопримечательности ─────────────────────────
@@ -246,7 +267,7 @@ export const LANDMARKS: { id: string; ru: string; at: P; kind: string }[] = [
 // 'bridge' и 'tunnel' — прямые инженерные участки (мост над каньоном, штольня).
 export type Seg = { to: P; mode: 'road' | 'bridge' | 'tunnel'; label?: string };
 export interface Route { id: string; ru: string; kind: 'main' | 'alt' | 'danger' | 'secret'; from: P; segs: Seg[]; note: string; }
-const Z: P = [3780, 3930], S: P = [3230, 1700], D: P = [4440, 6700];
+const Z: P = [3780, 3930], S: P = [3230, 1700], D: P = [4400, 6630];
 export const ROUTES: Route[] = [
   { id: 'north_main', ru: 'Северный тракт через Перевал Ветров', kind: 'main', from: Z, note: 'Длинный безопасный путь: Дремучий Лес → предгорья → серпантин на Перевал Ветров → высокая долина.',
     segs: [{ to: [3300, 3150], mode: 'road' }, { to: [2650, 2700], mode: 'road' }, { to: [2280, 2250], mode: 'road', label: 'Перевал Ветров' }, { to: [2700, 1880], mode: 'road' }, { to: S, mode: 'road' }] },
@@ -296,8 +317,26 @@ export const REGIONS: Region[] = [
   { id: 'table_mountains', ru: 'Столовые Горы', seed: [3400, 6950], lv: [38, 42], relief: 'меса, Каменная Арка' },
 ];
 
-// Поля дюн (мелкая волнистость песка; амплитуда в блоках).
-export const DUNE_FIELDS: { id: string; ru: string; poly: P[]; amp: number }[] = [
-  { id: 'dune_sea', ru: 'Море Дюн', amp: 7, poly: [[1500, 6700], [2600, 6650], [3050, 7050], [2900, 7500], [1800, 7450], [1350, 7150]] },
-  { id: 'east_dunes', ru: 'Восточные Барханы', amp: 5, poly: [[4900, 6900], [5700, 6600], [6100, 7350], [5200, 7550], [4700, 7300]] },
+// Поля дюн: направленные гряды. dir — азимут ветра (градусы, 0 = на восток), wl — шаг гряд, amp — высота.
+export const DUNE_FIELDS: { id: string; ru: string; poly: P[]; amp: number; dir: number; wl: number }[] = [
+  { id: 'dune_sea', ru: 'Море Дюн', amp: 13, dir: 25, wl: 120, poly: [[1500, 6700], [2600, 6650], [3050, 7050], [2900, 7500], [1800, 7450], [1350, 7150]] },
+  { id: 'east_dunes', ru: 'Восточные Барханы', amp: 9, dir: 40, wl: 95, poly: [[4900, 6900], [5500, 6700], [5550, 7000], [5450, 7550], [5200, 7550], [4700, 7300]] },
+  { id: 'south_dunes', ru: 'Южные Гряды', amp: 7, dir: 15, wl: 80, poly: [[3700, 7250], [4400, 7200], [4500, 7550], [3800, 7600]] },
+];
+// Бедленды — изрезанные оврагами глинистые холмы.
+export const BADLANDS: { id: string; ru: string; poly: P[]; depth: number; scale: number }[] = [
+  { id: 'rust_badlands', ru: 'Ржавые Овраги', depth: 22, scale: 70, poly: [[6100, 5800], [6900, 5850], [7150, 6050], [6700, 6200], [6200, 6150]] },
+  { id: 'west_badlands', ru: 'Глиняные Гребни', depth: 16, scale: 55, poly: [[1700, 6150], [2350, 6050], [2500, 6300], [1950, 6450], [1600, 6400]] },
+];
+// Поля размытых холмов (бугры, которые потом обрабатывает эрозия).
+export const HILL_FIELDS: { id: string; ru: string; poly: P[]; h: number; spacing: number }[] = [
+  { id: 'oasis_hills', ru: 'Холмы Приюта', h: 26, spacing: 170, poly: [[4000, 6250], [4900, 6200], [5100, 6450], [4900, 6550], [4100, 6550]] },
+  { id: 'waste_hills', ru: 'Пустошные Бугры', h: 32, spacing: 200, poly: [[5600, 6000], [6300, 6000], [6300, 6600], [5600, 6550]] },
+  { id: 'steppe_hills', ru: 'Ковыльные Увалы', h: 18, spacing: 240, poly: [[3300, 5000], [4400, 5000], [4500, 5500], [3300, 5500]] },
+];
+// Уступы (низкие эскарпы): высокая сторона слева по ходу полилинии.
+export const ESCARPMENTS: { id: string; ru: string; pts: P[]; h: number; edge: number; fade: number }[] = [
+  { id: 'south_scarp', ru: 'Южный Уступ', h: 18, edge: 16, fade: 700, pts: [[3700, 7000], [4200, 6950], [4700, 7050], [5100, 6950]] },
+  { id: 'rust_scarp', ru: 'Ржавый Уступ', h: 22, edge: 14, fade: 600, pts: [[7300, 6500], [7000, 6700], [6800, 7100], [6900, 7400]] },
+  { id: 'dune_scarp', ru: 'Песчаный Обрыв', h: 14, edge: 12, fade: 500, pts: [[2900, 6600], [2500, 6620], [2100, 6450]] },
 ];
