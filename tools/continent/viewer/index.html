@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Схема континента</title>
+<style>
+  :root { --panel: rgba(22, 26, 34, 0.86); --text: #f2efe6; --muted: #b9b4a6; --accent: #ffcf5a; --line: rgba(255,255,255,0.12); }
+  @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --panel: rgba(22, 26, 34, 0.86); } }
+  :root[data-theme="dark"] { --panel: rgba(22, 26, 34, 0.86); }
+  html, body { margin: 0; height: 100%; background: #10141b; color: var(--text); font: 13px/1.35 system-ui, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+  #app { position: fixed; inset: 0; }
+  canvas { display: block; }
+  .panel { position: absolute; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; backdrop-filter: blur(4px); }
+  #ui { top: 12px; left: 12px; width: 240px; max-height: calc(100% - 24px); overflow: auto; }
+  #legend { bottom: 12px; right: 12px; width: 230px; max-height: calc(100% - 24px); overflow: auto; }
+  h1 { font-size: 15px; margin: 0 0 6px; color: var(--accent); letter-spacing: .02em; }
+  h2 { font-size: 12px; margin: 10px 0 4px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+  label { display: flex; gap: 6px; align-items: center; margin: 2px 0; cursor: pointer; }
+  input[type=range] { width: 100%; }
+  .btns { display: flex; flex-wrap: wrap; gap: 4px; }
+  button { background: #2b3342; color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 3px 7px; font: inherit; font-size: 12px; cursor: pointer; }
+  button:hover { background: #3a4558; } button.on { background: #6b5521; border-color: var(--accent); }
+  .sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -2px; border: 1px solid rgba(0,0,0,.35); }
+  .row { display: flex; justify-content: space-between; gap: 8px; }
+  .bar { height: 10px; display: flex; border-radius: 5px; overflow: hidden; margin: 4px 0 6px; }
+  #labels { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  .lbl { position: absolute; transform: translate(-50%, -100%); white-space: nowrap; text-shadow: 0 0 3px #000, 0 0 2px #000, 0 1px 2px #000; font-weight: 600; }
+  .lbl.village { color: #fff; font-size: 15px; } .lbl.village::after { content: ''; display: block; width: 9px; height: 9px; margin: 2px auto 0; background: #ffcf5a; border: 2px solid #3b2a07; transform: rotate(45deg); }
+  .lbl.landmark { color: #ffe9a8; font-size: 12px; } .lbl.landmark::after { content: '▲'; display: block; text-align: center; font-size: 9px; color: #ffcf5a; }
+  .lbl.region { color: rgba(255,255,255,.92); font-size: 13px; font-weight: 700; letter-spacing: .04em; transform: translate(-50%, -50%); text-transform: uppercase; }
+  .lbl.region small { display: block; text-align: center; font-size: 10px; font-weight: 600; letter-spacing: 0; color: #ffd98a; text-transform: none; }
+  .lbl.pass { color: #ffd0f0; font-size: 11px; } .lbl.pass::after { content: '⌒'; display: block; text-align: center; }
+  .lbl.bridge { color: #ffffff; font-size: 10px; } .lbl.tunnel { color: #e0b0ff; font-size: 10px; }
+  .lbl.ridge { color: #dfe7f0; font-size: 11px; font-style: italic; transform: translate(-50%, -50%); }
+  #hint { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); color: var(--muted); font-size: 11px; }
+  #loading { position: absolute; inset: 0; display: grid; place-items: center; font-size: 16px; color: var(--accent); }
+  @media (max-width: 640px) { #ui { width: auto; right: 12px; max-height: 40%; } #legend { display: none; } }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="labels"></div>
+<div id="loading">Загрузка рельефа…</div>
+<div id="ui" class="panel">
+  <h1>Континент · 8000×8000</h1>
+  <div style="color:var(--muted)">Этап 2: рельефная схема. Без построек, деревьев и мобов.</div>
+  <h2>Вид</h2>
+  <div class="btns" id="views"></div>
+  <h2>Окраска</h2>
+  <label><input type="radio" name="col" value="biome" checked> Биомы</label>
+  <label><input type="radio" name="col" value="height"> Высоты</label>
+  <label><input type="radio" name="col" value="major"> Три зоны (55/25/20)</label>
+  <h2>Рельеф</h2>
+  <div class="row"><span>Вертикальный масштаб</span><b id="exv">×1.5</b></div>
+  <input id="ex" type="range" min="0.5" max="4" step="0.1" value="1.5">
+  <label><input type="checkbox" id="top"> Режим 2D (сверху)</label>
+  <label><input type="checkbox" id="hi" checked> Детальная сетка (1024²)</label>
+  <h2>Слои</h2>
+  <label><input type="checkbox" data-layer="water" checked> Реки, озёра, море</label>
+  <label><input type="checkbox" data-layer="roads" checked> Дороги, мосты, перевалы, туннели</label>
+  <label><input type="checkbox" data-layer="regions" checked> Границы регионов</label>
+  <label><input type="checkbox" data-layer="regionNames" checked> Названия регионов и уровни</label>
+  <label><input type="checkbox" data-layer="places" checked> Деревни и ориентиры</label>
+  <label><input type="checkbox" data-layer="ridges"> Названия хребтов</label>
+  <label><input type="checkbox" data-layer="grid"> Сетка секторов 1000 блоков</label>
+</div>
+<div id="legend" class="panel"></div>
+<div id="hint">ЛКМ — вращение · ПКМ — сдвиг · колесо — масштаб</div>
+<script type="module" src="./main.ts"></script>
+</body>
+</html>
