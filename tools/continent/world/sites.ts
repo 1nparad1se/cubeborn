@@ -47,14 +47,20 @@ export const SITES: Site[] = [
   { id: 'tower_dry_wind', ru: 'Башня Суховея', kind: 'tower', anchor: [6000, 5480], purpose: 'брошенная башня на перевале — логово налётчиков', props: ['ruin_tower', 'camp_palisade'] },
   { id: 'lighthouse', ru: 'Маяк Буревестник', kind: 'lighthouse', anchor: [7780, 4200], purpose: 'погасший маяк на мысу', props: ['round_tower', 'fire_bowl', 'coast_rocks'] },
   { id: 'shrine_spring', ru: 'Родник Светлой', kind: 'shrine', anchor: [3540, 1300], purpose: 'святилище у истока Светлой', props: ['shrine', 'waterfall_small'] },
+  // ── Этап 6: три святилища равновесия и вход в Сердце (основной сюжет) ──
+  { id: 'shrine_root', ru: 'Святилище Корня', kind: 'shrine', anchor: [1700, 3150], purpose: 'первое святилище равновесия (зелёные земли), финал акта I', props: ['shrine', 'tree_big', 'mushrooms_glow', 'ruin_columns'] },
+  { id: 'shrine_sand', ru: 'Святилище Песков', kind: 'shrine', anchor: [1300, 6400], purpose: 'второе святилище равновесия (пустыня), финал акта II', props: ['shrine', 'obelisk', 'temple_pillar'] },
+  { id: 'shrine_frost', ru: 'Святилище Инея', kind: 'shrine', anchor: [2900, 1400], purpose: 'третье святилище равновесия (зима), финал акта III', props: ['shrine', 'biome_snow', 'statue'] },
   { id: 'shrine_oasis', ru: 'Алтарь Пальмового Ключа', kind: 'shrine', anchor: [4780, 6800], purpose: 'алтарь воды', props: ['shrine', 'palm_bush'] },
   // ── Пещеры и подземелья ──
   { id: 'cave_wolf_den', ru: 'Логово Серой Стаи', kind: 'cave', anchor: [2850, 1520], purpose: 'логово морозных волков', props: ['cave_small', 'camp_skull_trophy'],
     cave: { type: 'beast_den', entrances: [[2850, 1520]], lv: [21, 24], lore: 'Вожак стаи Седогрив уносит оленей из загона Снежного Предела.' } },
   { id: 'cave_crooked_fang', ru: 'Нора Кривого Клыка', kind: 'cave', anchor: [2700, 2560], purpose: 'гоблинская пещера у южного подножия Кряжа', props: ['cave_medium', 'camp_torch', 'camp_crates'],
     cave: { type: 'goblin_cave', entrances: [[2700, 2560]], lv: [7, 10], lore: 'Гоблины грабят обозы на Северном тракте и прячут добычу здесь.' } },
+  { id: 'cave_heart_gate', ru: 'Врата Сердца', kind: 'cave', anchor: [3650, 6120], purpose: 'вход в подземный комплекс под Разломом — акт IV', props: ['cave_ruins', 'temple_pillar', 'obelisk', 'mushrooms_glow'],
+    cave: { type: 'big_dungeon', entrances: [[3650, 6120], [3400, 6100]], lv: [46, 50], lore: 'Разлом — это шрам Раскола. Под Мостом над Бездной орден Инея пробил ход к Сердцу Земли; после катастрофы его завалило. Второй вход — расщелина западнее, откуда сочится свет.' } },
   { id: 'cave_root_burrows', ru: 'Корневые Норы', kind: 'cave', anchor: [1750, 3350], purpose: 'норы корневиков под Западным Гребнем', props: ['cave_small', 'mushrooms_glow', 'fallen_tree'],
-    cave: { type: 'beast_den', entrances: [[1750, 3350]], lv: [9, 12], lore: 'Корни Дремучего Леса оживают — друид из Зеленодола просит найти сердце рощи.' } },
+    cave: { type: 'beast_den', entrances: [[1750, 3350]], lv: [17, 20], lore: 'Корни Дремучего Леса оживают — друид из Зеленодола просит найти сердце рощи.' } },
   { id: 'cave_old_adit', ru: 'Старая Штольня', kind: 'cave', anchor: [3060, 2520], purpose: 'заброшенный рудник сквозь Кряж (тайный путь)', props: ['cave_mine', 'mine_rails', 'mine_support', 'mine_lantern'],
     cave: { type: 'mine', entrances: [[3060, 2520], [3060, 1930]], lv: [14, 18], lore: 'Рудокопы ушли 40 лет назад, но кирки в темноте стучат до сих пор.' } },
   { id: 'cave_quiet_grotto', ru: 'Тихий Грот', kind: 'cave', anchor: [6250, 3520], purpose: 'подземное озеро под валом кратера', props: ['cave_medium', 'cave_pool', 'crystal_cluster'],
@@ -84,7 +90,7 @@ export const SITES: Site[] = [
   { id: 'cave_ice_troll', ru: 'Пещера Ледяного Тролля', kind: 'cave', anchor: [6950, 1480], purpose: 'берлога ледяных троллей на краю Тура', props: ['cave_large', 'camp_skull_trophy'],
     cave: { type: 'beast_den', entrances: [[6950, 1480]], lv: [34, 38], lore: 'Отсюда тролли спускаются на Тур во время бурь.' } },
   { id: 'cave_fjord', ru: 'Грот Китового Зуба', kind: 'cave', anchor: [5120, 900], purpose: 'морская пещера во фьорде', props: ['cave_medium', 'water_driftwood'],
-    cave: { type: 'underground_lake', entrances: [[5120, 900]], lv: [32, 36], lore: 'Берсерки прячут здесь драккар; второй вход — с моря.' } },
+    cave: { type: 'underground_lake', entrances: [[5120, 900]], lv: [42, 46], lore: 'Берсерки прячут здесь драккар; второй вход — с моря.' } },
 ];
 
 /** Спокойные пустые зоны: без лагерей и объектов — место для отдыха игрока, видов и будущих событий. validate.ts следит, чтобы в радиусе не было лагерей. */

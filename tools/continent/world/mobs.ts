@@ -134,6 +134,11 @@ export const CAMPS: Camp[] = [
   // ─── Столовые Горы (38–42) ───
   C('c83', 'Призраки Города Солнца', 'table_mountains', [3420, 6560], 'ruin', [g('shadow_ghost', 4, 39, 41)], 40, ['temple_pillar', 'ruin_columns', 'obelisk'], 'q_sun_city', 'тени жителей древнего города', { site: 'ruin_sun_city' }),
   C('c84', 'Храм Солнца', 'table_mountains', [3270, 6630], 'cave', [g('skeleton_miner', 4, 39, 41)], 25, ['temple', 'temple_pillar', 'statue'], 'q_sun_stone', 'мёртвые храмовые каменотёсы', { site: 'cave_sun_temple' }),
+  // ─── Этап 6: стражи святилищ и Сердца (основной сюжет) ───
+  C('c90', 'Порченые корни святилища', 'west_ridge', [1700, 3150], 'ruin', [g('root_spider', 5, 19, 21), g('root_spider', 1, 22, 22, 'Гнилое Сердцевинье')], 30, ['tree_big', 'mushrooms_glow'], 'mq1_10', 'корни святилища взбесились, когда печать ослабла', { site: 'shrine_root', unique: true }),
+  C('c91', 'Стражи Святилища Песков', 'dune_sea', [1300, 6400], 'ruin', [g('sand_scorpion', 4, 34, 36), g('shadow_ghost', 2, 35, 36)], 35, ['obelisk', 'temple_pillar'], 'mq2_06', 'тени жрецов Солнца и скорпионы у обелиска', { site: 'shrine_sand' }),
+  C('c92', 'Застывший караул', 'ice_crown', [2900, 1400], 'ruin', [g('ice_knight', 4, 43, 45), g('ice_knight', 1, 46, 46, 'Сотник Хладомир')], 30, ['biome_snow', 'statue', 'camp_banner'], 'mq3_06', 'рыцари ордена стерегут третье святилище', { site: 'shrine_frost', unique: true }),
+  C('c89', 'Стража Сердца', 'crimson_rift', [3650, 6120], 'cave', [g('skeleton_miner', 3, 46, 48), g('shadow_ghost', 4, 47, 49), g('shadow_ghost', 1, 50, 50, 'Эхо Раскола')], 30, ['cave_ruins', 'temple_pillar', 'mushrooms_glow'], 'mq4_02', 'мёртвые каменотёсы ордена и эхо катастрофы у Врат', { site: 'cave_heart_gate', unique: true, danger: 'уровень 46–50 на дне каньона зоны 28–32: свет из расщелины и кости у входа' }),
 ];
 
 /** Виды, которых требует концепция, но нет в каталоге игры: НЕ расставлены, нужны новые модели/статы. */

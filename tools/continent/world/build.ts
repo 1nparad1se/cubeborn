@@ -17,6 +17,11 @@ import { CAMPS } from './mobs';
 import { REGION_POLYS } from './regions';
 import { CREATURES } from '../../../src/data/bestiary';
 import { creatureStats, creatureById } from '../../../src/data/creatureStats';
+import { LORE, MAIN, ENDINGS } from './story';
+import { QUESTS, QUEST_TYPE_RU } from './quests';
+import { NPCS } from './npcs';
+import { SECRETS, SECRET_KIND_RU } from './secrets';
+import { makeResolver, targetOf } from './refs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const M = loadMaps();
@@ -159,8 +164,27 @@ const out = {
   villages: villagesOut, sites: sitesOut, sideRoads: SIDE_ROADS, camps: campsOut, calmAreas: CALM_AREAS,
   species: CREATURES.map(c => ({ id: c.id, ru: c.name.ru, category: c.category, camps: campsOut.filter(q => q.groups.some(g => g.species === c.id)).length, used: used.has(c.id) })),
 };
+// ─── Этап 6: сюжет, задания, NPC, тайны — с координатами из данных мира ───
+const F = JSON.parse(readFileSync(join(HERE, '..', 'viewer', 'public', 'data', 'features.json'), 'utf8'));
+const res = makeResolver(out, F, SECRETS);
+const placeOf = (village: string | null, at: string): P | null => {
+  if (at.startsWith('site:')) { const s = sitesOut.find(q => q.id === at.slice(5)); return s ? s.at : null; }
+  const v = villagesOut.find(q => q.id === village); const b = v?.buildings.find(q => q.id === at); return b ? b.at : null;
+};
+const npcsOut = NPCS.map(n => ({ ...n, at: placeOf(n.village, n.home), schedule: n.schedule.map(sl => ({ ...sl, pos: placeOf(n.village, sl.at) })) }));
+const npcAt = (id: string) => npcsOut.find(n => n.id === id)?.at ?? null;
+const locs = (loc: string[]) => loc.map(r => { const q = res(r); return q ? { ref: r, ru: q.ru, at: q.at ? R2(q.at) : null, line: q.line } : { ref: r, ru: '?', at: null, line: false }; });
+const regionAt = (p: P | null) => p ? REGION_POLYS[M.region[M.ci(p[0], p[1])]]?.id ?? null : null;
+const storyOut = {
+  lore: LORE, endings: ENDINGS,
+  main: MAIN.map(m => { const t = targetOf(m.loc); const tp = t ? res(t)?.at ?? null : null; return { ...m, locs: locs(m.loc), target: t, at: tp ? R2(tp) : null, region: regionAt(tp), giverAt: npcAt(m.giver) }; }),
+};
+const questsOut = QUESTS.map(q => { const t = targetOf(q.loc); const tp = t ? res(t)?.at ?? null : null; return { ...q, typeRu: QUEST_TYPE_RU[q.type], locs: locs(q.loc), target: t, at: tp ? R2(tp) : null, region: regionAt(tp), giverAt: npcAt(q.giver) }; });
+const secretsOut = SECRETS.map(s => ({ ...s, kindRu: SECRET_KIND_RU[s.kind], region: regionAt(s.at) }));
+Object.assign(out, { story: storyOut, quests: questsOut, npcs: npcsOut, secrets: secretsOut });
 writeFileSync(join(HERE, 'generated.json'), JSON.stringify(out, null, 1));
 const vd = join(HERE, '..', 'viewer', 'public', 'data'); mkdirSync(vd, { recursive: true });
 writeFileSync(join(vd, 'world.json'), JSON.stringify(out));
+console.log(`story ${MAIN.length} steps, quests ${QUESTS.length}, npcs ${NPCS.length}, secrets ${SECRETS.length}`);
 console.log(`villages: ${villagesOut.map(v => `${v.ru} ${v.buildings.length}`).join(', ')}; sites ${sitesOut.length}; camps ${campsOut.length}; species ${used.size}/${CREATURES.length}`);
 void clamp; void SEA;

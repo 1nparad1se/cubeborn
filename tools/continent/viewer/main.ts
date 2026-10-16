@@ -20,7 +20,14 @@ interface World {
   villages: { ru: string; buildings: { ru: string; type: string; at: P; size: [number, number]; rot: number }[] }[];
   sites: { id: string; ru: string; kind: string; at: P; cave?: { typeRu: string; lv: [number, number]; entrances: { at: P }[] } }[];
   camps: { id: string; ru: string; at: P; lvMin: number; lvMax: number; total: number; patrolR: number; unique: boolean; danger: string | null }[];
+  story?: { main: Step[] }; quests?: Quest[]; secrets?: Secret[];
+  npcs?: { id: string; ru: string; role: string; at: P | null; note: string; schedule: { h: number; at: string; doing: string }[] }[];
 }
+interface Loc { ref: string; ru: string; at: P | null }
+interface Step { id: string; act: number; ru: string; giver: string; lv: number; at: P | null; locs: Loc[]; objectives: string[]; choices: string[]; rewards: string; consequences: string; requires: string[] }
+interface Quest { id: string; ru: string; giver: string; lv: number; at: P | null; locs: Loc[]; typeRu: string; backstory: string; goal: string; steps: string[]; solutions: string[]; reward: string; consequences: string }
+interface Secret { id: string; ru: string; kindRu: string; at: P; lv: number; hint: string; content: string; boss?: { name: string; lv: number } }
+const esc = (t: string) => t.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]!));
 const lvCol = (lv: number) => { const t = Math.min(1, Math.max(0, (lv - 1) / 49)); return `hsl(${Math.round(120 - t * 120)},85%,${t > 0.85 ? 42 : 52}%)`; };
 
 const PAL = ['#2a5d8f', '#3f86b8', '#e8d9a0', '#8cc04f', '#4f8f3a', '#5f7a45', '#a3b866', '#3f6e48', '#cdbf6c',
@@ -44,7 +51,7 @@ const ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 60000);
 let camera: THREE.Camera = persp;
 let controls: OrbitControls = new OrbitControls(persp as THREE.Camera, renderer.domElement);
 
-const state = { color: 'biome', ex: 1.5, top: false, layers: { water: true, roads: true, regions: true, regionNames: true, places: true, ridges: false, grid: false, side: true, buildings: true, caves: true, camps: true, regionPoly: false } as Record<string, boolean> };
+const state = { color: 'biome', ex: 1.5, top: false, layers: { water: true, roads: true, regions: true, regionNames: true, places: true, ridges: false, grid: false, side: true, buildings: true, caves: true, camps: true, regionPoly: false, mainQuests: true, sideQuests: false, npcs: false, secrets: false } as Record<string, boolean> };
 
 async function loadImageData(url: string): Promise<ImageData> {
   const blob = await (await fetch(url)).blob();
@@ -302,8 +309,20 @@ async function main() {
   const labels: Lbl[] = [];
   const addLabel = (html: string, cls: string, at: P, layer: string, lift = 0) => {
     const el = document.createElement('div'); el.className = 'lbl ' + cls; el.innerHTML = html; labelsEl.appendChild(el);
-    labels.push({ el, x: at[0], z: at[1], y: H(at[0], at[1]) + lift, layer });
+    labels.push({ el, x: at[0], z: at[1], y: H(at[0], at[1]) + lift, layer }); return el;
   };
+  // ─── карточки заданий, NPC, тайн ───
+  const card = document.getElementById('card')!;
+  const npcName = (id: string) => world.npcs?.find(n => n.id === id)?.ru ?? id;
+  const list = (h: string, a: string[]) => a.length ? `<h3>${h}</h3><ul>${a.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : '';
+  const locHtml = (l: Loc[]) => l.map(q => `${esc(q.ru)}${q.at ? ` <small>(${Math.round(q.at[0])}, ${Math.round(q.at[1])})</small>` : ''}`).join(' · ');
+  const cards = new Map<string, string>();
+  for (const m of world.story?.main ?? []) cards.set(m.id, `<div class="tag main">Основной сюжет · акт ${m.act}</div><h2>${esc(m.ru)}</h2><div class="meta">${m.id} · ур. ${m.lv} · даёт: ${esc(npcName(m.giver))}</div><p><b>Где:</b> ${locHtml(m.locs)}</p>${list('Цели', m.objectives)}${list('Выбор', m.choices)}<p><b>Награда:</b> ${esc(m.rewards)}</p><p><b>Последствия:</b> ${esc(m.consequences)}</p>${m.requires.length ? `<p class="meta">после: ${m.requires.join(', ')}</p>` : ''}`);
+  for (const q of world.quests ?? []) cards.set(q.id, `<div class="tag side">Побочное · ${esc(q.typeRu)}</div><h2>${esc(q.ru)}</h2><div class="meta">${q.id} · ур. ${q.lv} · даёт: ${esc(npcName(q.giver))}</div><p><b>Где:</b> ${locHtml(q.locs)}</p><p><b>Предыстория:</b> ${esc(q.backstory)}</p><p><b>Цель:</b> ${esc(q.goal)}</p>${list('Этапы', q.steps)}${list('Варианты решения', q.solutions)}<p><b>Награда:</b> ${esc(q.reward)}</p><p><b>Последствия:</b> ${esc(q.consequences)}</p>`);
+  for (const n of world.npcs ?? []) cards.set('npc:' + n.id, `<div class="tag npc">NPC</div><h2>${esc(n.ru)}</h2><div class="meta">${esc(n.role)}</div>${list('Распорядок', n.schedule.map(sl => `${String(sl.h).padStart(2, '0')}:00 — ${sl.at}: ${sl.doing}`))}<p>${esc(n.note)}</p>`);
+  for (const t of world.secrets ?? []) cards.set(t.id, `<div class="tag secret">Тайна · ${esc(t.kindRu)}</div><h2>${esc(t.ru)}</h2><div class="meta">ур. ${t.lv}${t.boss ? ` · мини-босс ${esc(t.boss.name)} (${t.boss.lv})` : ''}</div><p><b>Подсказка:</b> ${esc(t.hint)}</p><p>${esc(t.content)}</p>`);
+  const openCard = (id: string) => { const h = cards.get(id); if (!h) return; card.innerHTML = `<button class="x" title="Закрыть">×</button>${h}`; card.style.display = 'block'; card.querySelector('button')!.onclick = () => { card.style.display = 'none'; }; };
+  const clickable = (el: HTMLDivElement, id: string) => { el.classList.add('click'); el.onclick = () => openCard(id); };
   for (const v of feat.villages) addLabel(v.ru, 'village', v.at, 'places');
   for (const l of feat.landmarks) if (l.kind !== 'canyon') addLabel(l.ru, 'landmark', l.at, 'places', 6);
   addLabel('Каньон Багровый Разлом', 'ridge', [3300, 6150], 'places');
@@ -314,6 +333,10 @@ async function main() {
   for (const r of feat.ridges) addLabel(r.ru, 'ridge', r.at, 'ridges', 40);
   for (const s of world.sites) if (s.cave) addLabel(`${s.ru}<small>${s.cave.typeRu} · ур. ${s.cave.lv[0]}–${s.cave.lv[1]} · входов ${s.cave.entrances.length}</small>`, 'cave', s.at, 'caves', 4);
   else addLabel(s.ru, 'site', s.at, 'places', 3);
+  for (const m of world.story?.main ?? []) if (m.at) clickable(addLabel(`<b>!</b> ${esc(m.ru)}<small>${m.id} · ур. ${m.lv}</small>`, 'qmain', m.at, 'mainQuests', 10), m.id);
+  for (const q of world.quests ?? []) if (q.at) clickable(addLabel(`<b>?</b> ${esc(q.ru)}<small>ур. ${q.lv}</small>`, 'qside', q.at, 'sideQuests', 8), q.id);
+  for (const n of world.npcs ?? []) if (n.at) clickable(addLabel(esc(n.ru), 'npc', n.at, 'npcs', 4), 'npc:' + n.id);
+  for (const t of world.secrets ?? []) clickable(addLabel(`✦ ${esc(t.ru)}`, 'secret', t.at, 'secrets', 4), t.id);
   for (const c of world.camps) addLabel(`<span style="color:${lvCol(c.lvMax)}">${c.ru}</span><small>ур. ${c.lvMin}–${c.lvMax} · ${c.total} шт.${c.unique ? ' · уникальный' : ''}</small>`, 'camp', c.at, 'camps', 3);
   const v3 = new THREE.Vector3();
   const updateLabels = () => {
@@ -350,7 +373,9 @@ async function main() {
     <h2>Мир (этапы 3–5)</h2><div><i class="sw" style="background:#c0703a"></i>Здания деревень</div>
     <div><i class="sw" style="background:#1a1a1a;border-color:#ffb347"></i>Вход в пещеру / подземелье</div>
     <div>Лагеря по уровню: ${[1, 10, 20, 30, 40, 50].map(l => `<i class="sw" style="background:${lvCol(l)}"></i>${l}`).join(' ')}</div>
-    <div><i class="sw" style="background:#888;border:2px solid #f0f"></i>Уникальный (без респавна)</div>`;
+    <div><i class="sw" style="background:#888;border:2px solid #f0f"></i>Уникальный (без респавна)</div>
+    <h2>Сюжет (этап 6)</h2><div><i class="sw" style="background:#ffb400;border-radius:50%"></i>Основной сюжет · <i class="sw" style="background:#3d8fe0;border-radius:50%"></i>Побочное</div>
+    <div><i class="sw" style="background:#b8f5b0"></i>NPC · <i class="sw" style="background:#e6b3ff"></i>Тайна</div>`;
 
   // ─── виды ───
   const VIEWS: Record<string, { ru: string; t: P; d: number; az: number; el: number; top?: boolean; mode?: string }> = {
@@ -446,6 +471,6 @@ async function main() {
   const qs = new URLSearchParams(location.search);
   setView(qs.get('view') ?? 'overview');
   document.getElementById('loading')!.remove();
-  (window as unknown as Record<string, unknown>).continent = { setView: (n: Parameters<typeof setView>[0]) => { setView(n); renderNow(); }, setLayer: (n: string, on: boolean) => { setLayer(n, on); renderNow(); }, setMode, renderNow, frames: () => frames, busy: () => detail.busy, ready: true };
+  (window as unknown as Record<string, unknown>).continent = { setView: (n: Parameters<typeof setView>[0]) => { setView(n); renderNow(); }, setLayer: (n: string, on: boolean) => { setLayer(n, on); renderNow(); }, setMode, renderNow, openCard, frames: () => frames, busy: () => detail.busy, ready: true };
 }
 main().catch(e => { document.getElementById('loading')!.textContent = 'Ошибка загрузки: ' + e; console.error(e); });

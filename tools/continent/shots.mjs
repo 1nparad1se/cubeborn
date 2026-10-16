@@ -11,7 +11,7 @@ const out = process.argv[2] || '/tmp/claude-0/continent_shots';
 await mkdir(out, { recursive: true });
 const req = createRequire(import.meta.url);
 let pw; try { pw = req('playwright'); } catch { pw = req('/opt/node-tools/node_modules/playwright'); }
-const types = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.png': 'image/png', '.bin': 'application/octet-stream' };
+const types = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.png': 'image/png', '.bin': 'application/octet-stream', '.wasm': 'application/wasm' };
 const srv = createServer(async (q, r) => {
   const p = join(site, decodeURIComponent(q.url.split('?')[0]).replace(/\/$/, '/index.html'));
   try { const b = await readFile(p); r.writeHead(200, { 'content-type': types[extname(p)] || 'application/octet-stream' }); r.end(b); } catch { r.writeHead(404); r.end(); }
@@ -26,8 +26,11 @@ await page.waitForFunction(() => window.continent && window.continent.ready, nul
 const custom = process.env.CUSTOM ? JSON.parse(process.env.CUSTOM) : null; // {name: {t,d,az,el,mode}}
 const shots = custom ? Object.keys(custom) : (process.env.SHOTS || 'overview,topBiome,topHeight,north,canyon,falls,rift,zelenodol,snezhny,peschany').split(',');
 for (const v of shots) {
+  const cv = custom ? custom[v] : null;
+  if (cv && cv.layers) for (const [l, on] of Object.entries(cv.layers)) await page.evaluate(([l, on]) => window.continent.setLayer(l, on), [l, on]);
   await page.evaluate(n => window.continent.setView(n), custom ? custom[v] : v);
   await page.waitForTimeout(200); await page.waitForFunction(() => !window.continent.busy(), null, { timeout: 300000 }); await page.evaluate(() => window.continent.renderNow());
+  await page.evaluate(id => { const c = document.getElementById('card'); if (c) c.style.display = 'none'; if (id) window.continent.openCard(id); }, cv && cv.card ? cv.card : null);
   await page.screenshot({ timeout: 300000, animations: 'disabled', path: join(out, `${v}.jpg`), type: 'jpeg', quality: 85 });
   console.log('shot', v);
 }

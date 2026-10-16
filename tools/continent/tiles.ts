@@ -5,7 +5,7 @@
  *
  * Формат тайла t_X_Y.png (RGB8): R,G = высота Y×16 (uint16, старший/младший байт), B = материал (см. MAT в docs).
  *   npx tsx tools/continent/tiles.ts --all        → tools/continent/out/tiles/ (все тайлы, для движка) + хеш
- *   npx tsx tools/continent/tiles.ts --site       → tools/continent/viewer/public/data/tiles/ (подмножество для просмотрщика)
+ *   npx tsx tools/continent/tiles.ts --site       → tools/continent/viewer/public/data/atlas/a_X_Y.png (64 атласа 1024², по 4×4 тайла; manifest в data/tiles/)
  */
 import { mkdirSync, readFileSync, writeFileSync, existsSync, unlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -145,13 +145,28 @@ if (shardArg) {
   // дочерний процесс: свой срез тайлов
   const [k, n] = shardArg.slice(8).split('/').map(Number);
   const fn = makeTileFn(); const res: Record<string, [string, number]> = {};
-  list.forEach(([tx, ty], i) => {
+  if (!all) {
+    // сайт: атласы 4×4 тайла (статический хостинг ограничивает число файлов)
+    const adir = join(HERE, 'viewer', 'public', 'data', 'atlas'); mkdirSync(adir, { recursive: true });
+    const A = TILES / 4, AW = TILE * 4;
+    for (let ai = k; ai < A * A; ai += n) {
+      const ax = ai % A, ay = Math.floor(ai / A); const rgb = new Uint8Array(AW * AW * 3);
+      for (let dy = 0; dy < 4; dy++) for (let dx = 0; dx < 4; dx++) {
+        const tx = ax * 4 + dx, ty = ay * 4 + dy; const { hOut, mat } = fn(tx, ty);
+        for (let z = 0; z < TILE; z++) for (let x = 0; x < TILE; x++) { const i = z * TILE + x, o = ((dy * TILE + z) * AW + dx * TILE + x) * 3; rgb[o] = hOut[i] >> 8; rgb[o + 1] = hOut[i] & 255; rgb[o + 2] = mat[i]; }
+        res[`t_${tx}_${ty}`] = [createHash('sha256').update(Buffer.from(hOut.buffer)).update(mat).digest('hex'), 0];
+      }
+      const png = encodePNG(AW, AW, rgb, 3, 8, 2); writeFileSync(join(adir, `a_${ax}_${ay}.png`), png);
+      res[`t_${ax * 4}_${ay * 4}`][1] = png.length;
+    }
+    writeFileSync(join(dir, `.shard${k}.json`), JSON.stringify(res));
+  } else list.forEach(([tx, ty], i) => {
     if (i % n !== k) return;
     const { hOut, mat } = fn(tx, ty); const png = packTile(hOut, mat); const key = `t_${tx}_${ty}`;
     writeFileSync(join(dir, key + '.png'), png);
     res[key] = [createHash('sha256').update(Buffer.from(hOut.buffer)).update(mat).digest('hex'), png.length];
   });
-  writeFileSync(join(dir, `.shard${k}.json`), JSON.stringify(res));
+  if (all) writeFileSync(join(dir, `.shard${k}.json`), JSON.stringify(res));
 } else {
   const n = Math.max(1, Number(process.env.THREADS ?? 4)); const t0 = Date.now();
   await Promise.all(Array.from({ length: n }, (_, k) => new Promise<void>((res, rej) => {
