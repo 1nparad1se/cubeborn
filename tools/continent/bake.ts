@@ -613,7 +613,7 @@ writeFileSync(join(OUT, 'regions_2048.png'), encodePNG(N, N, region, 1, 8));
 const majorPng = new Uint8Array(N * N); for (let i = 0; i < N * N; i++) majorPng[i] = major[i];
 writeFileSync(join(OUT, 'major_biome_2048.png'), encodePNG(N, N, majorPng, 1, 8));
 // для просмотрщика: высоты — сырой Uint16 LE (Y*64), индексы — PNG
-writeFileSync(join(VDATA, 'height_2048.bin'), Buffer.from(hU16.buffer));
+writeFileSync(join(VDATA, 'height_2048.wasm'), Buffer.from(hU16.buffer));
 // упакованные индексы: R = подбиом, G = вода, B = регион (255 = нет)
 const pack = new Uint8Array(N * N * 3); for (let i = 0; i < N * N; i++) { pack[i * 3] = biome[i]; pack[i * 3 + 1] = water[i] | (roadMask[i] << 4); pack[i * 3 + 2] = region[i]; }
 writeFileSync(join(VDATA, 'maps_2048.png'), encodePNG(N, N, pack, 3, 8));

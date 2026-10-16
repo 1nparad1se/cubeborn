@@ -49,7 +49,7 @@ async function loadImageData(url: string): Promise<ImageData> {
 
 async function main() {
   const [hbuf, maps, feat] = await Promise.all([
-    fetch('./data/height_2048.bin').then(r => r.arrayBuffer()),
+    fetch('./data/height_2048.wasm').then(r => r.arrayBuffer()),
     loadImageData('./data/maps_2048.png'),
     fetch('./data/features.json').then(r => r.json() as Promise<Feat>),
   ]);
