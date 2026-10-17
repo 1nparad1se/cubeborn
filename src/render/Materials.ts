@@ -1,9 +1,9 @@
 import * as THREE from 'three';
 
-export interface VoxelMatOptions {
+interface VoxelMatOptions {
   map?: THREE.Texture;
   instanced?: boolean;
-  /** Adds a uniform flash amount (for single meshes like the hero/bosses). */
+  /** Adds a uniform flash amount (for single meshes like the hero). */
   flashUniform?: { value: number };
   transparent?: boolean;
   opacity?: number;
@@ -62,9 +62,4 @@ export function makeGlowMaterial(map?: THREE.Texture, depthTest = true): THREE.M
     depthTest,
     side: THREE.DoubleSide,
   });
-}
-
-/** Unlit opaque material with vertex colors (projectiles, glowing blocks). */
-export function makeUnlitMaterial(map?: THREE.Texture): THREE.MeshBasicMaterial {
-  return new THREE.MeshBasicMaterial({ vertexColors: true, map: map ?? null });
 }

@@ -1,6 +1,4 @@
-import { groundTile } from '../world/textures/groundTiles';
 import * as THREE from 'three';
-import { TILE_COUNT } from './VoxelFlora';
 import { hash2 } from '../core/Rng';
 
 /** Small grayscale "pixel" texture applied to every voxel face for a crafted block look. */
@@ -26,35 +24,6 @@ export function makeBlockTexture(px = 8): THREE.DataTexture {
 }
 
 
-
-/**
- * 16px grayscale texture for terrain blocks: clustered stone-like shading, a soft bevel
- * (light top-left, dark bottom-right) and faint cracks, in the style of hand-painted voxel art.
- */
-export function makeTerrainBlockTexture(): THREE.DataTexture {
-  const px = 16;
-  const data = new Uint8Array(px * px * 4);
-  for (let y = 0; y < px; y++)
-    for (let x = 0; x < px; x++) {
-      // 2x2 clusters read as painted pixels rather than noise
-      const cl = hash2(x >> 1, y >> 1, 21);
-      let v = 0.8 + cl * 0.16 + hash2(x, y, 22) * 0.06;
-      if (x === 0 || y === px - 1) v *= 1.08;
-      if (x === px - 1 || y === 0) v *= 0.8;
-      if (hash2(x, y >> 2, 23) > 0.93) v *= 0.82;
-      const i = (y * px + x) * 4;
-      data[i] = data[i + 1] = data[i + 2] = Math.round(Math.min(1, v) * 255);
-      data[i + 3] = 255;
-    }
-  const tex = new THREE.DataTexture(data, px, px, THREE.RGBAFormat);
-  tex.magFilter = THREE.NearestFilter;
-  tex.minFilter = THREE.NearestMipmapLinearFilter;
-  tex.generateMipmaps = true;
-  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.needsUpdate = true;
-  return tex;
-}
 
 /** Soft round blob used for shadows and glows. */
 export function makeBlobTexture(): THREE.CanvasTexture {
@@ -89,11 +58,11 @@ type Px = (x: number, y: number) => number;
 const H = (x: number, y: number, s: number) => hash2(((x % 16) + 16) % 16, ((y % 16) + 16) % 16, s);
 
 /** Ground tile families: each draws its own pixel pattern. */
-export type GroundFam =
+type GroundFam =
   | 'grass' | 'dirt' | 'path' | 'cobble' | 'slab' | 'tile' | 'snow' | 'sand' | 'ash' | 'basalt'
   | 'rock' | 'sulfur' | 'ice' | 'water' | 'lava' | 'bog' | 'void' | 'rune' | 'bone';
 
-export function groundFamily(name: string): GroundFam {
+function groundFamily(name: string): GroundFam {
   if (/grass|moss/.test(name)) return 'grass';
   if (/^dirt/.test(name)) return 'dirt';
   if (/path|trail/.test(name)) return 'path';
@@ -288,8 +257,7 @@ export function makeGroundAtlas(tileNames: string[], tiles: Record<string, numbe
     img.data[i + 3] = 255;
   };
   tileNames.forEach((name, ti) => {
-    const custom = groundTile(name);
-    const colors = tiles[name] ?? custom?.colors ?? [0x777777];
+    const colors = tiles[name] ?? [0x777777];
     const fam = groundFamily(name);
     const pat = PATTERN[fam];
     const [kind, soil, stone] = soilOf(fam, blocks, tiles);
@@ -299,8 +267,7 @@ export function makeGroundAtlas(tileNames: string[], tiles: Record<string, numbe
       const f = pat(11 + ti * 7 + v * 131);
       // variants stay close to the main colour so blocks read as one surface, not a checkerboard
       const c = vc.setHex(colors[0]).lerp(new THREE.Color(colors[v % colors.length]), 0.45).getHex();
-      if (custom) for (let y = 0; y < TILE_PX; y++) for (let x = 0; x < TILE_PX; x++) put(ti, v, x, y, custom.paint(x, y, v), 1);
-      else for (let y = 0; y < TILE_PX; y++) for (let x = 0; x < TILE_PX; x++) put(ti, v, x, y, c, f(x, y));
+      for (let y = 0; y < TILE_PX; y++) for (let x = 0; x < TILE_PX; x++) put(ti, v, x, y, c, f(x, y));
     }
     // rim: the top layer hanging over the soil in a ragged strip
     const topPat = pat(17 + ti * 7);
@@ -330,189 +297,6 @@ export function makeGroundAtlas(tileNames: string[], tiles: Record<string, numbe
   tex.generateMipmaps = false;
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
-}
-
-/**
- * 16px block textures in one strip (tiles in VoxelFlora.TILE order), grey so the per-block
- * colour tints them. Leaves have a few see-through pixels (alpha-tested).
- */
-export function makeBlockAtlas(): THREE.DataTexture {
-  const px = 16;
-  const tiles = TILE_COUNT;
-  const W = px * tiles;
-  const data = new Uint8Array(W * px * 4);
-  const set = (t: number, x: number, y: number, v: number, a = 255) => {
-    const i = (y * W + t * px + x) * 4;
-    const sv = 0.92 + (v - 0.92) * 0.85;
-    data[i] = data[i + 1] = data[i + 2] = Math.round(Math.min(1, Math.max(0, sv)) * 255);
-    data[i + 3] = a;
-  };
-  const cob = PATTERN.cobble(61);
-  const rock = PATTERN.rock(62);
-  const basalt = PATTERN.basalt(63);
-  for (let y = 0; y < px; y++)
-    for (let x = 0; x < px; x++) {
-      const n = H(x, y, 61);
-      // 0 smooth block with a soft bevel (gold, crystal, lamps)
-      let v = 0.9 + n * 0.06;
-      if (x === 0 || y === 0) v = 1;
-      if (x === px - 1 || y === px - 1) v = 0.8;
-      set(0, x, y, v);
-      // 1 leaves: dense two-tone clumps, a few holes
-      const clump = H(x >> 1, y >> 1, 64);
-      const lr = H(x, y, 65);
-      let lv = clump > 0.45 ? 0.98 : 0.8;
-      if (lr > 0.86) lv = 1.08;
-      else if (lr < 0.14) lv = 0.62;
-      const hole = H(x, y, 66) > 0.95;
-      set(1, x, y, lv, hole ? 0 : 255);
-      // 2 bark: vertical grooves
-      const gcol = H(x, 0, 67);
-      let bv = 0.84 + H(x, y >> 2, 68) * 0.14;
-      if (gcol < 0.28) bv = 0.68;
-      set(2, x, y, bv);
-      // 3 planks: four boards with seams and offset end joints
-      const row = y >> 2;
-      let pv = 0.88 + H(row, 0, 69) * 0.08 + (H(x >> 2, y, 70) - 0.5) * 0.06;
-      if ((y & 3) === 3) pv = 0.66;
-      if (x === ((row * 7 + 3) & 15)) pv = 0.72;
-      set(3, x, y, pv);
-      // 4 cobblestone
-      set(4, x, y, cob(x, y));
-      // 5 bricks: dark bricks with lighter mortar
-      const br = y >> 2;
-      const bx = (x + (br & 1) * 4) & 7;
-      let kv = 0.8 + H((x + (br & 1) * 4) >> 3, br, 72) * 0.12 + n * 0.04;
-      if ((y & 3) === 3 || bx === 7) kv = 1;
-      set(5, x, y, kv);
-      // 6 shingles
-      const sr = y >> 2;
-      const sx = (x + (sr & 1) * 2) & 3;
-      let shv = 0.86 + H((x + (sr & 1) * 2) >> 2, sr, 73) * 0.12 + n * 0.03;
-      if ((y & 3) === 0) shv = 0.64;
-      if (sx === 0) shv *= 0.84;
-      set(6, x, y, shv);
-      // 7 log top rings
-      const d = Math.max(Math.abs(x - 7.5), Math.abs(y - 7.5));
-      set(7, x, y, d > 6.5 ? 0.66 : 0.84 + ((Math.floor(d) & 1) ? 0.08 : 0) + n * 0.04);
-      // 8 birch bark: white with short dark streaks
-      const streak = H(x >> 2, y, 74) > 0.8 || H(x >> 1, y >> 1, 75) > 0.94;
-      set(8, x, y, streak ? 0.2 + n * 0.1 : 0.98);
-      // 9 sandstone: smooth top band, layered body, dark base line
-      let ss = 0.92 + H(x, y >> 1, 76) * 0.06;
-      if (y < 3) ss = 1;
-      if (y === 3 || y === 12) ss = 0.8;
-      if (y > 12) ss = 0.88 + n * 0.04;
-      set(9, x, y, ss);
-      // 10 stone bricks: four bricks with dark mortar and a bevel
-      const sbr = y >> 3;
-      const sbx = (x + (sbr & 1) * 8) & 15;
-      let sb = 0.9 + H((x + (sbr & 1) * 8) >> 4, sbr, 77) * 0.06 + n * 0.05;
-      if ((y & 7) === 7 || sbx === 15) sb = 0.62;
-      else if ((y & 7) === 0 || sbx === 0) sb = 1.02;
-      if (H(x, y, 78) > 0.96) sb *= 0.85; // cracks
-      set(10, x, y, sb);
-      // 11 ice: pale with light diagonal streaks
-      let iv = 0.94 + n * 0.04;
-      if ((x + y) % 9 === 0) iv = 1.04;
-      set(11, x, y, iv);
-      // 12 obsidian: dark with bright specks
-      const ov = H(x, y, 79) > 0.9 ? 1.18 : 0.84 + H(x >> 1, y >> 1, 80) * 0.12;
-      set(12, x, y, ov);
-      // 13 snow block
-      set(13, x, y, 0.96 + n * 0.04);
-      // 14 pillar: fluted column (marble, bone)
-      let plv = 0.93 + H(x, y >> 2, 81) * 0.04;
-      if (x === 0 || x === 15) plv = 0.78;
-      else if (x % 5 === 0) plv = 0.84;
-      else if (x % 5 === 1) plv = 1.02;
-      set(14, x, y, plv);
-      // 15 basalt / rough stone
-      set(15, x, y, (x + y) % 2 ? basalt(x, y) : rock(x, y));
-    }
-  drawDetailTiles(data, W, px);
-  const tex = new THREE.DataTexture(data, W, px, THREE.RGBAFormat);
-  tex.magFilter = THREE.NearestFilter;
-  tex.minFilter = THREE.NearestFilter;
-  tex.generateMipmaps = false;
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.needsUpdate = true;
-  return tex;
-}
-
-/**
- * Full-colour detail tiles 16..23 of the block atlas (windows, doors, lattice, lanterns, hay,
- * flowers, glass). Instances using them carry a white tint; they map once per block.
- */
-function drawDetailTiles(data: Uint8Array, W: number, px: number) {
-  const put = (t: number, x: number, y: number, c: number, a = 255) => {
-    const i = (y * W + t * px + x) * 4;
-    data[i] = (c >> 16) & 255;
-    data[i + 1] = (c >> 8) & 255;
-    data[i + 2] = c & 255;
-    data[i + 3] = a;
-  };
-  const mul = (c: number, k: number) => {
-    const r = Math.min(255, Math.round(((c >> 16) & 255) * k));
-    const g = Math.min(255, Math.round(((c >> 8) & 255) * k));
-    const b = Math.min(255, Math.round((c & 255) * k));
-    return (r << 16) | (g << 8) | b;
-  };
-  for (let y = 0; y < px; y++)
-    for (let x = 0; x < px; x++) {
-      const n = H(x, y, 91);
-      const edge = x === 0 || y === 0 || x === px - 1 || y === px - 1;
-      // 16 window: oak frame with a cross mullion, pale sky glass with a highlight streak
-      {
-        const frame = edge || x === 1 || y === 1 || x === px - 2 || y === px - 2 || x === 7 || x === 8 || y === 7 || y === 8;
-        const glass = (x + y) % 11 === 0 || (x + y) % 11 === 1 ? 0xe8f4ff : mul(0x9cc8e8, 0.92 + n * 0.12);
-        put(16, x, y, frame ? mul(0x8a6438, edge ? 0.75 : 0.95 + n * 0.1) : glass);
-      }
-      // 17 door: vertical oak boards, dark frame, two small panes, an iron handle
-      {
-        let c = mul(0x9a7040, 0.86 + H(x >> 2, y, 92) * 0.14);
-        if (x % 4 === 0) c = mul(0x9a7040, 0.68);
-        if (edge) c = 0x4e3620;
-        if (y >= 2 && y <= 5 && ((x >= 3 && x <= 6) || (x >= 9 && x <= 12))) c = mul(0x9cc8e8, 0.9 + n * 0.1);
-        if (x === 12 && y >= 9 && y <= 10) c = 0x2a2a2e;
-        put(17, x, y, c);
-      }
-      // 18 lattice (trapdoor): brown frame with square holes showing a dark interior
-      {
-        const hole = x % 5 !== 0 && y % 5 !== 0 && !edge;
-        put(18, x, y, hole ? mul(0x5a3e24, 0.7 + n * 0.1) : mul(0xa47844, 0.88 + n * 0.12));
-      }
-      // 19 lantern: dark iron cage around a warm flame
-      {
-        const cage = edge || x === 1 || x === px - 2 || y <= 2 || y >= px - 2;
-        const core = Math.hypot(x - 7.5, y - 8.5) / 6;
-        put(19, x, y, cage ? mul(0x3a3c42, 0.9 + n * 0.2) : mul(0xffd070, 1.15 - core * 0.35));
-      }
-      // 20 dark window: spruce frame, deep blue glass
-      {
-        const frame = edge || x === 1 || y === 1 || x === px - 2 || y === px - 2 || x === 7 || x === 8 || y === 7 || y === 8;
-        const glass = (x + y) % 11 === 0 ? 0x8ab0d8 : mul(0x3a5a7a, 0.9 + n * 0.15);
-        put(20, x, y, frame ? mul(0x5a3e24, edge ? 0.75 : 0.95 + n * 0.1) : glass);
-      }
-      // 21 hay bale: straw with two dark bands
-      {
-        let c = mul(0xd8b44a, 0.82 + H(x, y >> 1, 93) * 0.25);
-        if (y === 4 || y === 11) c = mul(0x8a5a2a, 0.9);
-        put(21, x, y, c);
-      }
-      // 22 flowers: leafy green with red, yellow, pink and white blossoms
-      {
-        let c = mul(0x4f8a34, 0.75 + H(x >> 1, y >> 1, 94) * 0.35);
-        const f = H(x >> 1, y >> 1, 95);
-        if (f > 0.84) c = [0xe04a3a, 0xf0d040, 0xf08ab0, 0xf4f0e8, 0xb06ae0][Math.floor(H(x >> 1, y >> 1, 96) * 5)];
-        put(22, x, y, c);
-      }
-      // 23 glass pane: thin frame, clear glass
-      {
-        const glass = (x + y) % 9 === 0 ? 0xf0f8ff : mul(0xb8d8f0, 0.94 + n * 0.08);
-        put(23, x, y, edge ? 0x8a6438 : glass);
-      }
-    }
 }
 
 /** Foliage sprites (index into makeFoliageAtlas). Grass sprites are grey and tinted per map. */

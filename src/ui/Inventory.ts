@@ -7,7 +7,7 @@ import { RACE_BY_ID } from '../rpg/races';
 const pct = (v: number) => `${v > 0 ? '+' : ''}${Math.round(v * 100)}%`;
 
 /** Stat lines of an item for its tooltip. */
-export function itemLines(def: ItemDef): string[] {
+function itemLines(def: ItemDef): string[] {
   const out: string[] = [];
   const w = def.weapon;
   if (w) {

@@ -3,7 +3,7 @@ import type { MapDef } from '../data/types';
 import type { FxSink } from './types';
 
 /** What the day/night cycle needs from the world it lights. */
-export interface DayNightHost {
+interface DayNightHost {
   map: MapDef;
   fx: FxSink;
   events: { emit(type: 'banner' | 'dayPeriod', payload: string): void };

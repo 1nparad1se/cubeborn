@@ -122,7 +122,7 @@ export const SPR_STAFF2H = outline(
 );
 
 /** Hunting bow, vertical (grip in the middle), string on the right; `drawn` pulls the string with an arrow. */
-export function bowSprite(drawn: boolean): Sprite {
+function bowSprite(drawn: boolean): Sprite {
   const n = 20;
   const px: string[] = new Array(n * n).fill('');
   const set = (x: number, y: number, c: string) => {
@@ -150,7 +150,7 @@ export function bowSprite(drawn: boolean): Sprite {
 }
 
 /** Light crossbow seen from the side: stock along x, prod across; `loaded` shows a bolt. */
-export function crossbowSprite(loaded: boolean): Sprite {
+function crossbowSprite(loaded: boolean): Sprite {
   const n = 20;
   const px: string[] = new Array(n * n).fill('');
   const set = (x: number, y: number, c: string) => {
@@ -197,7 +197,7 @@ export function shieldFace(x: number, y: number, w: number, h: number): string {
 
 // ---------------------------------------------------------------- armor icons
 
-export type ArmorPalette = { a: string; b: string; c: string; d: string };
+type ArmorPalette = { a: string; b: string; c: string; d: string };
 export const ARMOR_PAL: Record<string, ArmorPalette> = {
   // a main, b light, c dark, d trim
   apprentice: { a: '#3c4ea6', b: '#5a70cc', c: '#26306c', d: '#e0b440' },

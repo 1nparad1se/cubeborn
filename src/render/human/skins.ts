@@ -90,13 +90,13 @@ function leg(seed: number): Paint {
   };
 }
 
-export const HUMAN_SKIN: BodySkin = { head, torso, armR: arm(21), armL: arm(23), legR: leg(31), legL: leg(37) };
+const HUMAN_SKIN: BodySkin = { head, torso, armR: arm(21), armL: arm(23), legR: leg(31), legL: leg(37) };
 
 export const SKINS: Record<string, BodySkin> = { human: HUMAN_SKIN };
 
 // ---------------------------------------------------------------- armor layers
 
-export interface ArmorPaints {
+interface ArmorPaints {
   helmet: Paint;
   torso: Paint;
   /** Upper arm (shoulder) pieces of the body armor. */

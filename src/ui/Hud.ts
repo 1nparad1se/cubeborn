@@ -8,7 +8,7 @@ import { item } from '../rpg/items';
 import { RACE_BY_ID } from '../rpg/races';
 import { itemIcon } from './itemIcons';
 
-export interface HudOptions {
+interface HudOptions {
   fps: boolean;
 }
 

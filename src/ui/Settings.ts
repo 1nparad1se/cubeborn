@@ -15,7 +15,7 @@ const RESOLUTIONS: [number, number][] = [
 ];
 
 /** Resolutions that fit the current monitor (in physical pixels). */
-export function availableResolutions(): string[] {
+function availableResolutions(): string[] {
   const dpr = window.devicePixelRatio || 1;
   const sw = Math.round((window.screen?.width || 1920) * dpr);
   const sh = Math.round((window.screen?.height || 1080) * dpr);
@@ -74,7 +74,7 @@ const clone = (s: Settings): Settings => JSON.parse(JSON.stringify(s));
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 /** True when the open settings screen has changes that were not applied. */
-export function settingsDirty(api: MenuApi): boolean {
+function settingsDirty(api: MenuApi): boolean {
   return !!applied && !same(applied, api.profile.data.settings);
 }
 

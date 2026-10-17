@@ -113,11 +113,6 @@ function clearLineL(t: Terrain, ax: number, az: number, bx: number, bz: number, 
   return true;
 }
 
-/** Nearest walkable cell centre to (x, z) within a few cells, or null. */
-export function nearestWalkable(t: Terrain, x: number, z: number, maxR = 5): [number, number] | null {
-  const r = nearestL(t, x - t.ox, z - t.oz, maxR);
-  return r ? [r[0] + t.ox, r[1] + t.oz] : null;
-}
 function nearestL(t: Terrain, x: number, z: number, maxR = 5): [number, number] | null {
   const cx = Math.floor(x);
   const cz = Math.floor(z);

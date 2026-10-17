@@ -7,7 +7,7 @@ export interface Gear {
   bag: (string | null)[];
 }
 
-export function emptyEquip(): Record<Slot, string | null> {
+function emptyEquip(): Record<Slot, string | null> {
   return { main: null, off: null, head: null, hands: null, feet: null, body: null };
 }
 
@@ -22,11 +22,11 @@ export function cloneGear(g: Gear): Gear {
 }
 
 /** Slot an item goes to. */
-export function slotOf(def: ItemDef): Slot {
+function slotOf(def: ItemDef): Slot {
   return def.slot;
 }
 
-export function isTwoHanded(id: string | null): boolean {
+function isTwoHanded(id: string | null): boolean {
   return !!item(id)?.twoHanded;
 }
 
@@ -168,7 +168,7 @@ export interface CharStats {
 }
 
 /** Bare-hands attack when the main hand is empty. */
-export const FISTS: WeaponStats = { kind: 'sword1h', dmgType: 'phys', shape: 'melee', damage: 4, interval: 0.6, hitAt: 0.45, range: 1.6 };
+const FISTS: WeaponStats = { kind: 'sword1h', dmgType: 'phys', shape: 'melee', damage: 4, interval: 0.6, hitAt: 0.45, range: 1.6 };
 
 export function computeStats(raceId: string, g: Gear): CharStats {
   const race: RaceDef = RACE_BY_ID[raceId] ?? RACE_BY_ID.human;

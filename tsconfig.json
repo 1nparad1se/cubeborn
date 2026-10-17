@@ -3,7 +3,11 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": false,
@@ -11,8 +15,13 @@
     "skipLibCheck": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "types": ["vite/client", "node"]
+    "types": [
+      "vite/client",
+      "node"
+    ]
   },
-  "include": ["src", "tools"],
-  "exclude": ["tools/continent"]
+  "include": [
+    "src",
+    "tools"
+  ]
 }

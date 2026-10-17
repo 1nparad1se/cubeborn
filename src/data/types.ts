@@ -19,8 +19,6 @@ export interface MapPalette {
   heroLight?: number;
   /** Tile colors by tile type name. */
   tiles: Record<string, number[]>;
-  /** Block colors for obstacle materials. */
-  blocks: Record<string, number[]>;
 }
 
 export interface MapDef {
@@ -34,7 +32,5 @@ export interface MapDef {
   music: { root: number; scale: string; tempo: number; mood: string };
   /** Damage per second on hazard tiles. */
   hazardDps?: number;
-  /** No creature camps (showcase maps). */
-  noMobs?: boolean;
 }
 

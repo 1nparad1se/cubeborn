@@ -5,7 +5,7 @@ import { SKINS, armorPaints, type BodySkin } from './skins';
 import { shieldModel, weaponModel, type WeaponModel } from './itemMeshes';
 
 /** What the model shows this frame (filled from the simulation or by a preview). */
-export interface HumanPose {
+interface HumanPose {
   /** Walk cycle phase (radians-ish, grows with distance walked). */
   walk: number;
   /** 0 standing .. 1 walking at full speed. */

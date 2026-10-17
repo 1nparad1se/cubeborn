@@ -3,12 +3,12 @@ import type { DayPeriod } from '../config/dayNight';
 /** Game minutes in one day. */
 export const DAY_MINUTES = 24 * 60;
 /** Game minutes per real second: 1 real second = 1 game minute (1 game hour = 1 real minute). */
-export const CLOCK_RATE = 1;
+const CLOCK_RATE = 1;
 /** Where a new save's clock starts (08:00). */
-export const CLOCK_START = 8 * 60;
+const CLOCK_START = 8 * 60;
 
 /** Phase boundaries in minutes of the day: dawn 05–07, day 07–18, dusk (sunset) 18–20, night 20–05. */
-export const PHASES: { p: DayPeriod; from: number; to: number }[] = [
+const PHASES: { p: DayPeriod; from: number; to: number }[] = [
   { p: 'dawn', from: 5 * 60, to: 7 * 60 },
   { p: 'day', from: 7 * 60, to: 18 * 60 },
   { p: 'dusk', from: 18 * 60, to: 20 * 60 },
@@ -16,7 +16,7 @@ export const PHASES: { p: DayPeriod; from: number; to: number }[] = [
 ];
 
 /** Wraps any minute count into 0 ≤ m < DAY_MINUTES. */
-export function wrapMinutes(m: number): number {
+function wrapMinutes(m: number): number {
   if (!Number.isFinite(m)) return CLOCK_START;
   const r = m % DAY_MINUTES;
   return r < 0 ? r + DAY_MINUTES : r;

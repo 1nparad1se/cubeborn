@@ -20,31 +20,19 @@ interface SongDef {
   bright: number; // filter cutoff
 }
 
-const MINOR = [0, 2, 3, 5, 7, 8, 10];
 const DORIAN = [0, 2, 3, 5, 7, 9, 10];
-const PHRYG = [0, 1, 3, 5, 7, 8, 10];
-const HARM = [0, 2, 3, 5, 7, 8, 11];
-const MAJOR = [0, 2, 4, 5, 7, 9, 11];
-const LYD = [0, 2, 4, 6, 7, 9, 11];
 
 const SONGS: Record<string, SongDef> = {
   menu: { bpm: 84, root: 50, scale: DORIAN, prog: [0, 5, 3, 4], lead: 'triangle', pad: 'sine', drums: 0, swing: 0, arp: [0, -1, 1, -1, 2, -1, 1, -1, 0, -1, 2, -1, 3, -1, 2, -1], bassPat: [0, -1, -1, -1, -1, -1, -1, -1, 0, -1, -1, -1, -1, -1, -1, -1], bright: 1800 },
   forest: { bpm: 112, root: 45, scale: DORIAN, prog: [0, 6, 5, 4], lead: 'square', pad: 'triangle', drums: 1, swing: 0.08, arp: [0, 1, 2, 1, 3, 2, 1, 2, 0, 1, 2, 3, 4, 3, 2, 1], bassPat: [0, -1, 0, -1, -1, -1, 0, -1, 0, -1, -1, 0, -1, -1, 0, -1], bright: 2400 },
-  city: { bpm: 118, root: 47, scale: HARM, prog: [0, 5, 3, 4], lead: 'sawtooth', pad: 'triangle', drums: 2, swing: 0.12, arp: [0, -1, 2, 1, -1, 2, 3, -1, 0, -1, 2, 1, 4, -1, 3, 2], bassPat: [0, -1, 0, 0, -1, -1, 0, -1, 0, -1, 0, 0, -1, 0, -1, -1], bright: 2000 },
-  catacombs: { bpm: 100, root: 43, scale: PHRYG, prog: [0, 1, 0, 6], lead: 'triangle', pad: 'sawtooth', drums: 1, swing: 0, arp: [0, -1, -1, 2, -1, -1, 1, -1, 0, -1, -1, 3, -1, 2, -1, -1], bassPat: [0, -1, -1, -1, 0, -1, -1, -1, 0, -1, -1, -1, 0, -1, 0, -1], bright: 1400 },
-  volcano: { bpm: 132, root: 40, scale: PHRYG, prog: [0, 1, 6, 4], lead: 'sawtooth', pad: 'square', drums: 2, swing: 0, arp: [0, 0, 2, 0, 3, 0, 2, 4, 0, 0, 2, 0, 5, 4, 3, 2], bassPat: [0, 0, -1, 0, 0, -1, 0, -1, 0, 0, -1, 0, 0, 0, -1, 0], bright: 2600 },
-  tundra: { bpm: 104, root: 50, scale: MINOR, prog: [0, 5, 2, 6], lead: 'sine', pad: 'triangle', drums: 1, swing: 0.05, arp: [0, 2, 4, 2, 5, 4, 2, 4, 0, 2, 4, 6, 5, 4, 2, 1], bassPat: [0, -1, -1, -1, 0, -1, -1, 0, 0, -1, -1, -1, 0, -1, -1, -1], bright: 3000 },
-  ruins: { bpm: 124, root: 46, scale: LYD, prog: [0, 1, 5, 4], lead: 'square', pad: 'sine', drums: 2, swing: 0.06, arp: [0, 2, 4, 6, 4, 2, 5, 3, 0, 2, 4, 6, 7, 6, 4, 2], bassPat: [0, -1, 0, -1, 0, -1, 0, 0, 0, -1, 0, -1, 0, 0, -1, 0], bright: 3200 },
-  boss: { bpm: 140, root: 41, scale: HARM, prog: [0, 0, 5, 4], lead: 'sawtooth', pad: 'sawtooth', drums: 2, swing: 0, arp: [0, 2, 0, 3, 0, 4, 0, 3, 0, 2, 0, 6, 5, 4, 3, 2], bassPat: [0, 0, 0, -1, 0, 0, 0, -1, 0, 0, 0, 0, 0, -1, 0, 0], bright: 2800 },
-  victory: { bpm: 96, root: 52, scale: MAJOR, prog: [0, 3, 4, 0], lead: 'triangle', pad: 'sine', drums: 0, swing: 0, arp: [0, 1, 2, 4, 2, 1, 0, -1, 0, 2, 4, 6, 4, 2, 0, -1], bassPat: [0, -1, -1, -1, -1, -1, -1, -1, 0, -1, -1, -1, -1, -1, -1, -1], bright: 2400 },
 };
 
 const mtof = (m: number) => 440 * Math.pow(2, (m - 69) / 12);
 
 /** Menu and interface sounds follow the UI volume slider. */
-const UI_SOUNDS = new Set(['ui', 'uiBack', 'select', 'buy', 'denied']);
+const UI_SOUNDS = new Set(['ui', 'uiBack', 'select', 'denied']);
 
-export class AudioEngine {
+class AudioEngine {
   ctx: AudioContext | null = null;
   master!: GainNode;
   sfxBus!: GainNode;
@@ -260,7 +248,7 @@ export class AudioEngine {
     if (this.timer === null) this.timer = window.setInterval(() => this.schedule(), 50);
   }
 
-  /** 0..1 raises drum density and filter brightness (crowds, bosses). */
+  /** 0..1 raises drum density and filter brightness . */
   setIntensity(v: number) {
     this.intensity = v;
     if (this.ctx && this.song) this.musicFilter.frequency.setTargetAtTime(this.song.bright * (0.8 + v * 0.5), this.ctx.currentTime, 1);
@@ -322,43 +310,21 @@ export class AudioEngine {
 }
 
 const MIN_GAP: Record<string, number> = {
-  hurt: 0.12,
-  coin: 0.05,
-  levelup: 0.3,
-  explosion: 0.07,
-  bossRoar: 1,
   slash: 0.06,
-  zap: 0.05,
   hit: 0.03,
-  kill: 0.03,
-  xp: 0.035,
 };
 
 const RECIPES: Record<string, Recipe> = {
   slash: (a, t, v) => a.noise(t, 0.12, 0.25 * v, 'bandpass', 3200, 900, 1.4),
-  punch: (a, t, v) => {
-    a.tone(t, 'sine', 180, 60, 0.1, 0.4 * v);
-    a.noise(t, 0.06, 0.2 * v, 'lowpass', 2000, 400);
-  },
   thrust: (a, t, v) => a.noise(t, 0.16, 0.25 * v, 'bandpass', 1400, 4000, 2),
-  throw: (a, t, v) => a.noise(t, 0.08, 0.15 * v, 'highpass', 3000, 5000, 1),
   magic: (a, t, v) => {
     a.tone(t, 'triangle', 660, 1320, 0.15, 0.12 * v);
     a.tone(t + 0.03, 'sine', 990, 1980, 0.12, 0.08 * v);
-  },
-  fire: (a, t, v) => {
-    a.noise(t, 0.25, 0.22 * v, 'lowpass', 1500, 300, 1);
-    a.tone(t, 'sawtooth', 160, 80, 0.15, 0.06 * v);
-  },
-  ice: (a, t, v) => {
-    a.tone(t, 'sine', 1800, 2600, 0.12, 0.1 * v);
-    a.noise(t, 0.1, 0.1 * v, 'highpass', 5000, 8000, 3);
   },
   bow: (a, t, v) => {
     a.tone(t, 'triangle', 300, 120, 0.1, 0.18 * v);
     a.noise(t, 0.06, 0.1 * v, 'highpass', 2500, 5000);
   },
-  whoosh: (a, t, v) => a.noise(t, 0.22, 0.18 * v, 'bandpass', 600, 2400, 1.5),
   jump: (a, t, v) => {
     a.noise(t, 0.12, 0.12 * v, 'bandpass', 900, 2600, 1.2);
     a.tone(t, 'sine', 260, 420, 0.08, 0.08 * v);
@@ -369,99 +335,14 @@ const RECIPES: Record<string, Recipe> = {
   },
   nightfall: (a, t, v) => [392, 311, 262, 196].forEach((f, i) => a.tone(t + i * 0.18, 'triangle', f, f * 0.99, 0.6, 0.1 * v)),
   dawn: (a, t, v) => [392, 494, 587, 784].forEach((f, i) => a.tone(t + i * 0.12, 'sine', f, f * 1.01, 0.5, 0.09 * v)),
-  warning: (a, t, v) => [0, 0.3, 0.6].forEach((d) => a.tone(t + d, 'square', 440, 330, 0.2, 0.07 * v)),
-  achieve: (a, t, v) => [659, 784, 988, 1318].forEach((f, i) => a.tone(t + i * 0.07, 'triangle', f, f, 0.3, 0.12 * v)),
-  ignite: (a, t, v) => a.noise(t, 0.18, 0.16 * v, 'bandpass', 1200, 400, 1.2),
-  frost: (a, t, v) => {
-    a.tone(t, 'triangle', 2400, 3200, 0.08, 0.06 * v);
-    a.noise(t, 0.08, 0.08 * v, 'highpass', 6000, 9000, 4);
-  },
-  venom: (a, t, v) => a.noise(t, 0.16, 0.1 * v, 'bandpass', 500, 900, 5),
-  shadow: (a, t, v) => a.tone(t, 'sawtooth', 110, 70, 0.22, 0.06 * v),
-  saw: (a, t, v) => a.tone(t, 'sawtooth', 900, 700, 0.1, 0.06 * v),
-  zap: (a, t, v) => {
-    a.tone(t, 'square', 1200, 200, 0.1, 0.08 * v);
-    a.noise(t, 0.08, 0.12 * v, 'highpass', 4000, 2000);
-  },
-  beam: (a, t, v) => a.tone(t, 'sawtooth', 440, 880, 0.25, 0.08 * v, 0.02),
-  pulse: (a, t, v) => a.tone(t, 'sine', 220, 90, 0.3, 0.25 * v),
-  wind: (a, t, v) => a.noise(t, 0.4, 0.15 * v, 'bandpass', 400, 1200, 3),
-  glass: (a, t, v) => {
-    a.tone(t, 'triangle', 2200, 1800, 0.18, 0.08 * v);
-    a.noise(t, 0.12, 0.12 * v, 'highpass', 6000, 3000, 2);
-  },
-  explosion: (a, t, v) => {
-    a.noise(t, 0.5, 0.45 * v, 'lowpass', 2400, 120, 0.7);
-    a.tone(t, 'sine', 140, 30, 0.45, 0.45 * v);
-  },
-  mine: (a, t, v) => a.tone(t, 'square', 880, 880, 0.05, 0.06 * v),
-  bones: (a, t, v) => {
-    a.noise(t, 0.05, 0.15 * v, 'bandpass', 2000, 1500, 4);
-    a.noise(t + 0.05, 0.05, 0.12 * v, 'bandpass', 1600, 1200, 4);
-  },
-  crate: (a, t, v) => {
-    a.noise(t, 0.15, 0.3 * v, 'bandpass', 900, 300, 2);
-    a.tone(t, 'square', 120, 60, 0.1, 0.1 * v);
-  },
-  shield: (a, t, v) => a.tone(t, 'triangle', 800, 400, 0.25, 0.15 * v),
-  hurt: (a, t, v) => {
-    a.tone(t, 'square', 220, 90, 0.16, 0.18 * v);
-    a.noise(t, 0.1, 0.15 * v, 'lowpass', 1600, 400);
-  },
-  revive: (a, t, v) => [523, 659, 784, 1046].forEach((f, i) => a.tone(t + i * 0.08, 'triangle', f, f, 0.35, 0.16 * v)),
-  heal: (a, t, v) => [523, 784].forEach((f, i) => a.tone(t + i * 0.07, 'sine', f, f * 1.01, 0.25, 0.13 * v)),
-  coin: (a, t, v) => {
-    a.tone(t, 'square', 1318, 1318, 0.05, 0.05 * v);
-    a.tone(t + 0.05, 'square', 1760, 1760, 0.12, 0.05 * v);
-  },
-  xp: (a, t, v) => a.tone(t, 'sine', 1400 + Math.random() * 600, 2200, 0.05, 0.05 * v),
-  magnet: (a, t, v) => a.tone(t, 'sine', 300, 1600, 0.5, 0.15 * v, 0.05),
-  powerup: (a, t, v) => [440, 554, 659, 880].forEach((f, i) => a.tone(t + i * 0.05, 'square', f, f, 0.12, 0.06 * v)),
-  chestDrop: (a, t, v) => {
-    a.tone(t, 'sine', 90, 50, 0.3, 0.4 * v);
-    a.noise(t, 0.2, 0.2 * v, 'lowpass', 900, 200);
-  },
-  chestOpen: (a, t, v) => [523, 659, 784, 1046, 1318, 1568].forEach((f, i) => a.tone(t + i * 0.07, 'triangle', f, f, 0.4, 0.12 * v)),
-  levelup: (a, t, v) => [392, 523, 659, 784].forEach((f, i) => a.tone(t + i * 0.06, 'square', f, f, 0.2, 0.07 * v)),
-  death: (a, t, v) => [392, 330, 262, 196].forEach((f, i) => a.tone(t + i * 0.18, 'triangle', f, f * 0.97, 0.4, 0.18 * v)),
-  victory: (a, t, v) => [523, 659, 784, 659, 784, 1046].forEach((f, i) => a.tone(t + i * 0.12, 'square', f, f, 0.3, 0.08 * v)),
-  bossRoar: (a, t, v) => {
-    a.tone(t, 'sawtooth', 90, 50, 1.0, 0.3 * v, 0.1);
-    a.noise(t, 1.0, 0.25 * v, 'lowpass', 600, 150, 2);
-  },
-  bossPhase: (a, t, v) => {
-    a.tone(t, 'sawtooth', 70, 140, 0.6, 0.25 * v, 0.05);
-    a.noise(t, 0.6, 0.2 * v, 'bandpass', 300, 1200, 2);
-  },
-  bossShoot: (a, t, v) => a.tone(t, 'square', 330, 160, 0.12, 0.07 * v),
-  bossCharge: (a, t, v) => a.tone(t, 'sawtooth', 80, 400, 0.6, 0.15 * v, 0.1),
-  summon: (a, t, v) => {
-    a.tone(t, 'triangle', 200, 600, 0.4, 0.12 * v, 0.05);
-    a.noise(t, 0.4, 0.1 * v, 'bandpass', 500, 2000, 4);
-  },
-  teleport: (a, t, v) => a.tone(t, 'sine', 1600, 200, 0.3, 0.12 * v),
-  dash: (a, t, v) => a.noise(t, 0.3, 0.25 * v, 'bandpass', 300, 1500, 1),
-  slam: (a, t, v) => {
-    a.tone(t, 'sine', 100, 30, 0.5, 0.5 * v);
-    a.noise(t, 0.35, 0.3 * v, 'lowpass', 1200, 100);
-  },
-  bossDeath: (a, t, v) => {
-    a.noise(t, 1.4, 0.5 * v, 'lowpass', 3000, 60, 0.7);
-    a.tone(t, 'sine', 160, 25, 1.4, 0.5 * v);
-    [523, 659, 784].forEach((f, i) => a.tone(t + 0.6 + i * 0.1, 'triangle', f, f, 0.5, 0.1 * v));
-  },
   hit: (a, t, v) => a.noise(t, 0.04, 0.1 * v, 'bandpass', 1800, 900, 2),
-  kill: (a, t, v) => a.tone(t, 'square', 300 + Math.random() * 120, 80, 0.06, 0.05 * v),
   ui: (a, t, v) => a.tone(t, 'square', 880, 880, 0.04, 0.05 * v),
   uiBack: (a, t, v) => a.tone(t, 'square', 520, 440, 0.06, 0.05 * v),
   select: (a, t, v) => {
     a.tone(t, 'square', 660, 660, 0.05, 0.05 * v);
     a.tone(t + 0.05, 'square', 990, 990, 0.08, 0.05 * v);
   },
-  evolution: (a, t, v) => [262, 330, 392, 523, 659, 784, 1046].forEach((f, i) => a.tone(t + i * 0.06, 'sawtooth', f, f, 0.3, 0.05 * v)),
-  buy: (a, t, v) => [784, 1046, 1318].forEach((f, i) => a.tone(t + i * 0.05, 'square', f, f, 0.1, 0.05 * v)),
   denied: (a, t, v) => a.tone(t, 'square', 160, 140, 0.15, 0.08 * v),
-  warn: (a, t, v) => [880, 880].forEach((f, i) => a.tone(t + i * 0.18, 'square', f, f, 0.12, 0.06 * v)),
 };
 
 export const audio = new AudioEngine();

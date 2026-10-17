@@ -27,7 +27,7 @@ export interface RaceDef {
   skin: string;
 }
 
-export const RACES: RaceDef[] = [
+const RACES: RaceDef[] = [
   {
     id: 'human',
     name: 'Человек',

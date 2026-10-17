@@ -18,7 +18,7 @@ export const JUMP = {
   landLag: 0.08,
 };
 
-export interface AttackState {
+interface AttackState {
   weapon: WeaponStats | null;
   /** Seconds since the attack started. */
   t: number;

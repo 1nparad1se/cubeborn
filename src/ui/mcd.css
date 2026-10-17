@@ -39,46 +39,7 @@
   text-transform: uppercase;
 }
 
-/* ------------------------------------------------------------------ HUD: top centre (timer, boss) */
-
-/* hovered-enemy card */
-
-/* ------------------------------------------------------------------ HUD: top right (map, objective) */
-.minimap {
-  width: 210px;
-  height: 196px;
-  background: rgba(10, 24, 28, 0.38);
-  box-shadow:
-    0 0 0 1px rgba(5, 6, 7, 0.75),
-    inset 0 0 0 1px rgba(226, 240, 242, 0.62);
-}
-.minimap::after {
-  /* thin inner corner ticks */
-  content: '';
-  position: absolute;
-  inset: 4px;
-  pointer-events: none;
-  background:
-    linear-gradient(var(--mc-line-hi), var(--mc-line-hi)) left top / 8px 1px no-repeat,
-    linear-gradient(var(--mc-line-hi), var(--mc-line-hi)) left top / 1px 8px no-repeat,
-    linear-gradient(var(--mc-line-hi), var(--mc-line-hi)) right top / 8px 1px no-repeat,
-    linear-gradient(var(--mc-line-hi), var(--mc-line-hi)) right top / 1px 8px no-repeat,
-    linear-gradient(var(--mc-line-hi), var(--mc-line-hi)) left bottom / 8px 1px no-repeat,
-    linear-gradient(var(--mc-line-hi), var(--mc-line-hi)) left bottom / 1px 8px no-repeat;
-}
-.minimap {
-  position: relative;
-}
-.minimap.big {
-  position: fixed;
-  background: rgba(8, 22, 26, 0.78);
-}
-
-/* objective (wave) tracker: diamond bullet, pixel caps, rule with a diamond end */
-
-/* effects (top-left) */
-
-/* banner (wave start, boss) */
+/* banner */
 .banner-main {
   font-family: var(--font-px) !important;
   font-size: clamp(18px, 3vw, 34px) !important;
@@ -93,30 +54,6 @@
   font-family: var(--font-hud) !important;
   letter-spacing: 0.5px;
 }
-
-/* ------------------------------------------------------------------ HUD: bottom bar */
-/* the slab: a dark plate with angled ends behind the lower part of the bar, bevelled grey rim */
-
-/* --- heart */
-
-/* --- resource bar under the skill grid (bar or orbs) */
-
-/* --- skill slots: bevelled dark squares, cream key badges */
-/* states */
-
-/* identity (Z): class-coloured bevel */
-
-/* basic / dodge / special */
-
-/* --- Awakening (V): hexagonal soul gauge */
-
-/* --- bag / skills buttons: small slots with key badges */
-
-/* --- level + XP: purple segmented bar like a soul track */
-
-/* --- above the bar: cast bar, buffs, unspent points */
-
-/* --- tooltip over a slot: teal card */
 
 /* ------------------------------------------------------------------ toasts */
 .toast {
@@ -144,75 +81,13 @@
 }
 
 /* ==================================================================================================
-   Panels: modals, menus, inventory, skills, pause, results, settings — dark-teal translucent cards
+   Panels: modals, menus, pause, settings — dark-teal translucent cards
    ================================================================================================== */
 .modal-back {
   background: radial-gradient(ellipse at center, rgba(6, 20, 24, 0.55), rgba(3, 8, 10, 0.82));
 }
-.modal {
-  border-radius: 0;
-  background:
-    linear-gradient(rgba(40, 90, 98, 0.35), transparent 120px),
-    var(--mc-panel);
-  border: 1px solid var(--mc-line-hi);
-  box-shadow:
-    0 0 0 1px #050607,
-    0 14px 50px rgba(0, 0, 0, 0.6);
-  color: var(--mc-text);
-  backdrop-filter: blur(3px);
-}
-.modal h2 {
-  font: 400 clamp(16px, 2.4vw, 24px)/1.35 var(--font-px);
-  text-transform: uppercase;
-  text-shadow:
-    3px 3px 0 #000,
-    -1px -1px 0 #000;
-}
-.modal .sub,
-.modal .kv {
-  font-family: var(--font-ui);
-}
-
-/* buttons: teal stone with a dark lip; green for the main action */
-.btn {
-  font-family: var(--font-hud);
-  font-weight: 700;
-  letter-spacing: 1px;
-  border-radius: 0;
-  color: var(--mc-text);
-  background: linear-gradient(#2e5a62, #1f434a);
-  box-shadow:
-    0 0 0 1px #050607,
-    inset 0 0 0 1px rgba(214, 240, 242, 0.28),
-    inset 0 -4px 0 rgba(0, 0, 0, 0.35),
-    0 3px 0 1px #050607;
-  text-shadow: 1px 1px 0 rgba(0, 0, 0, 0.6);
-}
-.btn.primary {
-  background: linear-gradient(#6cc24f, #3f8f36);
-  color: #fff;
-  text-shadow: 1px 1px 0 #1a3a12;
-}
-.btn.danger {
-  background: linear-gradient(#d24a4a, #932a2e);
-  color: #fff;
-}
-.btn.active {
-  background: linear-gradient(#7a5a1a, #5a400e);
-}
-.btn:active {
-  box-shadow:
-    0 0 0 1px #050607,
-    inset 0 0 0 1px rgba(214, 240, 242, 0.28),
-    inset 0 -2px 0 rgba(0, 0, 0, 0.35),
-    0 1px 0 1px #050607;
-}
-
-/* ------------------------------------------------------------------ menu frame */
 
 /* cards and lists */
-.panel,
-.detail,
 .settings {
   border-radius: 0;
   background: var(--mc-panel);
@@ -220,24 +95,8 @@
     0 0 0 1px #050607,
     inset 0 0 0 1px var(--mc-line);
 }
-.detail h3 {
-  font: 400 20px/1.3 var(--font-px);
-  text-transform: uppercase;
-}
-
-/* ------------------------------------------------------------------ skills window (K) */
-
-/* ------------------------------------------------------------------ pause / results */
-.modal .kv {
-  border-bottom-color: rgba(176, 222, 226, 0.12);
-}
-.unlock {
-  border-radius: 0;
-}
 
 /* ------------------------------------------------------------------ settings */
-.toggle,
-.seg button,
 .tab {
   border-radius: 0;
   font-family: var(--font-hud);
@@ -247,23 +106,7 @@
     0 0 0 1px #050607,
     inset 0 0 0 1px var(--mc-line);
 }
-.toggle.on {
-  background: linear-gradient(#6cc24f, #3f8f36);
-  color: #fff;
-}
-.seg button.sel,
 .tab.sel {
   background: #eaf3f3;
   color: #0c2226;
-}
-
-/* ------------------------------------------------------------------ smaller screens */
-
-/* press-and-hold skills: the note in the slot tooltip */
-
-/* ---------------------------------------------------------------- big boss bar (arena fights) */
-@keyframes boss-enr {
-  to {
-    filter: brightness(1.35);
-  }
 }

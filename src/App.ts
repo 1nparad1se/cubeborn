@@ -17,7 +17,7 @@ import { SPAWN, TEST_MAP, buildTestMap } from './rpg/testMap';
 import { cloneGear, type Gear } from './rpg/equipment';
 import type { Terrain } from './game/Terrain';
 
-export const VERSION = 'v6.0.0';
+const VERSION = 'v6.0.0';
 
 /** Discrete camera zoom steps for the mouse wheel (camera distance multipliers). */
 const ZOOM_STEPS = [0.75, 0.88, 1, 1.15, 1.35];

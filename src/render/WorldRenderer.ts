@@ -1,28 +1,13 @@
 import * as THREE from 'three';
 import type { MapDef } from '../data/types';
-import { CELL, type Block, type Terrain } from '../game/Terrain';
+import { CELL, type Terrain } from '../game/Terrain';
 import { hash2 } from '../core/Rng';
-import { ATLAS_VARIANTS, GROUND_ROWS, ROW_RIM, ROW_SOIL, ROW_STONE, SPRITE, SPRITE_COLORED, SPRITE_COUNT, makeBlockAtlas, makeFoliageAtlas, makeGroundAtlas } from './Textures';
-import { TILE_COUNT, tileOf, treeVoxels, type Vox } from './VoxelFlora';
+import { ATLAS_VARIANTS, GROUND_ROWS, ROW_RIM, ROW_SOIL, ROW_STONE, SPRITE, SPRITE_COLORED, SPRITE_COUNT, makeFoliageAtlas, makeGroundAtlas } from './Textures';
 import { DITHER } from './dither';
-import { PropKit } from '../world/render/PropRenderer';
-import { groundTile } from '../world/textures/groundTiles';
 
 type Slot = { x: number; z: number; build: () => void; objs: THREE.Mesh[] | null };
 
-const CHUNK = 16;
 
-/** The terrain as the ground renderer sees it: original ground (water, chasms) under prop decks. */
-function groundView(t: Terrain): Terrain {
-  if (!t.under.size) return t;
-  const cell = t.cell.slice();
-  const elev = t.elev.slice();
-  for (const [i, u] of t.under) {
-    cell[i] = u.cell;
-    elev[i] = u.elev;
-  }
-  return Object.assign(Object.create(t), { cell, elev }) as Terrain;
-}
 /** Ground chunks are larger: they are cheap merged quads. */
 const GCHUNK = 32;
 /** Depth of the cliffs around the map edge. */
@@ -44,16 +29,11 @@ function tileAnim(name: string): number {
  * shader (0 river/stream/plain, 1 swamp, 2 fast/mountain, 3 sea, 4 lake/lagoon) and depth 1..5
  * (0 = unknown: the distance-to-shore estimate is used).
  */
-export function waterLook(name: string): { kind: number; depth: number } {
+function waterLook(name: string): { kind: number; depth: number } {
   const m = /^water_([a-z]+)_(\d)$/.exec(name);
   const ty = m?.[1] ?? '';
   const kind = ty === 'swamp' ? 1 : ty === 'fast' || ty === 'mountain' ? 2 : ty === 'sea' ? 3 : ty === 'lake' || ty === 'lagoon' ? 4 : 0;
   return { kind, depth: m ? Number(m[2]) : 0 };
-}
-
-/** Calm water where the built-in lily pads may float (not rapids, mountain streams or the sea). */
-function lilyWater(name: string): boolean {
-  return /water/.test(name) && !/^water_(fast|mountain|sea)_/.test(name);
 }
 
 /** Surface height of liquid cells: water and lava sit below the banks, the void is a chasm. */
@@ -84,9 +64,7 @@ function foliageRule(gen: string, tile: string): FoliageRule | null {
     if (/bank/.test(tile)) return { density: 0.7, sprites: TUFTS };
     if (/sand/.test(tile)) return { density: 0.06, sprites: TUFTS };
   } else if (grassy) return { density: 1, sprites: TUFTS };
-  // library ground tiles (roads, shores) declare their own tuft density
-  const f = groundTile(tile)?.foliage;
-  return f ? { density: f, sprites: TUFTS } : null;
+  return null;
 }
 
 function pickSprite(list: SpriteW, r: number): number {
@@ -113,14 +91,6 @@ float vnoise(vec2 p) {
  * Static voxel world in a painted dungeon-crawler style: textured ground with sunken water,
  * foam and cliff banks, soft contact shadows, instanced block chunks, grass and flowers.
  */
-/** Unit cube with per-face UVs (0..1), base at y = 0, for terrain blocks. */
-function unitCube(): THREE.BufferGeometry {
-  const g = new THREE.BoxGeometry(1, 1, 1);
-  g.translate(0, 0.5, 0);
-  g.setAttribute('aGlow', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count), 1));
-  return g;
-}
-
 export class WorldRenderer {
   readonly group = new THREE.Group();
   readonly uniforms = {
@@ -132,7 +102,7 @@ export class WorldRenderer {
     /** World position of the terrain's cell (0, 0) (streamed windows; 0 on fixed maps). */
     uOrigin: { value: new THREE.Vector2(0, 0) },
   };
-  /** uFocus in window-local coordinates (props and foliage are built local). */
+  /** uFocus in window-local coordinates (foliage is built local). */
   private readonly localU = { ...this.uniforms, uFocus: { value: new THREE.Vector3(0, 0, 9999) } };
   /** The terrain window origin: the group is offset by it, culling works in local cells. */
   readonly ox: number;
@@ -157,95 +127,9 @@ export class WorldRenderer {
     this.oz = terrain.oz;
     this.group.position.set(this.ox, 0, this.oz);
     this.uniforms.uOrigin.value.set(this.ox, this.oz);
-    const props = terrain.props;
-    terrain = groundView(terrain);
     this.level = this.computeLevels(terrain);
     this.buildGround(terrain, map, quality);
-    this.buildBlocks(terrain, map, quality);
-    this.buildDecor(terrain, quality);
     this.buildFoliage(terrain, map, quality);
-    this.buildFalls(terrain, quality);
-    this.buildProps(props, quality);
-  }
-
-  /** World props (src/world/props): one merged mesh plus GPU particles per 16-cell chunk. */
-  private buildProps(props: Terrain['props'], quality: string) {
-    if (!props.length) return;
-    const kit = new PropKit(this.localU);
-    this.disposables.push(kit);
-    for (const c of kit.chunks(props, quality !== 'low')) this.defer(c.x, c.z, () => {
-      for (const m of c.build()) this.place(m, c.x, c.z);
-    });
-  }
-
-  /**
-   * Mist and spray where water drops off a ledge: puffs of white voxels rising and drifting out
-   * from the foot of every waterfall (animated on the GPU, one draw call).
-   */
-  private buildFalls(t: Terrain, quality: string) {
-    const n = t.size;
-    const level = this.level;
-    type Puff = { x: number; y: number; z: number; dx: number; dz: number; top: number };
-    const puffs: Puff[] = [];
-    const per = quality === 'low' ? 3 : quality === 'medium' ? 5 : 8;
-    for (let z = 1; z < n - 1; z++)
-      for (let x = 1; x < n - 1; x++) {
-        const i = z * n + x;
-        if (t.cell[i] !== CELL.liquid || !/water/.test(t.tileNames[t.tile[i]] ?? '')) continue;
-        for (const [dx, dz] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
-          const j = (z + dz) * n + x + dx;
-          const foot = t.cell[j] === CELL.liquid ? level[j] : t.elev[j];
-          if (level[i] - foot < 1.5) continue;
-          for (let k = 0; k < per; k++) {
-            const r = (a: number) => hash2(x * 13 + k, z * 7 + k * 3, a);
-            const ex = x + 0.5 + dx * 0.5 + (dz ? r(1) - 0.5 : 0);
-            const ez = z + 0.5 + dz * 0.5 + (dx ? r(1) - 0.5 : 0);
-            puffs.push({ x: ex, y: foot, z: ez, dx, dz, top: level[i] });
-          }
-        }
-      }
-    if (!puffs.length) return;
-    const geo = unitCube();
-    const mesh = new THREE.InstancedMesh(geo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.55, depthWrite: false }), puffs.length);
-    const ph = new Float32Array(puffs.length);
-    const dir = new Float32Array(puffs.length * 3);
-    const m4 = new THREE.Matrix4();
-    puffs.forEach((p, i) => {
-      m4.makeTranslation(p.x, p.y, p.z);
-      mesh.setMatrixAt(i, m4);
-      ph[i] = hash2(Math.floor(p.x * 31), Math.floor(p.z * 17), i);
-      dir[i * 3] = p.dx;
-      dir[i * 3 + 1] = p.top - p.y;
-      dir[i * 3 + 2] = p.dz;
-    });
-    geo.setAttribute('aPh', new THREE.InstancedBufferAttribute(ph, 1));
-    geo.setAttribute('aDir', new THREE.InstancedBufferAttribute(dir, 3));
-    const mat = mesh.material as THREE.MeshBasicMaterial;
-    const u = this.uniforms;
-    mat.onBeforeCompile = (sh) => {
-      sh.uniforms.uTime = u.uTime;
-      sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nuniform float uTime;\nattribute float aPh;\nattribute vec3 aDir;\nvarying float vA;')
-        .replace(
-          '#include <begin_vertex>',
-          `#include <begin_vertex>
-float life = fract(uTime * 0.55 + aPh * 7.0);
-float sz = (0.18 + life * 0.42) * (0.7 + aPh * 0.6);
-transformed *= sz;
-// spray kicks out from the cliff and billows up, part way to the lip
-transformed.x += aDir.x * (0.2 + life * 1.3) + sin(aPh * 40.0) * life * 0.5 * (1.0 - abs(aDir.x));
-transformed.z += aDir.z * (0.2 + life * 1.3) + cos(aPh * 40.0) * life * 0.5 * (1.0 - abs(aDir.z));
-transformed.y += life * min(aDir.y * 0.6, 2.5) + 0.1;
-vA = (1.0 - life) * smoothstep(0.0, 0.15, life);`,
-        );
-      sh.fragmentShader = sh.fragmentShader
-        .replace('#include <common>', '#include <common>\nvarying float vA;')
-        .replace('#include <opaque_fragment>', '#include <opaque_fragment>\ngl_FragColor.a *= vA;');
-    };
-    mesh.frustumCulled = false;
-    mesh.renderOrder = 4;
-    this.group.add(mesh);
-    this.disposables.push(geo, mat, mesh);
   }
 
   /** Runs a chunk builder now (small maps) or when the camera comes near (big worlds). */
@@ -327,7 +211,7 @@ vA = (1.0 - life) * smoothstep(0.0, 0.15, life);`,
     cells.magFilter = cells.minFilter = THREE.NearestFilter;
     cells.needsUpdate = true;
 
-    // ambient occlusion on the ground from taller neighbours: cliff feet, walls, tree trunks
+    // ambient occlusion on the ground from taller neighbours: cliff feet, walls
     const top = new Float32Array(n * n);
     const C0 = t.corner;
     for (let i = 0; i < n * n; i++) {
@@ -358,7 +242,7 @@ vA = (1.0 - life) * smoothstep(0.0, 0.15, life);`,
     ao.magFilter = ao.minFilter = THREE.LinearFilter;
     ao.needsUpdate = true;
 
-    const atlas = makeGroundAtlas(t.tileNames, map.palette.tiles, map.palette.blocks);
+    const atlas = makeGroundAtlas(t.tileNames, map.palette.tiles, {});
     const tileCount = Math.max(1, t.tileNames.length);
     // per tile: animation kind, water kind, water depth (one texel each, any number of tiles)
     const infoData = new Uint8Array(tileCount * 4);
@@ -734,207 +618,6 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
       });
   }
 
-  private buildBlocks(t: Terrain, map: MapDef, quality: string) {
-    const n = t.size;
-    const chunks = Math.ceil(n / CHUNK);
-    const cube = unitCube();
-    const tex = makeBlockAtlas();
-    const mat = new THREE.MeshLambertMaterial({ map: tex, alphaTest: 0.5 });
-    const u = this.uniforms;
-    // Blocks standing between the camera and the hero dissolve with an ordered dither so
-    // tall trees and walls in the foreground never hide the action; block bases get a soft
-    // ambient-occlusion gradient where they meet the ground.
-    mat.onBeforeCompile = (sh) => {
-      sh.uniforms.uFocus = u.uFocus;
-      sh.uniforms.uCamDir = u.uCamDir;
-      sh.uniforms.uTime = u.uTime;
-      sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nattribute float aTile;\nuniform float uTime;\nvarying vec2 vSub;\nvarying float vTl;\nvarying float vNy;')
-        .replace('#include <uv_vertex>', `#include <uv_vertex>
-float tl = aTile;
-if (tl == 2.0 && abs(normal.y) > 0.5) tl = 7.0;
-if (tl == 9.0 && normal.y > 0.5) tl = 0.0;
-// texture repeats per face axis (two tiles per block; detail tiles 16+ once per block)
-float sX = length(instanceMatrix[0].xyz); float sY = length(instanceMatrix[1].xyz); float sZ = length(instanceMatrix[2].xyz);
-vec2 fsz = abs(normal.y) > 0.5 ? vec2(sX, sZ) : abs(normal.x) > 0.5 ? vec2(sZ, sY) : vec2(sX, sY);
-vec2 rep = max(vec2(1.0), floor(fsz * (aTile > 15.5 ? 1.0 : 2.0) + 0.5));
-vSub = vMapUv * rep;
-vTl = tl;
-vNy = normal.y;`)
-        .replace('#include <begin_vertex>', `#include <begin_vertex>
-vWPos = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;
-if (aTile == 1.0) { float ph = vWPos.x * 0.35 + vWPos.z * 0.27; transformed.x += sin(uTime * 1.3 + ph) * 0.03; transformed.z += cos(uTime * 1.1 + ph) * 0.02; }`);
-      sh.fragmentShader = sh.fragmentShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vWPos;\nuniform vec3 uFocus;\nuniform vec2 uCamDir;\nvarying vec2 vSub;\nvarying float vTl;\nvarying float vNy;')
-        .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n' + DITHER)
-        .replace('#include <map_fragment>', `vec2 fs = fract(vSub);
-vec4 sampledDiffuseColor = texture2D(map, vec2((fs.x * 0.998 + 0.001 + vTl) / ${TILE_COUNT}.0, fs.y));
-diffuseColor *= sampledDiffuseColor;
-vec2 cellId = floor(vSub);
-if (vTl == 1.0 && vNy < -0.5) diffuseColor.rgb *= 0.62;
-if (vTl == 1.0 && vNy > -0.5 && vNy < 0.5) diffuseColor.rgb *= 0.86;
-diffuseColor.rgb *= mix(0.72, 1.0, smoothstep(0.0, 1.0, vWPos.y));`);
-    };
-    const glowMat = new THREE.MeshBasicMaterial({ map: tex });
-    glowMat.onBeforeCompile = (sh) => {
-      sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nattribute float aTile;')
-        .replace('#include <uv_vertex>', `#include <uv_vertex>\nif (aTile > 15.5) vMapUv.x += aTile;\nvMapUv.x /= ${TILE_COUNT}.0;`);
-    };
-    this.disposables.push(cube, mat, glowMat, tex);
-    const buckets: (typeof t.blocks)[] = Array.from({ length: chunks * chunks }, () => []);
-    const glowBlocks: typeof t.blocks = [];
-    for (const b of t.blocks) {
-      if (b.glow) {
-        glowBlocks.push(b);
-        continue;
-      }
-      const cx = Math.min(chunks - 1, Math.max(0, Math.floor(b.x / CHUNK)));
-      const cz = Math.min(chunks - 1, Math.max(0, Math.floor(b.z / CHUNK)));
-      buckets[cz * chunks + cx].push(b);
-    }
-    const m4 = new THREE.Matrix4();
-    const q = new THREE.Quaternion();
-    const v3 = new THREE.Vector3();
-    const sc = new THREE.Vector3();
-    const col = new THREE.Color();
-    const pal = map.palette.blocks;
-    // Blocks are drawn by material: stone as rounded masonry (lone stones as boulders), wood
-    // as stacked horizontal logs, everything else as plain blocks.
-    // Every block is a Minecraft-style textured cube; trees add their own blocks.
-    const bucketOf = (x: number, z: number) => Math.min(chunks - 1, Math.max(0, Math.floor(z / CHUNK))) * chunks + Math.min(chunks - 1, Math.max(0, Math.floor(x / CHUNK)));
-    // tree voxels are made when their chunk is built (big worlds hold ~1M of them)
-    const treeB: (typeof t.trees)[] = Array.from({ length: chunks * chunks }, () => []);
-    for (const tr of t.trees) treeB[bucketOf(tr.x, tr.z)].push(tr);
-    const voxOf = (i: number): Vox[] => {
-      const out: Vox[] = [];
-      for (const tr of treeB[i]) {
-        const list: Vox[] = [];
-        treeVoxels(tr, map, list);
-        // trees on plateaus stand on the raised ground
-        const lift = t.minCorner(tr.z * n + tr.x) - (t.corner ? 0.05 : 0);
-        if (lift) for (const v of list) v.y += lift;
-        for (const v of list) out.push(v);
-      }
-      return out;
-    };
-    const toVox = (b: Block): Vox => {
-      const s = b.s ?? 1;
-      const colors = pal[b.mat] ?? [0x888888];
-      col.setHex(colors[b.v % colors.length]).multiplyScalar(0.92 + hash2(b.x * 3 + b.y, b.z, 11) * 0.14);
-      return { x: b.x + 0.5, y: b.y, z: b.z + 0.5, sx: s, sy: s, sz: s, color: col.getHex(), tile: tileOf(b.mat) };
-    };
-    const fill = (list: Block[], extra: Vox[], material: THREE.Material, shadows: boolean, cx = -1, cz = -1) => {
-      let items = list.map(toVox).concat(extra);
-      if (material === mat && items.some((v) => v.glow)) {
-        // glowing voxels of structures (lanterns, fires) use the unlit material
-        fill([], items.filter((v) => v.glow), glowMat, false, cx, cz);
-        items = items.filter((v) => !v.glow);
-      }
-      if (!items.length) return;
-      const geo = cube.clone();
-      const tiles = new Float32Array(items.length);
-      const mesh = new THREE.InstancedMesh(geo, material, items.length);
-      items.forEach((b, i) => {
-        m4.compose(v3.set(b.x, b.y, b.z), q.identity(), sc.set(b.sx, b.sy, b.sz));
-        mesh.setMatrixAt(i, m4);
-        mesh.setColorAt(i, col.setHex(b.color).multiplyScalar(1.12));
-        tiles[i] = b.tile;
-      });
-      geo.setAttribute('aTile', new THREE.InstancedBufferAttribute(tiles, 1));
-      mesh.castShadow = shadows;
-      mesh.receiveShadow = true;
-      mesh.computeBoundingSphere();
-      if (cx >= 0) this.place(mesh, (cx + 0.5) * CHUNK, (cz + 0.5) * CHUNK);
-      else {
-        this.group.add(mesh);
-        this.disposables.push(mesh, geo);
-      }
-    };
-    const shadows = quality !== 'low';
-    buckets.forEach((list, i) => {
-      if (!list.length && !treeB[i].length) return;
-      const cx = i % chunks;
-      const cz = Math.floor(i / chunks);
-      this.defer((cx + 0.5) * CHUNK, (cz + 0.5) * CHUNK, () => fill(list, voxOf(i), mat, shadows, cx, cz));
-    });
-    fill(glowBlocks, [], glowMat, false);
-  }
-
-  private buildDecor(t: Terrain, quality: string) {
-    let list = t.decor.filter((d) => !d.sway || d.glow);
-    if (quality === 'low') list = list.filter((_, i) => i % 3 === 0);
-    // lily pads on calm water
-    const n = t.size;
-    const lilies: typeof list = [];
-    for (let z = 0; z < n; z++)
-      for (let x = 0; x < n; x++) {
-        const i = z * n + x;
-        if (t.cell[i] !== CELL.liquid || !lilyWater(t.tileNames[t.tile[i]] ?? '')) continue;
-        // calm water only: no lilies where a waterfall churns
-        if (Math.max(this.level[i - 1] ?? 0, this.level[i + 1] ?? 0, this.level[i - n] ?? 0, this.level[i + n] ?? 0) > this.level[i] + 1) continue;
-        const ly = this.level[i];
-        if (hash2(x, z, 77) < 0.93) continue;
-        const ox = hash2(x, z, 78) * 0.5 + 0.25;
-        const oz = hash2(x, z, 79) * 0.5 + 0.25;
-        lilies.push({ x: x + ox, z: z + oz, y: ly + 0.02, size: 0.42, h: 0.04, color: 0x4a9a3a });
-        if (hash2(x, z, 80) > 0.5) lilies.push({ x: x + ox + 0.05, z: z + oz, y: ly + 0.06, size: 0.14, h: 0.1, color: 0xc89aff });
-      }
-    list = list.concat(lilies);
-    if (!list.length) return;
-    const cube = unitCube();
-    const u = this.uniforms;
-    const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
-    mat.onBeforeCompile = (sh) => {
-      sh.uniforms.uTime = u.uTime;
-      sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nuniform float uTime;\nattribute float aSway;')
-        .replace(
-          '#include <begin_vertex>',
-          `#include <begin_vertex>
-float ph = instanceMatrix[3].x * 0.7 + instanceMatrix[3].z * 0.5;
-transformed.x += sin(uTime * 2.2 + ph) * 0.12 * position.y * aSway;
-transformed.z += cos(uTime * 1.7 + ph) * 0.08 * position.y * aSway;`,
-        );
-    };
-    const glowMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    this.disposables.push(cube, mat, glowMat);
-    const normal = list.filter((d) => !d.glow);
-    const glow = list.filter((d) => d.glow);
-    const m4 = new THREE.Matrix4();
-    const col = new THREE.Color();
-    const build = (arr: typeof list, material: THREE.Material, cx: number, cz: number, size: number) => {
-      if (!arr.length) return;
-      const g = cube.clone();
-      const mesh = new THREE.InstancedMesh(g, material, arr.length);
-      const swayInst = new Float32Array(arr.length);
-      arr.forEach((d, i) => {
-        m4.makeScale(d.size, d.h ?? d.size, d.size);
-        m4.setPosition(d.x, d.y, d.z);
-        mesh.setMatrixAt(i, m4);
-        col.setHex(d.color);
-        mesh.setColorAt(i, col);
-        swayInst[i] = d.sway ? 1 : 0;
-      });
-      g.setAttribute('aSway', new THREE.InstancedBufferAttribute(swayInst, 1));
-      mesh.receiveShadow = true;
-      mesh.computeBoundingSphere();
-      this.group.add(mesh);
-      this.disposables.push(g, mesh);
-      this.chunks.push({ mesh, x: (cx + 0.5) * size, z: (cz + 0.5) * size });
-    };
-    // decor is split into 32-cell chunks so that far chunks can be culled
-    const DC = 32;
-    const per = Math.ceil(t.size / DC);
-    const bucket = (arr: typeof list) => {
-      const out: (typeof list)[] = Array.from({ length: per * per }, () => []);
-      for (const d of arr) out[Math.min(per - 1, Math.max(0, Math.floor(d.z / DC))) * per + Math.min(per - 1, Math.max(0, Math.floor(d.x / DC)))].push(d);
-      return out;
-    };
-    bucket(normal).forEach((arr, i) => build(arr, mat, i % per, Math.floor(i / per), DC));
-    bucket(glow).forEach((arr, i) => build(arr, glowMat, i % per, Math.floor(i / per), DC));
-  }
-
   /**
    * Ground foliage: crossed pixel-art sprites (grass tufts, ferns, small flowers, dead bushes)
    * on suitable tiles, plus the generator's swaying decor drawn as flower sprites.
@@ -1001,7 +684,6 @@ diffuseColor.rgb *= 0.78 + 0.22 * vH;`,
     const DC = 32;
     const per = Math.ceil(n / DC);
     const buckets: F[][] = Array.from({ length: per * per }, () => []);
-    const bucketPut = (f: F) => buckets[Math.min(per - 1, Math.max(0, Math.floor(f.z / DC))) * per + Math.min(per - 1, Math.max(0, Math.floor(f.x / DC)))].push(f);
     const col = new THREE.Color();
     const scan = (put: (f: F) => void, x0: number, z0: number) => {
     for (let z = z0; z < Math.min(n, z0 + DC); z++)
@@ -1012,7 +694,6 @@ diffuseColor.rgb *= 0.78 + 0.22 * vH;`,
         const c = t.cell[i];
         const e = t.elev[i];
         if (c !== CELL.floor && c !== CELL.hazard && c !== CELL.ice) continue;
-        if (t.under.has(i)) continue;
         // nothing grows on the bare rock and snow of the peaks
         if (e >= 8) continue;
         // nor on rock-steep slopes
@@ -1051,19 +732,6 @@ diffuseColor.rgb *= 0.78 + 0.22 * vH;`,
         }
       }
     };
-    // swaying decor from the generator (flower rings around camps and clearings)
-    for (const d of t.decor) {
-      if (!d.sway || d.glow) continue;
-      col.setHex(d.color);
-      const hsl = { h: 0, s: 0, l: 0 };
-      col.getHSL(hsl);
-      let sp: number = SPRITE.grass;
-      if (hsl.s > 0.25 && hsl.l > 0.3) {
-        const h = hsl.h * 360;
-        sp = h < 20 || h > 330 ? (hsl.l > 0.6 ? SPRITE.tulip : SPRITE.poppy) : h < 70 ? SPRITE.dandelion : h < 170 ? SPRITE.grass : h < 250 ? SPRITE.cornflower : SPRITE.allium;
-      } else if (hsl.l > 0.8) sp = SPRITE.daisy;
-      bucketPut({ x: d.x, y: d.y, z: d.z, s: 0.5, sp, c: SPRITE_COLORED.has(sp) ? 0xffffff : d.color, a: hash2(Math.floor(d.x * 7), Math.floor(d.z * 7), 3) });
-    }
     const m4 = new THREE.Matrix4();
     const rot = new THREE.Matrix4();
     buckets.forEach((decorList, bi) => this.defer(((bi % per) + 0.5) * DC, (Math.floor(bi / per) + 0.5) * DC, () => {

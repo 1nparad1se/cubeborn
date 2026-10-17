@@ -4,7 +4,7 @@ import type { WeaponKind } from '../../rpg/items';
 import { PX } from './skinAtlas';
 
 /** World size of one item pixel (held items are drawn finer than the body, like Minecraft). */
-export const ITEM_PX = 0.035;
+const ITEM_PX = 0.035;
 
 const col = new THREE.Color();
 
@@ -12,7 +12,7 @@ const col = new THREE.Color();
  * Extrudes a sprite into a one-pixel-thick block model (flat Minecraft item). The pixel at
  * (gx, gy) — the grip — ends up at the origin; sprite x → +X, sprite up → +Y, thickness along Z.
  */
-export function extrudeSprite(s: Sprite, gx: number, gy: number, px = ITEM_PX, depth = 1): THREE.BufferGeometry {
+function extrudeSprite(s: Sprite, gx: number, gy: number, px = ITEM_PX, depth = 1): THREE.BufferGeometry {
   const { n } = s;
   const pos: number[] = [];
   const nor: number[] = [];
@@ -165,7 +165,7 @@ export function arrowModel(bolt: boolean): THREE.BufferGeometry {
   return merged;
 }
 
-export function mergeGeos(list: THREE.BufferGeometry[]): THREE.BufferGeometry {
+function mergeGeos(list: THREE.BufferGeometry[]): THREE.BufferGeometry {
   const pos: number[] = [];
   const nor: number[] = [];
   const cols: number[] = [];

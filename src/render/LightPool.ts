@@ -23,7 +23,7 @@ interface Flash {
 
 /**
  * Fixed set of point lights reassigned every frame to the most important sources
- * (explosions, torches, glowing projectiles). Fixed count keeps shaders stable.
+ * (flashes, glowing projectiles). Fixed count keeps shaders stable.
  */
 export class LightPool {
   readonly lights: THREE.PointLight[] = [];
@@ -75,7 +75,7 @@ export class LightPool {
       this.request(f.x, 1.2, f.z, f.color, f.intensity * (f.t / f.dur) * 1.5, f.radius, cx, cz);
     }
     const sorted = this.reqs.slice(0, this.nReq).sort((a, b) => b.score - a.score);
-    // dense night scenes (a lantern street, a camp ringed by torches): sources close to an already
+    // dense scenes: sources close to an already
     // chosen light fold into it (brighter, wider) instead of taking a slot, so the few real lights
     // spread over more of the scene
     const used: Req[] = [];

@@ -22,10 +22,10 @@ import { AmbientFx } from './AmbientFx';
 
 import type { Settings } from '../meta/Save';
 
-export type Quality = 'low' | 'medium' | 'high';
+type Quality = 'low' | 'medium' | 'high';
 
 
-export interface FxHooks {
+interface FxHooks {
   sound(id: string, volume?: number): void;
   vibrate(ms: number): void;
 }
@@ -175,7 +175,7 @@ class AOPass extends Pass {
 }
 
 /** MCD-style lighting bias applied on top of every map palette. */
-export const MCD = {
+const MCD = {
   /** Cool teal sky fill and deep teal bounce from the ground. */
   sky: 0xa8d8e8,
   skyMix: 0.3,
@@ -211,7 +211,7 @@ export class Renderer {
   private cullT = 0;
   private zoomLevel = 1;
   private time = 0;
-  private torchTerrain: Terrain | null = null;
+  private menuTerrain: Terrain | null = null;
   // menu diorama
   /** Menu backdrop: a hero standing at the spawn point. */
   private showHero: HumanModel | null = null;
@@ -219,7 +219,7 @@ export class Renderer {
   private menuX = 0;
   private menuZ = 0;
   private menuAngle = 0;
-  /** 0 keeps the menu showcase centred; 1 slides it into the right third of the screen. */
+  /** 0 keeps the menu hero centred; 1 slides it into the right third of the screen. */
   menuShift = 0;
   /** Fixed camera (eye and look-at point) overriding the follow camera; used for screenshots and previews. */
   photo: { x: number; y: number; z: number; lx: number; ly: number; lz: number; noFog?: boolean } | null = null;
@@ -413,7 +413,7 @@ export class Renderer {
     this.setAtmosphere(map);
     this.world = new WorldRenderer(terrain, map, this.blockTex, this.detail);
     this.scene.add(this.world.group);
-    this.torchTerrain = terrain;
+    this.menuTerrain = terrain;
   }
 
   /** Cuts the camera to a point (open-world respawn / teleport) and builds the streamed world around it at once. */
@@ -425,7 +425,7 @@ export class Renderer {
   /** Starts drawing the world; returns the FxSink the game logic should use. */
   startRun(run: World, hooks: FxHooks): FxSink {
     this.menuMode = false;
-    this.clearShowcase();
+    this.clearMenuHero();
     this.run = run;
     GROUND.fn = (x, z) => run.terrain.groundY(x, z);
     this.buildWorld(run.terrain, run.map);
@@ -499,7 +499,7 @@ export class Renderer {
       this.world.dispose();
       this.world = null;
     }
-    this.torchTerrain = null;
+    this.menuTerrain = null;
   }
 
   /** Menu background: the training meadow with a hero at (x, z), slowly circled by the camera. */
@@ -512,12 +512,12 @@ export class Renderer {
     this.buildWorld(terrain, map);
     this.scene.fog = new THREE.Fog(map.palette.fog, 14, 44);
     this.world?.cull(x, z, 60, 0);
-    this.clearShowcase();
+    this.clearMenuHero();
     this.showHero = new HumanModel('human', true);
     this.scene.add(this.showHero.root);
   }
 
-  private clearShowcase() {
+  private clearMenuHero() {
     if (this.showHero) {
       this.scene.remove(this.showHero.root);
       this.showHero.dispose();
@@ -532,25 +532,6 @@ export class Renderer {
     if (this.menuMode) this.menuFrame(dt);
     else if (this.run) this.runFrame(dt);
     const t = this.rig.target;
-    if (this.torchTerrain) {
-      // after dark torches and fires throw wider, warmer pools of light (MCD night scenes)
-      const nk = this.run ? this.run.dayNight.night : 0;
-      const boost = 1 + nk * 0.45;
-      const rad = 7 + nk * 2.5;
-      // terrain lights are window-local on streamed worlds
-      const lox = this.torchTerrain.ox;
-      const loz = this.torchTerrain.oz;
-      for (const l of this.torchTerrain.lights) {
-        const lx = l.x + lox;
-        const lz = l.z + loz;
-        if ((lx - t.x) ** 2 + (lz - t.z) ** 2 > 24 * 24) continue;
-        const f = l.flicker ?? 1;
-        const flick = 1 - f * 0.15 + f * (Math.sin(this.time * 9 + lx * 3) * 0.08 + Math.sin(this.time * 23 + lz) * 0.05);
-        const day = l.day ?? 1;
-        const dk = day + (1 - day) * nk;
-        lights.request(lx, l.y, lz, l.color, l.intensity * flick * boost * dk, l.radius ? l.radius * (1 + nk * 0.3) : rad, t.x, t.z);
-      }
-    }
     lights.end(dt, t.x, t.z);
     this.world?.update(this.time, 0);
     if (this.composer) this.composer.render(dt);
@@ -561,7 +542,7 @@ export class Renderer {
   private menuFrame(dt: number) {
     const cx = this.menuX;
     const cz = this.menuZ;
-    const gy = this.torchTerrain ? this.torchTerrain.groundY(cx, cz) : 0;
+    const gy = this.menuTerrain ? this.menuTerrain.groundY(cx, cz) : 0;
     this.menuAngle += dt * 0.12;
     const cam = this.rig.camera;
     const portrait = this.h > this.w;
@@ -670,7 +651,7 @@ export class Renderer {
   }
 
   dispose() {
-    this.clearShowcase();
+    this.clearMenuHero();
     this.endRun();
     this.gl.dispose();
   }

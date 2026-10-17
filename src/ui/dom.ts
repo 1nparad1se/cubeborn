@@ -33,12 +33,3 @@ function append(el: HTMLElement, c: Child) {
 export function clear(el: HTMLElement) {
   while (el.firstChild) el.removeChild(el.firstChild);
 }
-
-export function hex(c: number): string {
-  return '#' + c.toString(16).padStart(6, '0');
-}
-
-/** append() that tolerates null/false children. */
-export function put(el: HTMLElement, ...children: Child[]) {
-  append(el, children);
-}

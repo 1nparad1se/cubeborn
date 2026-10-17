@@ -38,7 +38,7 @@ const EMIT_KIND: Record<EmitKind, number> = { glow: 0, debris: 1, smoke: 2, spar
  * with InstancedBatch.pushFast: the yaw argument becomes the in-screen roll, `s` the width and `sy`
  * the height of the square, so no camera information is needed on the CPU.
  */
-export function makeSquareMaterial(additive: boolean, opacity = 1): THREE.MeshBasicMaterial {
+function makeSquareMaterial(additive: boolean, opacity = 1): THREE.MeshBasicMaterial {
   const mat = new THREE.MeshBasicMaterial({
     color: 0xffffff,
     transparent: additive || opacity < 1,
@@ -140,7 +140,7 @@ export class Particles {
         p.spin = (Math.random() - 0.5) * 3;
       }
     }
-    // chunk bursts (deaths, rubble) end in a little poof of square dust, like MCD mobs
+    // chunk bursts (deaths, rubble) end in a little poof of square dust
     if (k === 1 && count >= 6) {
       const puffs = Math.min(8, Math.round(count / 3));
       for (let i = 0; i < puffs; i++) {
@@ -167,7 +167,7 @@ export class Particles {
   }
 
   /**
-   * Skill VFX spray: `count` particles of one style sprayed in a cone of half-angle `spread` around
+   * Particle spray: `count` particles of one style sprayed in a cone of half-angle `spread` around
    * (dirX, dirZ) (all around when the direction is zero). Each particle picks a colour between
    * `color` and `color2` (flames instead blend from one to the other over their life).
    * 'gather' particles start `speed` units away and converge on the point.

@@ -4,7 +4,7 @@ import type { MenuApi } from './Menus';
 import { settingsPanel, leaveSettings } from './Settings';
 import { tr } from './tr';
 
-export interface PauseActions {
+interface PauseActions {
   resume(): void;
   /** Writes the save; returns false when the browser refused it. */
   save(): boolean;

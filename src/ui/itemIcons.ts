@@ -2,7 +2,7 @@ import { item } from '../rpg/items';
 import { SPR_BOW, SPR_SPEAR, SPR_STAFF1H, SPR_STAFF2H, SPR_SWORD, SPR_SWORD2H, SPR_XBOW, armorIcon, shieldFace, spriteCanvas, type Sprite } from '../render/human/sprites';
 
 /** Pixel sprite shown for an item in the inventory (the same pixel art as its 3D model). */
-export function itemSprite(id: string): Sprite | null {
+function itemSprite(id: string): Sprite | null {
   const def = item(id);
   if (!def) return null;
   const w = def.weapon?.kind;

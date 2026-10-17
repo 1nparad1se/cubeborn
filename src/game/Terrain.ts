@@ -1,10 +1,4 @@
 import { WALLS } from '../config/walls';
-import type { PropInstance } from '../world/props/types';
-/** Replaces an array's contents in place (spread arguments overflow the stack on big maps). */
-export function replaceAll<T>(arr: T[], items: T[]) {
-  arr.length = items.length;
-  for (let i = 0; i < items.length; i++) arr[i] = items[i];
-}
 
 /** Cell kinds on the navigation grid (1 cell = 1 world unit = 1 block). */
 export const CELL = {
@@ -17,7 +11,7 @@ export const CELL = {
 } as const;
 
 /** Height limits for walkers (world units): a step taken on foot, and a ledge caught mid-jump. */
-export const STEP = {
+const STEP = {
   walk: 1.01,
   /** Added to the feet height while airborne: the 1.35 jump apex reaches two-block ledges. */
   air: 0.8,
@@ -33,57 +27,6 @@ export const SLOPE = {
   lip: 0.45,
   fall: 0.6,
 };
-
-export interface Block {
-  x: number;
-  y: number;
-  z: number;
-  mat: string;
-  /** Variant index into the material color list. */
-  v: number;
-  /** Optional size (defaults to a full block). */
-  s?: number;
-  glow?: boolean;
-  /** Part of a natural rock pile: drawn as an irregular boulder, not a cube. */
-  rock?: boolean;
-}
-
-/** A tree drawn as a rounded model; only its trunk cell collides. */
-export interface TreeInst {
-  x: number;
-  z: number;
-  h: number;
-  kind: 'oak' | 'pine' | 'mushroom' | 'acacia' | 'palm' | 'cactus' | 'dead' | 'willow';
-  leaf: string;
-  trunk: string;
-  v: number;
-}
-
-export interface Decor {
-  x: number;
-  z: number;
-  y: number;
-  size: number;
-  color: number;
-  /** Sways in the wind. */
-  sway?: boolean;
-  h?: number;
-  glow?: boolean;
-}
-
-export interface TerrainLight {
-  x: number;
-  z: number;
-  y: number;
-  color: number;
-  intensity: number;
-  /** Reach in world units (default: the renderer's torch radius). */
-  radius?: number;
-  /** Flicker strength 0..1 (default 1, torch-like). */
-  flicker?: number;
-  /** Intensity multiplier by day (default 1). */
-  day?: number;
-}
 
 export class Terrain {
   readonly cell: Uint8Array;
@@ -106,20 +49,6 @@ export class Terrain {
   shadeElev: Uint8Array | null = null;
   /** Cells the hero can reach from the spawn on foot or with jumps (1), set by the generator. */
   reach: Uint8Array | null = null;
-  readonly blocks: Block[] = [];
-  readonly decor: Decor[] = [];
-  readonly trees: TreeInst[] = [];
-  readonly lights: TerrainLight[] = [];
-  /** World props placed by the map (src/world/props): drawn by the prop renderer. */
-  readonly props: PropInstance[] = [];
-  /**
-   * Cells covered by a walkable prop deck (bridge, boardwalk, stairs): the original ground
-   * (cell kind and elevation) under it. `cell`/`elev` hold the walking surface; the renderer draws
-   * the ground (water, chasm) from these originals.
-   */
-  readonly under = new Map<number, { cell: number; elev: number }>();
-  /** Special markers used by events (rune circles etc). */
-  readonly markers: { x: number; z: number; kind: string; sub?: string }[] = [];
   tileNames: string[] = [];
   /**
    * Sloped ground: four corner heights per cell (k = dx + 2 * dz from the cell's min corner),
@@ -129,9 +58,6 @@ export class Terrain {
   corner: Float32Array | null = null;
   /** Smoothed centre height per cell (the field the corners are made from). */
   surf: Float32Array | null = null;
-  /** Walkable deck corners (bridges, stairs, platforms): the deck surface, set by placeProp. */
-  readonly deckC = new Map<number, Float32Array>();
-
   constructor(readonly size: number, tall = false) {
     this.cell = new Uint8Array(size * size);
     this.tile = new Uint8Array(size * size);
@@ -156,10 +82,8 @@ export class Terrain {
     return this.inLocal(cx, cz) ? this.elev[cz * this.size + cx] : 0;
   }
 
-  /** The four walking-surface corners of cell i (deck if any, else ground), or null before buildSurface. */
+  /** The four walking-surface corners of cell i , or null before buildSurface. */
   private cornersOf(i: number): Float32Array | null {
-    const d = this.deckC.get(i);
-    if (d) return d;
     return this.corner ? this.corner.subarray(i * 4, i * 4 + 4) : null;
   }
 
@@ -202,7 +126,7 @@ export class Terrain {
     return c ? (c[0] + c[1] + c[2] + c[3]) * 0.25 : this.elev[i];
   }
 
-  /** Lowest / highest corner of cell i (props sit on the lowest, shots stop at the highest). */
+  /** Lowest / highest corner of cell i (shots stop at the highest). */
   minCorner(i: number): number {
     const c = this.cornersOf(i);
     return c ? Math.min(c[0], c[1], c[2], c[3]) : this.elev[i];
@@ -230,7 +154,6 @@ export class Terrain {
     const rise = g - feet;
     if (rise <= 0.02) return true;
     if (rise > SLOPE.lip) return false;
-    if (this.deckC.has(cz * this.size + cx)) return true;
     // climbing: the slope at the new spot must be walkable
     const [gx, gz] = this.slopeL(x1, z1);
     const dx = x1 - x0;
@@ -266,8 +189,7 @@ export class Terrain {
     const ha = this.centerY(i);
     const hb = this.centerY(j);
     const dist = dx && dz ? Math.SQRT2 : 1;
-    const deck = this.deckC.has(i) || this.deckC.has(j);
-    if (Math.abs(ha - hb) > (deck ? 1.05 : SLOPE.maxTan * dist + 0.04)) return false;
+    if (Math.abs(ha - hb) > SLOPE.maxTan * dist + 0.04) return false;
     const ca = this.cornersOf(i);
     const cb = this.cornersOf(j);
     if (!ca || !cb) return Math.abs(this.elev[i] - this.elev[j]) <= 1;
@@ -327,17 +249,10 @@ export class Terrain {
     return seen;
   }
 
-  /** Ground cell kind and tier (the original ground under a deck). */
-  private groundKind(i: number): number {
-    return this.under.get(i)?.cell ?? this.cell[i];
-  }
-  private groundElev(i: number): number {
-    return this.under.get(i)?.elev ?? this.elev[i];
-  }
   /** Two cells whose ground joins smoothly: both dry, elevation tiers at most one apart. */
   linked(i: number, j: number): boolean {
-    if (this.groundKind(i) === CELL.liquid || this.groundKind(j) === CELL.liquid) return false;
-    return Math.abs(this.groundElev(i) - this.groundElev(j)) <= 1;
+    if (this.cell[i] === CELL.liquid || this.cell[j] === CELL.liquid) return false;
+    return Math.abs(this.elev[i] - this.elev[j]) <= 1;
   }
 
   /**
@@ -345,12 +260,12 @@ export class Terrain {
    * over linked cells only (tiers one block apart melt into slopes, taller steps stay cliffs and
    * water keeps its flat bed), then each cell corner takes the mean of the linked cells around it.
    * `relief` (optional, per cell) adds gentle undulation before smoothing. Call once the
-   * elevations and water are final and BEFORE placing props.
+   * elevations and water are final.
    */
   buildSurface(o: { iters?: number; relief?: Float32Array } = {}) {
     const n = this.size;
     let s = new Float32Array(n * n);
-    for (let i = 0; i < n * n; i++) s[i] = this.groundElev(i) + (o.relief && this.groundKind(i) !== CELL.liquid ? o.relief[i] : 0);
+    for (let i = 0; i < n * n; i++) s[i] = this.elev[i] + (o.relief && this.cell[i] !== CELL.liquid ? o.relief[i] : 0);
     // neighbour links (8 directions) computed once
     const links = new Uint8Array(n * n);
     const D8 = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]];
@@ -386,18 +301,18 @@ export class Terrain {
       [s, t2] = [t2, s];
     }
     // water stays flat at its own level; its banks never dip below the water
-    for (let i = 0; i < n * n; i++) if (this.groundKind(i) === CELL.liquid) s[i] = this.groundElev(i);
+    for (let i = 0; i < n * n; i++) if (this.cell[i] === CELL.liquid) s[i] = this.elev[i];
     for (let z = 0; z < n; z++)
       for (let x = 0; x < n; x++) {
         const i = z * n + x;
-        if (this.groundKind(i) === CELL.liquid) continue;
+        if (this.cell[i] === CELL.liquid) continue;
         for (let dz = -1; dz <= 1; dz++)
           for (let dx = -1; dx <= 1; dx++) {
             const cx = x + dx;
             const cz = z + dz;
             if (cx < 0 || cz < 0 || cx >= n || cz >= n) continue;
             const j = cz * n + cx;
-            if (this.groundKind(j) === CELL.liquid) s[i] = Math.max(s[i], this.groundElev(j) - 0.3);
+            if (this.cell[j] === CELL.liquid) s[i] = Math.max(s[i], this.elev[j] - 0.3);
           }
       }
     this.surf = s;
@@ -463,64 +378,17 @@ export class Terrain {
     }
   }
 
-  /** Flattens the ground under cells (a building, camp or bridge footprint) to height h. */
+  /** Flattens the ground under cells  to height h. */
   flattenPad(cells: number[], h: number) {
     if (!this.corner) return;
     const n = this.size;
     for (const i of cells) {
       const x = i % n;
       const z = (i / n) | 0;
-      if (this.groundKind(i) === CELL.liquid) continue;
+      if (this.cell[i] === CELL.liquid) continue;
       for (let k = 0; k < 4; k++) this.setVertex(x + (k & 1), z + (k >> 1), h, i);
       if (this.surf) this.surf[i] = h;
     }
-  }
-
-  /**
-   * Walking surface of deck cells (bridges, stairs, platforms) near (x0..x1, z0..z1): each corner
-   * meets the bank ground where the deck touches it, otherwise the mean of the decks around it, so
-   * stairs read as ramps and bridges join their banks without a step. `deckY` holds deck heights.
-   */
-  readonly deckY = new Map<number, number>();
-  rebuildDecks(x0: number, z0: number, x1: number, z1: number) {
-    const n = this.size;
-    for (let cz = Math.max(0, z0); cz <= Math.min(n - 1, z1); cz++)
-      for (let cx = Math.max(0, x0); cx <= Math.min(n - 1, x1); cx++) {
-        const i = cz * n + cx;
-        const h = this.deckY.get(i);
-        if (h === undefined) continue;
-        const out = new Float32Array(4);
-        for (let k = 0; k < 4; k++) {
-          const vx = cx + (k & 1);
-          const vz = cz + (k >> 1);
-          let land = 0;
-          let ln = 0;
-          let dk = 0;
-          let dn = 0;
-          for (let j = 0; j < 4; j++) {
-            const ax = vx - 1 + (j & 1);
-            const az = vz - 1 + (j >> 1);
-            if (ax < 0 || az < 0 || ax >= n || az >= n) continue;
-            const a = az * n + ax;
-            const dh = this.deckY.get(a);
-            if (dh !== undefined) {
-              if (Math.abs(dh - h) <= 1.05) {
-                dk += dh;
-                dn++;
-              }
-              continue;
-            }
-            if (this.blocksLocal(ax, az) || !this.corner) continue;
-            const g = this.corner[a * 4 + (3 - j)];
-            if (Math.abs(g - h) <= 0.75) {
-              land += g;
-              ln++;
-            }
-          }
-          out[k] = ln ? land / ln : dn ? dk / dn : h;
-        }
-        this.deckC.set(i, out);
-      }
   }
 
   idx(cx: number, cz: number): number {
@@ -636,31 +504,6 @@ export class Terrain {
     this.cell[i] = cell;
   }
 
-  /** Raises a solid column of blocks. */
-  column(cx: number, cz: number, h: number, mat: string, v = -1, cell: number = CELL.solid, glow = false) {
-    if (!this.inBounds(cx, cz)) return;
-    const i = this.idx(cx, cz);
-    if (this.cell[i] === CELL.wall && cell !== CELL.wall) return;
-    this.cell[i] = cell;
-    this.height[i] = Math.max(this.height[i], h);
-    for (let y = 0; y < h; y++) this.blocks.push({ x: cx, y, z: cz, mat, v: v < 0 ? (cx * 7 + cz * 13 + y * 3) & 7 : v, glow });
-  }
-
-  /** Marks a solid cell of the given height without drawing blocks (trees draw their own model). */
-  solidCell(cx: number, cz: number, h: number) {
-    if (!this.inBounds(cx, cz)) return false;
-    const i = this.idx(cx, cz);
-    if (this.cell[i] === CELL.wall) return false;
-    this.cell[i] = CELL.solid;
-    this.height[i] = Math.max(this.height[i], h);
-    return true;
-  }
-
-  /** Adds a non-colliding block (canopy, roofs overhang, ornaments). */
-  addBlock(x: number, y: number, z: number, mat: string, v = -1, glow = false, s?: number) {
-    this.blocks.push({ x, y, z, mat, v: v < 0 ? ((x * 5 + z * 11 + y * 7) | 0) & 7 : v, glow, s });
-  }
-
   isFree(cx: number, cz: number): boolean {
     return this.inBounds(cx, cz) && this.cell[this.idx(cx, cz)] === CELL.floor;
   }
@@ -668,32 +511,5 @@ export class Terrain {
   areaFree(cx: number, cz: number, r: number): boolean {
     for (let z = cz - r; z <= cz + r; z++) for (let x = cx - r; x <= cx + r; x++) if (!this.isFree(x, z)) return false;
     return true;
-  }
-
-  /**
-   * Removes blocks hidden on all four sides by taller neighbours (keeps tops).
-   * Dramatically lowers instance counts for buildings and catacomb walls.
-   */
-  cullHidden() {
-    const occupied = new Set<number>();
-    const key = (x: number, y: number, z: number) => (y * this.size + z) * this.size + x;
-    for (const b of this.blocks) if (!b.s) occupied.add(key(b.x, b.y, b.z));
-    const out: Block[] = [];
-    for (const b of this.blocks) {
-      if (b.s || b.glow) {
-        out.push(b);
-        continue;
-      }
-      const top = !occupied.has(key(b.x, b.y + 1, b.z));
-      const hidden =
-        !top &&
-        occupied.has(key(b.x + 1, b.y, b.z)) &&
-        occupied.has(key(b.x - 1, b.y, b.z)) &&
-        occupied.has(key(b.x, b.y, b.z + 1)) &&
-        occupied.has(key(b.x, b.y, b.z - 1));
-      // blocks facing away from the camera (camera looks toward -z) are rarely seen
-      if (!hidden) out.push(b);
-    }
-    replaceAll(this.blocks, out);
   }
 }

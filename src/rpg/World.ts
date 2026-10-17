@@ -61,7 +61,7 @@ export interface Projectile {
 }
 
 /** One frame of player intentions, filled by the client from keyboard and mouse. */
-export interface Controls {
+interface Controls {
   /** Camera-relative walking input (world x, z), length ≤ 1. */
   moveX: number;
   moveZ: number;

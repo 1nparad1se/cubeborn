@@ -28,7 +28,7 @@ export interface PhaseLight {
 export const DAY_NIGHT = {
   light: {
     // Minecraft Dungeons palette: peachy dawn, warm saturated day, magenta-orange dusk and a
-    // deep, rich blue night lit by torches (not a grey, desaturated one)
+    // deep, rich blue night (not a grey, desaturated one)
     dawn: { sun: 0.85, sunColor: 0xffc49a, ambient: 0.9, ambientColor: 0xc8c8f0, tint: 0.45, fog: 0.92, fogColor: 0xe8b4a8, fogTint: 0.3, warm: 0.06, sat: 1.04 },
     day: { sun: 1, sunColor: 0xfff0d8, ambient: 1, ambientColor: 0xffffff, tint: 0, fog: 1, fogColor: 0xffffff, fogTint: 0, warm: 0.035, sat: 1.08 },
     dusk: { sun: 0.72, sunColor: 0xff9050, ambient: 0.75, ambientColor: 0xb090d0, tint: 0.55, fog: 0.88, fogColor: 0x7a4a78, fogTint: 0.38, warm: 0.08, sat: 1.08 },

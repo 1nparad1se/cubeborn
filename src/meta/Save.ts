@@ -125,15 +125,14 @@ export function defaultSettings(): Settings {
   };
 }
 
-export function defaultSave(): SaveData {
+function defaultSave(): SaveData {
   return { version: VERSION, settings: defaultSettings(), chars: [], activeChar: null };
 }
 
 /**
  * Brings stored data to the current format. Only the settings (and the world clock) are kept from
- * saves before v8: the old class heroes, their skills, positions on the removed maps and the
- * bestiary are dropped (loadSave copies the original to BACKUP_KEY first). Key bindings reset,
- * since the old skill keys are gone.
+ * saves before v8: old-format characters and world data are dropped (loadSave copies the original to BACKUP_KEY first). Key bindings reset,
+ * since the old key actions are gone.
  */
 export function migrate(raw: any): SaveData {
   const d = defaultSave();
@@ -164,7 +163,7 @@ export function migrate(raw: any): SaveData {
 }
 
 /** True when a stored save predates the current format (it is backed up before migration). */
-export function needsBackup(raw: any): boolean {
+function needsBackup(raw: any): boolean {
   return !!raw && typeof raw === 'object' && (typeof raw.version !== 'number' || raw.version < VERSION);
 }
 
@@ -204,13 +203,5 @@ export function writeSave(data: SaveData, st: SaveStorage = store()): boolean {
     return true;
   } catch {
     return false;
-  }
-}
-
-export function clearSave(st: SaveStorage = store()): void {
-  try {
-    st.removeItem(KEY);
-  } catch {
-    /* storage unavailable */
   }
 }

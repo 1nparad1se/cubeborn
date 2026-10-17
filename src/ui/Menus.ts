@@ -6,7 +6,6 @@ import { playableRaces, RACE_BY_ID, type RaceDef } from '../rpg/races';
 import { TEST_MAP } from '../rpg/testMap';
 import { settingsPanel, leaveSettings } from './Settings';
 import { tr } from './tr';
-import { fmtTime } from './format';
 import './menu.css';
 
 export interface MenuApi {
@@ -47,7 +46,7 @@ function playTime(sec: number): string {
 }
 
 /** Checks a new character name; returns an error text or null. */
-export function nameError(p: Profile, raw: string): string | null {
+function nameError(p: Profile, raw: string): string | null {
   const name = raw.trim();
   if (name.length < 2) return tr('Имя должно содержать минимум 2 символа', 'The name needs at least 2 characters');
   if (name.length > 16) return tr('Имя не длиннее 16 символов', 'The name must be at most 16 characters');
@@ -62,7 +61,7 @@ export class Menus {
   private stack: ScreenId[] = ['main'];
   /** Tear-down for the open screen (3D viewers, timers, key handlers). */
   private cleanup: (() => void) | null = null;
-  /** Character highlighted in the Continue list / at the campfire. */
+  /** Character highlighted in the Continue list. */
   private sel: string | null = null;
 
   constructor(parent: HTMLElement, private api: MenuApi) {
@@ -389,25 +388,3 @@ export class Menus {
   }
 }
 
-export function confirmBox(parent: HTMLElement, text: string, yes: () => void) {
-  const box = h(
-    'div.modal-back.confirm',
-    h(
-      'div.modal',
-      h('p', text),
-      h(
-        'div.row',
-        h('button.btn', { onclick: () => box.remove() }, t('btn_no')),
-        h('button.btn.danger', {
-          onclick: () => {
-            box.remove();
-            yes();
-          },
-        }, t('btn_yes')),
-      ),
-    ),
-  );
-  (parent.closest('.app') ?? parent).appendChild(box);
-}
-
-export { settingsPanel, fmtTime };

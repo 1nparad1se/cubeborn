@@ -109,70 +109,6 @@ img.icon {
   display: block;
 }
 
-/* ------------------------------------------------------------------ buttons */
-.btn {
-  position: relative;
-  font-family: var(--font-display);
-  font-size: 15px;
-  line-height: 1.4;
-  padding: 12px 16px;
-  min-height: 44px;
-  background: var(--panel2);
-  color: var(--text);
-  box-shadow:
-    inset 0 -4px 0 rgba(0, 0, 0, 0.35),
-    inset 0 2px 0 rgba(255, 255, 255, 0.08),
-    0 0 0 2px #08090b,
-    0 4px 0 2px #08090b;
-  border-radius: 4px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  transition: transform 0.06s, filter 0.1s;
-  text-transform: uppercase;
-}
-.btn:hover {
-  filter: brightness(1.15);
-}
-.btn:active {
-  transform: translateY(3px);
-  box-shadow:
-    inset 0 -2px 0 rgba(0, 0, 0, 0.35),
-    0 0 0 2px #08090b,
-    0 1px 0 2px #08090b;
-}
-.btn.primary {
-  background: var(--green);
-  color: #0d1a0f;
-}
-.btn.danger {
-  background: #b8333f;
-}
-.btn.big {
-  font-size: 15px;
-  padding: 16px 22px;
-  min-height: 58px;
-}
-.btn.small {
-  font-size: var(--fs-min);
-  padding: 8px 10px;
-  min-height: 36px;
-}
-.btn.disabled {
-  opacity: 0.45;
-}
-.btn.active {
-  background: #8a2a3a;
-}
-.btn.back {
-  width: 44px;
-  height: 44px;
-  min-height: 44px;
-  padding: 0;
-  font-size: 22px;
-}
-
 /* ------------------------------------------------------------------ splash */
 .splash {
   position: absolute;
@@ -286,27 +222,6 @@ img.icon {
   }
 }
 
-.main-menu {
-  min-height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 18px;
-  min-height: calc(100vh - 28px - var(--sat) - var(--sab));
-}
-.main-menu .logo {
-  text-align: left;
-  margin-top: 8px;
-}
-.main-menu .logo-title {
-  font-size: clamp(26px, 6vw, 52px);
-}
-.version {
-  font-size: var(--fs-min);
-  opacity: 0.6;
-}
-
 .screen-head {
   display: flex;
   align-items: center;
@@ -332,20 +247,6 @@ img.icon {
   border-radius: 4px;
 }
 
-.split {
-  display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
-  gap: 14px;
-  align-items: start;
-}
-@media (max-aspect-ratio: 1/1) {
-  .split {
-    grid-template-columns: 1fr;
-  }
-}
-
-.panel,
-.detail,
 .settings {
   background: rgba(20, 22, 26, 0.86);
   border-radius: 6px;
@@ -355,75 +256,11 @@ img.icon {
   padding: 12px;
   backdrop-filter: blur(3px);
 }
-.detail {
-  min-height: 200px;
-  font-size: 14px;
-  line-height: 1.45;
-}
-.detail h3 {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: 19px;
-  line-height: 1.4;
-}
-.detail p {
-  color: var(--dim);
-  margin: 10px 0;
-}
-.detail .btn {
-  margin-top: 12px;
-  width: 100%;
-}
-.sub {
-  font-size: var(--fs-min);
-  color: var(--dim);
-  margin-top: 4px;
-}
-.kv {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 5px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  font-size: 13px;
-}
-.kv > span:first-child {
-  color: var(--dim);
-}
-.kv span.inline {
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
-}
-.mod {
-  font-size: 13px;
-  color: #9cff6a;
-  padding: 2px 0;
-}
 .label {
   font-family: var(--font-display);
   font-size: 13px;
   color: var(--dim);
   margin: 12px 0 8px;
-}
-.levels {
-  margin: 8px 0;
-  font-size: var(--fs-min);
-}
-.levels .lv {
-  display: flex;
-  gap: 10px;
-  padding: 3px 0;
-}
-.levels b {
-  font-family: var(--font-display);
-  font-size: 13px;
-  color: var(--gold);
-  min-width: 52px;
-  padding-top: 2px;
-}
-.recipe {
-  margin-top: 10px;
 }
 .tab {
   font-family: var(--font-display);
@@ -438,22 +275,9 @@ img.icon {
   background: var(--gold);
   color: #1a1408;
 }
-.btn.buy {
-  min-width: 86px;
-  font-size: var(--fs-min);
-}
 .center {
   text-align: center;
   margin-top: 16px;
-}
-.prog {
-  height: 6px;
-  background: #08090b;
-  margin-top: 6px;
-}
-.prog div {
-  height: 100%;
-  background: var(--blue);
 }
 
 .settings {
@@ -462,36 +286,6 @@ img.icon {
   display: flex;
   flex-direction: column;
   gap: 4px;
-}
-.toggle {
-  font-family: var(--font-display);
-  font-size: 13px;
-  padding: 10px 12px;
-  min-width: 72px;
-  min-height: 38px;
-  background: #3a3f48;
-  border-radius: 4px;
-  box-shadow: 0 0 0 2px #08090b;
-}
-.toggle.on {
-  background: var(--green);
-  color: #0d1a0f;
-}
-.seg {
-  display: flex;
-  gap: 4px;
-}
-.seg button {
-  font-size: var(--fs-min);
-  padding: 9px 10px;
-  min-height: 38px;
-  background: #3a3f48;
-  border-radius: 4px;
-  box-shadow: 0 0 0 2px #08090b;
-}
-.seg button.sel {
-  background: var(--gold);
-  color: #1a1408;
 }
 
 /* ------------------------------------------------------------------ HUD (dungeon-crawler style) */
@@ -521,25 +315,7 @@ img.icon {
     0 0 0 2px #0a0b0d,
     inset 0 -3px 0 #8d9097;
 }
-/* --- hotbar */
-/* heart */
-.heart {
-  position: relative;
-  z-index: 1;
-  width: 78px;
-  height: 66px;
-  clip-path: polygon(15.4% 0, 38.5% 0, 38.5% 9.1%, 46.2% 9.1%, 46.2% 18.2%, 53.8% 18.2%, 53.8% 9.1%, 61.5% 9.1%, 61.5% 0, 84.6% 0, 84.6% 9.1%, 92.3% 9.1%, 92.3% 18.2%, 100% 18.2%, 100% 54.5%, 92.3% 54.5%, 92.3% 63.6%, 84.6% 63.6%, 84.6% 72.7%, 76.9% 72.7%, 76.9% 81.8%, 69.2% 81.8%, 69.2% 90.9%, 61.5% 90.9%, 61.5% 100%, 38.5% 100%, 38.5% 90.9%, 30.8% 90.9%, 30.8% 81.8%, 23.1% 81.8%, 23.1% 72.7%, 15.4% 72.7%, 15.4% 63.6%, 7.7% 63.6%, 7.7% 54.5%, 0 54.5%, 0 18.2%, 7.7% 18.2%, 7.7% 9.1%, 15.4% 9.1%);
-}
-@keyframes heartbeat {
-  50% {
-    filter: brightness(1.6);
-  }
-}
 /* weapon slots */
-.hud .slots {
-  display: flex;
-  gap: 6px;
-}
 .hud .slot {
   position: relative;
   width: 58px;
@@ -577,30 +353,6 @@ img.icon {
 }
 .hud .slot.empty {
   opacity: 0.55;
-}
-/* xp */
-/* level hexagon */
-/* --- top: timer and boss */
-/* --- top right: minimap and wave tracker */
-.minimap {
-  width: 250px;
-  height: 210px;
-  background: rgba(14, 16, 19, 0.45);
-  box-shadow:
-    0 0 0 2px rgba(10, 11, 13, 0.9),
-    inset 0 0 0 2px rgba(200, 205, 214, 0.55);
-  transition:
-    width 0.15s,
-    height 0.15s;
-  overflow: hidden;
-}
-.minimap.big {
-  position: fixed;
-  inset: 70px 12vw 150px;
-  width: auto;
-  height: auto;
-  z-index: 5;
-  background: rgba(10, 12, 15, 0.72);
 }
 /* --- top left: effects and fps */
 .fps {
@@ -668,14 +420,6 @@ img.icon {
   pointer-events: none;
   background: radial-gradient(ellipse at center, transparent 58%, rgba(0, 0, 0, 0.45));
 }
-.hint {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 190px;
-  text-align: center;
-  animation: fadein 0.5s;
-}
 
 /* ------------------------------------------------------------------ modals */
 .run-modals {
@@ -700,25 +444,6 @@ img.icon {
   animation: fadein 0.18s;
   z-index: 30;
 }
-.modal {
-  width: min(680px, 100%);
-  max-height: 100%;
-  overflow-y: auto;
-  background: rgba(26, 29, 34, 0.97);
-  border-radius: 6px;
-  box-shadow:
-    0 0 0 3px #08090b,
-    inset 0 0 0 2px var(--edge-hi),
-    0 10px 40px rgba(0, 0, 0, 0.6);
-  padding: 16px;
-  text-align: center;
-}
-.modal h2 {
-  font-family: var(--font-display);
-  font-size: clamp(19px, 4vw, 30px);
-  margin: 4px 0 6px;
-  text-shadow: 0 3px 0 #000;
-}
 h2.glow {
   color: var(--gold);
   animation: glow 1.4s ease-in-out infinite alternate;
@@ -730,27 +455,11 @@ h2.glow {
       0 0 18px rgba(255, 210, 61, 0.7);
   }
 }
-.row {
-  display: flex;
-  gap: 10px;
-  justify-content: center;
-  flex-wrap: wrap;
-  margin-top: 14px;
-}
-.col {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
 @keyframes pop {
   from {
     opacity: 0;
     transform: translateY(14px) scale(0.96);
   }
-}
-.actions .btn {
-  flex: 1;
-  min-width: 100px;
 }
 @keyframes pulse {
   to {
@@ -765,38 +474,11 @@ h2.glow {
     transform: translateX(2px) rotate(2deg);
   }
 }
-.build {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  align-items: center;
-  margin-bottom: 12px;
-}
 .pause .settings {
   background: none;
   box-shadow: none;
   padding: 0;
   text-align: left;
-}
-.kv.gold span:last-child {
-  color: var(--gold);
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
-  font-family: var(--font-display);
-  font-size: 15px;
-}
-.unlock {
-  background: rgba(156, 255, 106, 0.1);
-  color: #b8ff9a;
-  padding: 8px;
-  margin-top: 6px;
-  border-radius: 4px;
-  font-size: 13px;
-  animation: pop 0.4s backwards;
-}
-.confirm .modal {
-  width: min(380px, 100%);
 }
 
 .toasts {
@@ -836,31 +518,11 @@ h2.glow {
 }
 
 /* ---- settings (tabbed) */
-.slider {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.settings .seg {
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-.settings .seg button {
-  padding: 7px 9px;
-  min-height: 32px;
-  font-size: var(--fs-min);
-}
-.binds {
-  display: flex;
-  gap: 6px;
-}
 @keyframes pulse {
   to {
     opacity: 0.6;
   }
 }
-
-/* ---- map screen: lore, modes, records */
 
 /* ================================================================== menus (dungeon-crawler style)
    Tab bar with Q/E chips on top, grid / detail card / preview in the middle, key hints at the
@@ -873,137 +535,4 @@ h2.glow {
   min-height: 100%;
   padding: calc(28px + var(--sat)) calc(24px + var(--sar)) calc(20px + var(--sab)) calc(56px + var(--sal));
   background: linear-gradient(90deg, rgba(8, 9, 11, 0.78), rgba(8, 9, 11, 0.35) 38%, transparent 55%);
-}
-
-/* layout inside the frame: grid | detail card | preview */
-
-/* panels lose the heavy boxes: the frame is the panel */
-
-/* grid cells: slate with a rarity glow along the bottom edge */
-
-/* the detail card */
-
-/* the item preview: big icon on a soft rarity glow */
-.preview {
-  --rc: #c8ccd8;
-  align-self: stretch;
-  min-height: 360px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: radial-gradient(closest-side, color-mix(in srgb, var(--rc) 22%, transparent), transparent 75%);
-}
-.preview .q {
-  font: 700 120px var(--font-display);
-  color: #3a3f48;
-}
-
-/* collection sub-tabs become small pills */
-
-/* upgrades and achievements */
-
-/* buttons: chunky slate, green primary */
-.btn {
-  font-family: var(--fmc);
-  font-size-adjust: none;
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: 1px;
-  border-radius: 0;
-  background: linear-gradient(#3a3f48, #2a2e35);
-}
-.btn.primary {
-  background: linear-gradient(#7ee07a, #4cb64e);
-  color: #0c1a0d;
-}
-.btn.danger {
-  background: linear-gradient(#ff6a6a, #c83a3a);
-}
-.btn.big {
-  font-size: 22px;
-}
-.btn.small {
-  font-size: 13px;
-}
-.btn.buy {
-  font-size: 15px;
-}
-@keyframes mfloat {
-  50% {
-    transform: translateY(-10px);
-  }
-}
-
-/* modals: same slate cards */
-.modal {
-  border-radius: 0;
-  background: linear-gradient(rgba(36, 39, 45, 0.98), rgba(24, 26, 31, 0.98));
-  box-shadow:
-    0 0 0 3px #08090b,
-    inset 0 0 0 2px #4a505a,
-    0 14px 50px rgba(0, 0, 0, 0.6);
-}
-.modal h2 {
-  font-family: var(--fmc);
-  font-size-adjust: none;
-  font-size: clamp(22px, 4vw, 36px);
-  font-weight: 700;
-  letter-spacing: 1px;
-}
-
-/* ------------------------------------------------------------------ character viewer */
-
-/* ------------------------------------------------------------------ developer mode */
-@keyframes devpulse {
-  50% {
-    filter: brightness(1.3);
-  }
-}
-
-/* --- day/night dial (v2.2) */
-
-/* ---- achievements v2.2: overall progress, filters, rarity cards, unlock toast */
-.prog.big {
-  height: 10px;
-  margin-top: 0;
-}
-.prog.big div {
-  background: linear-gradient(90deg, #c8961a, var(--gold));
-}
-
-/* ------------------------------------------------------------------ weapon animations (v2.3) */
-
-/* 32×32 item/relic art: smooth when shrunk below native size, plain silhouette when locked */
-
-/* ------------------------------------------------------------------ action-RPG HUD (v3) */
-/* inventory */
-.modal.inventory { width: min(1120px, 96vw); max-height: 94vh; overflow: auto; text-align: left; }
-
-/* skill points: frames that can take a point pulse gold, with a "+" badge */
-@keyframes sk-learn { 0%, 100% { box-shadow: 0 0 6px #ffc04066, inset 0 0 0 1px #000; } 50% { box-shadow: 0 0 18px #ffd34acc, inset 0 0 8px #ffd34a66; } }
-
-/* skill tooltip above the slot bar */
-
-/* ------------------------------------------------------------------ action combat bar (Q W E R / A S D F, Z, V, X, Space) */
-@keyframes sk-shake { 0%, 100% { translate: 0 0; } 25% { translate: -3px 0; } 75% { translate: 3px 0; } }
-/* identity (Z) */
-@keyframes sk-glow { from { filter: brightness(1); } to { filter: brightness(1.35); } }
-/* ultimate / awakening (V): round gauge */
-/* bars: shield overlay, resource / orbs */
-/* charge / cast bar above the bar */
-/* buffs row and points badge */
-/* enemy hover: stagger */
-/* boss stagger */
-@keyframes stag-flash { 50% { filter: brightness(1.8); opacity: 0.6; } }
-/* tooltip extras */
-
-/* ------------------------------------------------------------------ skills screen (K) */
-/* pause / results: class and skills */
-
-/* main menu: gear and shop */
-
-/* ---- map screen: live 3D preview of the selected map's real terrain */
-.minimap.big {
-  pointer-events: auto;
-  cursor: grab;
 }
