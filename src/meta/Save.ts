@@ -7,46 +7,24 @@ export type ShadowQuality = 'off' | 'low' | 'medium' | 'high';
 export type ViewDistance = 'near' | 'medium' | 'far' | 'max';
 export type AntiAliasing = 'off' | 'msaa' | 'ssaa';
 export type DisplayMode = 'windowed' | 'fullscreen' | 'borderless';
-export type HealthBars = 'off' | 'elites' | 'all';
 
 /** Rebindable actions; each holds up to two KeyboardEvent.code values. */
-export type BindAction =
-  | 'up' | 'down' | 'left' | 'right' | 'jump'
-  | 'skillQ' | 'skillW' | 'skillE' | 'skillR' | 'skillA' | 'skillS' | 'skillD' | 'skillF'
-  | 'ult' | 'identity' | 'special' | 'dodge' | 'attack' | 'attackHere' | 'stop' | 'skills'
-  | 'pause' | 'zoomIn' | 'zoomOut' | 'map';
+export type BindAction = 'up' | 'down' | 'left' | 'right' | 'jump' | 'attack' | 'inventory' | 'pause' | 'zoomIn' | 'zoomOut';
 
-/** Skill slot order on the bar (Q W E R A S D F). */
-export const SKILL_BINDS: BindAction[] = ['skillQ', 'skillW', 'skillE', 'skillR', 'skillA', 'skillS', 'skillD', 'skillF'];
 export type Keybinds = Record<BindAction, string[]>;
 
 export function defaultKeybinds(): Keybinds {
   return {
-    up: ['ArrowUp'],
-    down: ['ArrowDown'],
-    left: ['ArrowLeft'],
-    right: ['ArrowRight'],
-    jump: [],
-    skillQ: ['KeyQ'],
-    skillW: ['KeyW'],
-    skillE: ['KeyE'],
-    skillR: ['KeyR'],
-    skillA: ['KeyA'],
-    skillS: ['KeyS'],
-    skillD: ['KeyD'],
-    skillF: ['KeyF'],
-    ult: ['KeyV'],
-    identity: ['KeyZ'],
-    special: ['KeyX'],
-    dodge: ['Space'],
-    attack: ['KeyC'],
-    attackHere: ['ShiftLeft'],
-    stop: ['KeyH'],
-    skills: ['KeyK'],
+    up: ['KeyW', 'ArrowUp'],
+    down: ['KeyS', 'ArrowDown'],
+    left: ['KeyA', 'ArrowLeft'],
+    right: ['KeyD', 'ArrowRight'],
+    jump: ['Space'],
+    attack: ['KeyF'],
+    inventory: ['KeyI', 'KeyB'],
     pause: ['Escape', 'KeyP'],
     zoomIn: ['Equal', 'NumpadAdd'],
     zoomOut: ['Minus', 'NumpadSubtract'],
-    map: ['Tab'],
   };
 }
 
@@ -77,8 +55,6 @@ export interface Settings {
   screenShake: number;
   // gameplay
   damageNumbers: boolean;
-  enemyHealthBars: HealthBars;
-  showMinimap: boolean;
   showFps: boolean;
   autoPause: boolean;
   /** Camera distance multiplier (wheel zoom), 0.75 (close) .. 1.35 (far). */
@@ -109,16 +85,17 @@ export interface SaveData {
   /** Created characters and the one played last. */
   chars: CharSave[];
   activeChar: string | null;
-  /** Creatures met in the world (bestiary); empty until creatures exist. */
-  bestiary: string[];
-  /** World clock (minutes since midnight and days passed), shared by every map. Absent in older saves. */
+  /** World clock (minutes since midnight and days passed). */
   clock?: { minutes: number; days: number };
 }
 
 const KEY = 'cubeborn.save.v1';
-/** Where the save as it was before the v7 rework is kept (written once, never overwritten). */
-export const BACKUP_KEY = 'cubeborn.save.backup.v6';
-const VERSION = 7;
+/**
+ * Where the save as it was before the RPG rework (v8) is kept: written once, never overwritten.
+ * The older pre-v7 backup key stays untouched.
+ */
+export const BACKUP_KEY = 'cubeborn.save.backup.v7';
+export const VERSION = 8;
 
 export function defaultSettings(): Settings {
   const lang: Lang = (navigator.language || 'ru').toLowerCase().startsWith('ru') ? 'ru' : 'en';
@@ -136,8 +113,6 @@ export function defaultSettings(): Settings {
     ...QUALITY_PRESETS.high,
     screenShake: 1,
     damageNumbers: true,
-    enemyHealthBars: 'elites',
-    showMinimap: true,
     showFps: false,
     autoPause: true,
     cameraZoom: 1,
@@ -151,16 +126,14 @@ export function defaultSettings(): Settings {
 }
 
 export function defaultSave(): SaveData {
-  return { version: VERSION, settings: defaultSettings(), chars: [], activeChar: null, bestiary: [] };
+  return { version: VERSION, settings: defaultSettings(), chars: [], activeChar: null };
 }
 
-/** Field names of saves before v7 that belonged to removed systems (gold, shop, achievements, maps...). */
-const DROPPED = ['gold', 'perm', 'unlocked', 'achievements', 'stats', 'discovered', 'mapClears', 'endless', 'seenIntro', 'permSpent', 'last', 'gear'];
-
 /**
- * Brings stored data to the current format. Settings and characters are kept (characters are
- * repaired by fixChar); data of removed systems is dropped. Before a pre-v7 save is changed the
- * original is copied to BACKUP_KEY, so nothing is lost silently.
+ * Brings stored data to the current format. Only the settings (and the world clock) are kept from
+ * saves before v8: the old class heroes, their skills, positions on the removed maps and the
+ * bestiary are dropped (loadSave copies the original to BACKUP_KEY first). Key bindings reset,
+ * since the old skill keys are gone.
  */
 export function migrate(raw: any): SaveData {
   const d = defaultSave();
@@ -172,49 +145,52 @@ export function migrate(raw: any): SaveData {
     Object.assign(rs, { quality: q }, QUALITY_PRESETS[q as 'low' | 'medium' | 'high']);
     if (typeof rs.screenShake === 'boolean') rs.screenShake = rs.screenShake ? 1 : 0;
   }
-  // v5 action combat: eight skill keys (Q W E R A S D F), Ultimate V, Identity Z — every old binding resets
-  if (oldVersion < 5) delete rs.keybinds;
-  delete rs.vibration;
-  delete rs.showWaveCounter;
-  delete rs.showEnemyCount;
+  if (oldVersion < VERSION) delete rs.keybinds;
   const binds: Record<string, unknown> = { ...(rs.keybinds || {}) };
-  // v7: the world map moved to Tab; developer keys, inventory and potion are gone
-  if (oldVersion < 7) for (const k of ['map', 'devPanel', 'devDebug', 'devGod', 'inventory', 'potion']) delete binds[k];
   const kb = defaultKeybinds();
   for (const k of Object.keys(kb) as BindAction[]) if (Array.isArray(binds[k])) kb[k] = (binds[k] as unknown[]).filter((c): c is string => typeof c === 'string');
   const settings: Settings = { ...d.settings, ...rs, keybinds: kb };
   for (const k of Object.keys(settings) as (keyof Settings)[]) if (!(k in d.settings)) delete settings[k];
-  const chars = Array.isArray(raw.chars) ? (raw.chars.map(fixChar).filter(Boolean) as CharSave[]) : [];
+  const chars = oldVersion < VERSION || !Array.isArray(raw.chars) ? [] : (raw.chars.map(fixChar).filter(Boolean) as CharSave[]);
   return {
     version: VERSION,
     settings,
     chars,
     activeChar: chars.some((c) => c.id === raw.activeChar) ? raw.activeChar : (chars[0]?.id ?? null),
-    bestiary: Array.isArray(raw.bestiary) ? raw.bestiary.filter((x: unknown) => typeof x === 'string') : [],
-    // the world clock arrived within v7: older saves simply start a fresh morning
     ...(raw.clock && typeof raw.clock === 'object' && Number.isFinite(raw.clock.minutes)
       ? { clock: { minutes: ((raw.clock.minutes % 1440) + 1440) % 1440, days: Number.isFinite(raw.clock.days) ? Math.max(0, Math.floor(raw.clock.days)) : 0 } }
       : {}),
   };
 }
 
-/** True when a stored save has data of removed systems (it will be backed up before migration). */
-function needsBackup(raw: any): boolean {
-  return !!raw && typeof raw === 'object' && (typeof raw.version !== 'number' || raw.version < VERSION || DROPPED.some((k) => k in raw));
+/** True when a stored save predates the current format (it is backed up before migration). */
+export function needsBackup(raw: any): boolean {
+  return !!raw && typeof raw === 'object' && (typeof raw.version !== 'number' || raw.version < VERSION);
 }
 
-export function loadSave(): SaveData {
+/** Storage used by the save (localStorage in the browser; tests pass a stand-in). */
+export interface SaveStorage {
+  getItem(k: string): string | null;
+  setItem(k: string, v: string): void;
+  removeItem(k: string): void;
+}
+const store = (): SaveStorage => localStorage;
+
+export function loadSave(st: SaveStorage = store()): SaveData {
   let s: string | null = null;
   try {
-    s = localStorage.getItem(KEY);
+    s = st.getItem(KEY);
     if (!s) return defaultSave();
     const raw = JSON.parse(s);
-    if (needsBackup(raw) && localStorage.getItem(BACKUP_KEY) === null) localStorage.setItem(BACKUP_KEY, s);
-    return migrate(raw);
+    if (needsBackup(raw) && st.getItem(BACKUP_KEY) === null) st.setItem(BACKUP_KEY, s);
+    const data = migrate(raw);
+    // the migrated save replaces the old one at once, so nothing old can come back on a later load
+    if (needsBackup(raw)) st.setItem(KEY, JSON.stringify(data));
+    return data;
   } catch {
     // unreadable save: keep a copy instead of overwriting it with a fresh one
     try {
-      if (s) localStorage.setItem(KEY + '.unreadable', s);
+      if (s) st.setItem(KEY + '.unreadable', s);
     } catch {
       /* storage unavailable */
     }
@@ -222,18 +198,18 @@ export function loadSave(): SaveData {
   }
 }
 
-export function writeSave(data: SaveData): boolean {
+export function writeSave(data: SaveData, st: SaveStorage = store()): boolean {
   try {
-    localStorage.setItem(KEY, JSON.stringify(data));
+    st.setItem(KEY, JSON.stringify(data));
     return true;
   } catch {
     return false;
   }
 }
 
-export function clearSave(): void {
+export function clearSave(st: SaveStorage = store()): void {
   try {
-    localStorage.removeItem(KEY);
+    st.removeItem(KEY);
   } catch {
     /* storage unavailable */
   }

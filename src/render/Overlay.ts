@@ -1,7 +1,6 @@
 import { groundAt } from './ground';
 import * as THREE from 'three';
-import type { Run } from '../game/Run';
-import { getLang } from '../i18n';
+import type { World } from '../rpg/World';
 
 interface Num {
   x: number;
@@ -17,8 +16,6 @@ interface Num {
 }
 
 const v = new THREE.Vector3();
-/** Creature name plates are shown within this distance of the hero. */
-const LABEL_R = 13;
 
 function hex(c: number): string {
   return '#' + c.toString(16).padStart(6, '0');
@@ -36,7 +33,6 @@ export class Overlay {
   private h = 1;
   private dpr = 1;
   showNumbers = true;
-  healthBars: 'off' | 'elites' | 'all' = 'elites';
 
   constructor(parent: HTMLElement) {
     this.canvas = document.createElement('canvas');
@@ -89,7 +85,7 @@ export class Overlay {
     this.nums.length = 0;
   }
 
-  draw(dt: number, camera: THREE.Camera, run: Run | null) {
+  draw(dt: number, camera: THREE.Camera, run: World | null) {
     const ctx = this.ctx;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.clearRect(0, 0, this.w, this.h);
@@ -98,47 +94,25 @@ export class Overlay {
     ctx.textBaseline = 'middle';
     ctx.lineJoin = 'round';
 
-    // health bars of combat targets: once damaged, or always with the "all" setting
+    // dummy plates: name, and the running damage total and DPS while it is being hit
     const px = run.player.x;
     const pz = run.player.z;
-    if (this.healthBars !== 'off') {
-      const all = this.healthBars === 'all';
-      let drawn = 0;
-      for (const e of run.enemies.list) {
-        if (!e.active || e.dying > 0 || drawn > 160) continue;
-        const d2 = (e.x - px) ** 2 + (e.z - pz) ** 2;
-        // named world creatures always show their name, level and health up close
-        const named = !!e.name && d2 < LABEL_R * LABEL_R;
-        if (!all && !named && e.hp >= e.maxHp) continue;
-        if (d2 > 30 * 30) continue;
-        if (!this.project(camera, e.x, 1.2 + e.scale * 1.4 + e.y + groundAt(e.x, e.z), e.z)) continue;
-        if (named) {
-          const diff = e.level - run.player.level;
-          ctx.font = '600 11px "Russo One", sans-serif';
-          ctx.lineWidth = 3;
-          ctx.strokeStyle = 'rgba(0,0,0,0.85)';
-          const label = `${getLang() === 'ru' ? 'Ур.' : 'Lv'} ${e.level} ${e.name}`;
-          ctx.strokeText(label, v.x, v.y - 8);
-          // level colour against the hero: grey easy, white even, yellow/red tough
-          ctx.fillStyle = diff <= -5 ? '#a8b0b8' : diff < 3 ? '#ffffff' : diff < 6 ? '#ffd040' : '#ff5a4a';
-          ctx.fillText(label, v.x, v.y - 8);
-        }
-        const bw = 22;
-        const sx = Math.round(v.x - bw / 2);
-        const sy = Math.round(v.y);
-        ctx.fillStyle = 'rgba(0,0,0,0.65)';
-        ctx.fillRect(sx - 1, sy - 1, bw + 2, 4);
-        ctx.fillStyle = '#ff4a5a';
-        ctx.fillRect(sx, sy, Math.max(0, (bw * e.hp) / e.maxHp), 2);
-        // stagger bar: fills with stagger damage, flashes while the target is broken
-        if (e.stag > 0 || e.brokenT > 0) {
-          ctx.fillStyle = 'rgba(0,0,0,0.65)';
-          ctx.fillRect(sx - 1, sy + 4, bw + 2, 4);
-          const k = e.brokenT > 0 ? 1 : Math.min(1, e.stag / Math.max(1, e.stagMax));
-          ctx.fillStyle = e.brokenT > 0 ? (Math.floor(run.time * 8) % 2 ? '#fff4c0' : '#ffd040') : '#f0c040';
-          ctx.fillRect(sx, sy + 5, Math.max(0, bw * k), 2);
-        }
-        drawn++;
+    for (const d of run.dummies) {
+      if ((d.x - px) ** 2 + (d.z - pz) ** 2 > 28 * 28) continue;
+      if (!this.project(camera, d.x, groundAt(d.x, d.z) + d.height + 0.35, d.z)) continue;
+      const sel = run.target === d;
+      ctx.font = '600 11px "Russo One", sans-serif';
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+      ctx.strokeText(d.name, v.x, v.y - 10);
+      ctx.fillStyle = sel ? '#ffd040' : '#ffffff';
+      ctx.fillText(d.name, v.x, v.y - 10);
+      if (d.total > 0) {
+        const line = `Σ ${d.total}  ·  ${Math.round(d.dps(run.time))} DPS`;
+        ctx.font = '600 10px "Russo One", sans-serif';
+        ctx.strokeText(line, v.x, v.y + 4);
+        ctx.fillStyle = '#ffe9a0';
+        ctx.fillText(line, v.x, v.y + 4);
       }
     }
 

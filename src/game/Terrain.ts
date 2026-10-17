@@ -96,8 +96,7 @@ export class Terrain {
    */
   readonly elev: Uint8Array | Uint16Array;
   /**
-   * World position of cell (0, 0): streamed worlds keep a window of cells around the hero and move
-   * it (see game/continent). Every coordinate method takes WORLD coordinates and subtracts this;
+   * World position of cell (0, 0) (0 on fixed maps). Every coordinate method takes WORLD coordinates and subtracts this;
    * index-based methods (centerY(i), passable(i, j), ...) and the arrays are window-local.
    * Map builders run with the origin at 0, so their local cells are world cells.
    */

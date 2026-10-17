@@ -1,11 +1,8 @@
-import { SKILL_BINDS, type BindAction, type Keybinds } from '../meta/Save';
-
-/** Bindings of the action slots: 0..7 skills, 8 Ultimate, 9 special. */
-export const SLOT_BINDS: BindAction[] = [...SKILL_BINDS, 'ult', 'special'];
+import type { BindAction, Keybinds } from '../meta/Save';
 
 /**
- * PC input: rebindable keyboard movement, pause, camera zoom (mouse wheel or keys) and the
- * big-map toggle, plus an optional gamepad. Produces a world-space direction where
+ * PC input: rebindable keyboard movement (WASD / arrows), jump, attack, inventory, pause and
+ * camera zoom (mouse wheel or keys), plus an optional gamepad. Produces a world-space direction where
  * screen-up maps to -z.
  */
 export class Input {
@@ -23,7 +20,7 @@ export class Input {
   private btn(b: number): number {
     return this.swapMouse && (b === 0 || b === 2) ? 2 - b : b;
   }
-  onMap: (() => void) | null = null;
+  onInventory: (() => void) | null = null;
   onJump: (() => void) | null = null;
   /** Fired when the player first moves (used by the controls hint). */
   onFirstMove: (() => void) | null = null;
@@ -35,12 +32,7 @@ export class Input {
   lmb = false;
   rmb = false;
   lmbPressed = false;
-  readonly casts: number[] = [];
-  dodgeQueued = false;
-  identityQueued = false;
-  onSkills: (() => void) | null = null;
-  /** Ctrl + skill key: spend a skill point on that slot (4 = dodge). */
-  onLearn: ((slot: number) => void) | null = null;
+  rmbPressed = false;
   private padPause = false;
   private padJump = false;
 
@@ -67,24 +59,12 @@ export class Input {
       if (this.enabled) {
         if (this.is('zoomIn', e.code)) this.onZoom?.(-1);
         else if (this.is('zoomOut', e.code)) this.onZoom?.(1);
-        else if (this.is('map', e.code)) this.onMap?.();
         if (this.is('jump', e.code)) {
           e.preventDefault();
           this.onJump?.();
         }
-        for (let i = 0; i < SLOT_BINDS.length; i++)
-          if (this.is(SLOT_BINDS[i], e.code)) {
-            e.preventDefault();
-            if (e.ctrlKey) this.onLearn?.(i);
-            else this.casts.push(i);
-          }
-        if (this.is('dodge', e.code)) {
-          e.preventDefault();
-          this.dodgeQueued = true;
-        }
-        if (this.is('identity', e.code)) this.identityQueued = true;
-        if (this.is('skills', e.code)) this.onSkills?.();
       }
+      if (this.is('inventory', e.code)) this.onInventory?.();
       this.keys.add(e.code);
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));
@@ -116,7 +96,10 @@ export class Input {
       if (b === 0) {
         this.lmb = true;
         this.lmbPressed = true;
-      } else if (b === 2) this.rmb = true;
+      } else if (b === 2) {
+        this.rmb = true;
+        this.rmbPressed = true;
+      }
       area.setPointerCapture?.(e.pointerId);
     });
     const up = (e: PointerEvent) => {
@@ -183,8 +166,7 @@ export class Input {
     this.enabled = on;
     if (!on) {
       this.keys.clear();
-      this.lmb = this.rmb = this.lmbPressed = this.dodgeQueued = this.identityQueued = false;
-      this.casts.length = 0;
+      this.lmb = this.rmb = this.lmbPressed = this.rmbPressed = false;
     }
   }
 }

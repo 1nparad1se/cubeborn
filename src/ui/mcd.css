@@ -28,10 +28,7 @@
 }
 
 /* ------------------------------------------------------------------ shared bits */
-.hud .key,
-.mframe .key,
-.hb-key .key,
-.mc-key {
+.hud .key {
   font: 400 10px/1 var(--font-px);
   color: #1d1a12;
   background: var(--mc-key);
@@ -43,135 +40,8 @@
 }
 
 /* ------------------------------------------------------------------ HUD: top centre (timer, boss) */
-.hud-time {
-  font: 400 20px var(--font-px);
-  color: #f6f8f8;
-  text-shadow:
-    2px 2px 0 #000,
-    -1px -1px 0 #000,
-    1px -1px 0 #000,
-    -1px 1px 0 #000;
-}
-.boss-bar {
-  width: min(560px, 50vw);
-  padding: 0 12px;
-}
-.boss-name {
-  font: 400 14px/1.4 var(--font-px);
-  margin-bottom: 3px;
-  text-shadow:
-    2px 2px 0 #000,
-    -1px -1px 0 #000,
-    1px -1px 0 #000,
-    -1px 1px 0 #000;
-}
-.boss-track {
-  position: relative;
-  height: 14px;
-  background: linear-gradient(#2a0d12, #14060a);
-  border: 2px solid #0a0b0d;
-  box-shadow:
-    0 0 0 2px var(--mc-bevel),
-    0 0 0 3px #0a0b0d,
-    0 3px 8px rgba(0, 0, 0, 0.55);
-  clip-path: none;
-  overflow: visible;
-}
-.boss-track::before,
-.boss-track::after {
-  /* angled end caps like a sword guard */
-  content: '';
-  position: absolute;
-  top: -5px;
-  width: 12px;
-  height: 20px;
-  background: var(--mc-bevel);
-  box-shadow: inset 0 0 0 2px #0a0b0d;
-  z-index: 2;
-}
-.boss-track::before {
-  left: -16px;
-  clip-path: polygon(100% 0, 100% 100%, 0 50%);
-}
-.boss-track::after {
-  right: -16px;
-  clip-path: polygon(0 0, 0 100%, 100% 50%);
-}
-.boss-fill {
-  background: linear-gradient(#ff5b5b 0 30%, #d8262f 30% 75%, #9e1420 75%);
-}
-.boss-bar.invuln .boss-fill {
-  background: linear-gradient(#bfeaff 0 30%, #6ab4e0 30% 75%, #3a7aaa 75%);
-}
-.boss-fill::after {
-  /* little diamond notches along the bar */
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: repeating-linear-gradient(90deg, transparent 0 calc(25% - 1px), rgba(0, 0, 0, 0.45) calc(25% - 1px) 25%);
-}
-.boss-stag {
-  height: 6px;
-  width: 64%;
-  margin-top: 7px;
-  background: #16130a;
-  box-shadow:
-    0 0 0 1px #0a0b0d,
-    0 0 0 2px #6a5a2a;
-}
-.boss-stag-text {
-  font: 400 12px var(--font-hud);
-  letter-spacing: 0.5px;
-}
-.boss-phase {
-  margin-top: 5px;
-  align-items: center;
-}
-.boss-phase i {
-  width: 8px;
-  height: 8px;
-  transform: rotate(45deg);
-  background: #3a2a30;
-  box-shadow: 0 0 0 1px #000;
-  margin: 0 2px;
-}
-.boss-phase i.on {
-  background: #ff4a4a;
-}
-.boss-phase-t {
-  font: 400 13px var(--font-hud);
-  color: #ffd0a0;
-  text-shadow: 1px 1px 0 #000;
-}
-.fx-chip {
-  font: 400 11px var(--font-hud);
-  border-radius: 0;
-  padding: 1px 6px;
-  box-shadow: 0 0 0 1px #000;
-}
 
 /* hovered-enemy card */
-.hover-info {
-  background: var(--mc-panel);
-  border: 1px solid var(--mc-line);
-  border-radius: 0;
-  box-shadow: 0 0 0 1px #050607;
-}
-.hv-name {
-  font: 400 12px/1.5 var(--font-px);
-  text-transform: uppercase;
-}
-.hv-track {
-  border-radius: 0;
-  border: 1px solid #000;
-  box-shadow: 0 0 0 1px var(--mc-bevel);
-}
-.hv-fill {
-  background: linear-gradient(#ff5b5b 0 35%, #d8262f 35% 75%, #9e1420 75%);
-}
-.hv-hp {
-  font: 400 11px/13px var(--font-hud);
-}
 
 /* ------------------------------------------------------------------ HUD: top right (map, objective) */
 .minimap {
@@ -205,95 +75,8 @@
 }
 
 /* objective (wave) tracker: diamond bullet, pixel caps, rule with a diamond end */
-.wave-panel {
-  min-width: 230px;
-  gap: 3px;
-}
-.wave-head {
-  gap: 7px;
-}
-.wave-title {
-  position: relative;
-  padding-left: 20px;
-  font: 400 14px/1.4 var(--font-px);
-  text-shadow:
-    2px 2px 0 #000,
-    -1px -1px 0 #000,
-    1px -1px 0 #000,
-    -1px 1px 0 #000;
-}
-.wave-title::before {
-  content: '';
-  position: absolute;
-  left: 2px;
-  top: 50%;
-  width: 9px;
-  height: 9px;
-  margin-top: -6px;
-  transform: rotate(45deg);
-  background: var(--wc, var(--mc-gold));
-  box-shadow:
-    0 0 0 2px #1a1408,
-    0 0 0 3px var(--mc-gold);
-}
-.wave-head .key {
-  min-width: 18px;
-  height: 18px;
-  font-size: 11px;
-}
-.wave-rule {
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(240, 246, 246, 0.9) 22%);
-}
-.wave-rule::after {
-  right: 22px;
-  top: -3px;
-  width: 6px;
-  height: 6px;
-}
-.wave-sub {
-  position: relative;
-  padding-right: 14px;
-  font: 400 14px var(--font-hud);
-  letter-spacing: 0.3px;
-  color: #eef3f3;
-  text-shadow:
-    1px 1px 0 #000,
-    -1px 0 0 #000;
-}
-.wave-sub::after {
-  content: '';
-  position: absolute;
-  right: 2px;
-  top: 50%;
-  width: 4px;
-  height: 4px;
-  margin-top: -2px;
-  transform: rotate(45deg);
-  background: #f0f4f4;
-  box-shadow: 0 0 0 1px #000;
-}
-.wave-track {
-  width: 150px;
-  height: 4px;
-}
-.wave-strip i {
-  width: 5px;
-  height: 7px;
-}
-.mod-chip {
-  font: 400 12px var(--font-hud);
-  letter-spacing: 0.3px;
-}
-.wave-record {
-  font: 400 13px var(--font-hud);
-}
 
 /* effects (top-left) */
-.buff {
-  font-family: var(--font-hud);
-  border-radius: 0;
-}
 
 /* banner (wave start, boss) */
 .banner-main {
@@ -332,91 +115,8 @@
 /* --- level + XP: purple segmented bar like a soul track */
 
 /* --- above the bar: cast bar, buffs, unspent points */
-.arpg-hud .ah-cast {
-  width: 260px;
-}
-.arpg-hud .ah-cast-name {
-  font: 400 14px var(--font-hud);
-  letter-spacing: 0.5px;
-  text-shadow:
-    2px 2px 0 #000,
-    -1px -1px 0 #000;
-}
-.arpg-hud .ah-cast-track {
-  height: 8px;
-  border-radius: 0;
-  border: 1px solid #000;
-  box-shadow: 0 0 0 2px var(--mc-bevel);
-}
-.arpg-hud .ah-buff {
-  font: 400 12px var(--font-hud);
-  letter-spacing: 0.3px;
-  border-radius: 0;
-  background: rgba(10, 26, 30, 0.85);
-  box-shadow:
-    0 0 0 1px #050607,
-    inset 3px 0 0 var(--bc, #9adfff);
-}
-.arpg-hud .ah-points {
-  font: 400 13px var(--font-hud);
-  letter-spacing: 0.3px;
-  border-radius: 0;
-  background: rgba(40, 32, 8, 0.88);
-  border: 1px solid var(--mc-gold);
-  box-shadow: 0 0 0 1px #050607;
-  padding: 3px 10px 3px 22px;
-  position: relative;
-}
-.arpg-hud .ah-points::before {
-  content: '';
-  position: absolute;
-  left: 8px;
-  top: 50%;
-  width: 7px;
-  height: 7px;
-  margin-top: -4px;
-  transform: rotate(45deg);
-  background: var(--mc-gold);
-}
 
 /* --- tooltip over a slot: teal card */
-.sk-tip {
-  background: rgba(12, 32, 38, 0.97);
-  border: 1px solid var(--mc-line-hi);
-  border-radius: 0;
-  box-shadow:
-    0 0 0 1px #050607,
-    0 8px 20px rgba(0, 0, 0, 0.6);
-  color: var(--mc-text);
-}
-.tip-head {
-  font: 400 11px/1.5 var(--font-px);
-  text-transform: uppercase;
-}
-.tip-key {
-  border: 0;
-  border-radius: 2px;
-  padding: 0 4px;
-  font: 400 8px/15px var(--font-px);
-  color: #1d1a12;
-  background: var(--mc-key);
-  box-shadow: inset 0 -2px 0 var(--mc-key-dk);
-}
-.tip-lv {
-  font-family: var(--font-hud);
-}
-.tip-kv {
-  border-bottom-color: rgba(176, 222, 226, 0.14);
-}
-.tip-tags span,
-.sks-tags span {
-  border-radius: 0;
-  background: rgba(176, 222, 226, 0.12);
-  color: #c4dde0;
-}
-.tip-next {
-  border-top-color: rgba(176, 222, 226, 0.2);
-}
 
 /* ------------------------------------------------------------------ toasts */
 .toast {
@@ -441,19 +141,6 @@
   transform: rotate(45deg);
   background: var(--tc, #fff);
   box-shadow: 0 0 0 1px #000;
-}
-.toast.ach-toast {
-  padding-left: 12px;
-}
-.toast.ach-toast::before {
-  display: none;
-}
-.ach-toast-head {
-  font-family: var(--font-hud);
-  letter-spacing: 0.5px;
-}
-.ach-toast-name {
-  font-family: var(--font-hud);
 }
 
 /* ==================================================================================================
@@ -522,65 +209,10 @@
 }
 
 /* ------------------------------------------------------------------ menu frame */
-.mframe {
-  background: rgba(6, 18, 22, 0.84);
-}
-.mframe.showcase {
-  background: linear-gradient(90deg, rgba(6, 18, 22, 0.9) 0 52%, rgba(6, 18, 22, 0.55) 70%, rgba(6, 18, 22, 0.2));
-}
-.mtop {
-  background: linear-gradient(#050d10, rgba(10, 26, 30, 0.96));
-  box-shadow: 0 1px 0 var(--mc-line);
-}
-.mtab {
-  font: 400 12px/1.4 var(--font-px);
-  color: #8fb0b4;
-}
-.mtab:hover {
-  color: #e2f0f0;
-}
-.mtab.sel {
-  color: #fff;
-}
-.mtab.sel::after {
-  height: 3px;
-  left: 6px;
-  right: 6px;
-  background: #f0a030;
-  box-shadow: 0 0 8px rgba(240, 160, 48, 0.6);
-}
-.mtab.sel::before {
-  /* small diamond over the selected tab, like a notification gem */
-  content: '';
-  position: absolute;
-  right: 4px;
-  top: 6px;
-  width: 5px;
-  height: 5px;
-  transform: rotate(45deg);
-  background: #f0a030;
-}
-.mfoot {
-  background: linear-gradient(rgba(10, 26, 30, 0.9), #050d10);
-  box-shadow: 0 -1px 0 var(--mc-line);
-}
-.mhint {
-  font: 400 15px var(--font-hud);
-  letter-spacing: 0.5px;
-}
-.mframe .gold-chip,
-.mframe .count {
-  font: 400 14px var(--font-px);
-}
 
 /* cards and lists */
 .panel,
 .detail,
-.hero-grid,
-.map-list,
-.icon-grid,
-.upgrade-list,
-.ach-list,
 .settings {
   border-radius: 0;
   background: var(--mc-panel);
@@ -588,147 +220,14 @@
     0 0 0 1px #050607,
     inset 0 0 0 1px var(--mc-line);
 }
-.mframe .detail {
-  background:
-    linear-gradient(rgba(40, 90, 98, 0.35), transparent 90px),
-    var(--mc-panel);
-  box-shadow:
-    0 0 0 1px #050607,
-    inset 0 0 0 1px var(--mc-line-hi);
-  scrollbar-color: #4a7a80 transparent;
-}
-.mframe .detail h3,
 .detail h3 {
   font: 400 20px/1.3 var(--font-px);
   text-transform: uppercase;
 }
-.mframe .detail-title {
-  border-bottom-color: var(--mc-line);
-}
-.mframe .detail .kv {
-  border-bottom-color: rgba(176, 222, 226, 0.12);
-}
-.mframe .detail .kv > span:first-child::before {
-  width: 6px;
-  height: 6px;
-  transform: rotate(45deg);
-  background: #9dbcc0;
-  box-shadow: none;
-}
-.pill {
-  font: 400 10px/1.6 var(--font-px);
-  border-radius: 0;
-  box-shadow:
-    0 0 0 1px #050607,
-    inset 0 -2px 0 rgba(0, 0, 0, 0.25);
-}
-.mframe .icon-cell,
-.mframe .hero-card {
-  background:
-    linear-gradient(to top, color-mix(in srgb, var(--rc) 22%, transparent), transparent 55%),
-    var(--mc-cell);
-  box-shadow:
-    0 0 0 1px #050607,
-    inset 0 0 0 2px color-mix(in srgb, var(--rc) 45%, #2c4c52),
-    inset 0 -3px 0 color-mix(in srgb, var(--rc) 70%, transparent);
-}
-.mframe .icon-cell.sel,
-.mframe .hero-card.sel,
-.mframe .map-card.sel {
-  box-shadow:
-    0 0 0 1px #050607,
-    0 0 0 3px #ffffff,
-    inset 0 0 0 2px var(--rc, #fff),
-    inset 0 -3px 0 var(--rc, #fff);
-}
-.mframe .map-card,
-.mframe .upgrade,
-.mframe .ach {
-  background: var(--mc-panel2);
-  box-shadow:
-    0 0 0 1px #050607,
-    inset 0 0 0 1px var(--mc-line);
-}
-.mframe .map-card .name,
-.mframe .up-name,
-.mframe .ach-name {
-  font-family: var(--font-hud);
-  letter-spacing: 0.5px;
-}
-.mframe .tab {
-  font: 400 10px/1.4 var(--font-px);
-  background: rgba(22, 54, 61, 0.92);
-  color: #b4d0d4;
-  box-shadow:
-    0 0 0 1px #050607,
-    inset 0 0 0 1px var(--mc-line);
-}
-.mframe .tab.sel {
-  background: #eaf3f3;
-  color: #0c2226;
-}
 
 /* ------------------------------------------------------------------ class select */
-.cs-card {
-  border-radius: 0;
-  background:
-    linear-gradient(90deg, color-mix(in srgb, var(--hc) 26%, transparent), transparent 70%),
-    var(--mc-cell);
-  box-shadow:
-    0 0 0 1px #050607,
-    inset 0 0 0 1px color-mix(in srgb, var(--hc) 45%, #2c4c52);
-}
-.cs-card.sel {
-  box-shadow:
-    0 0 0 1px #050607,
-    0 0 0 3px #ffffff,
-    inset 0 0 0 2px var(--hc);
-}
-.cs-card-name {
-  font: 400 10px/1.5 var(--font-px);
-}
-.cs-name {
-  font-family: var(--font-px) !important;
-  font-size: 20px !important;
-  line-height: 1.4;
-}
-.cs-sec,
-.cs-alabel {
-  font-family: var(--font-px) !important;
-  font-size: 10px !important;
-  line-height: 1.6;
-}
-.cs-stage {
-  border-radius: 0;
-}
-.cs-sheet,
-.cs-info {
-  border-radius: 0;
-}
 
 /* ------------------------------------------------------------------ inventory (I) */
-.modal.inventory .inv-top h2 {
-  font-size: 30px;
-}
-.inv-label,
-.it-title {
-  font: 400 10px/1.5 var(--font-px);
-  color: #b4d0d4;
-  position: relative;
-  padding-left: 14px;
-}
-.inv-label::before,
-.it-title::before {
-  content: '';
-  position: absolute;
-  left: 2px;
-  top: 50%;
-  width: 6px;
-  height: 6px;
-  margin-top: -4px;
-  transform: rotate(45deg);
-  border: 1px solid #b4d0d4;
-}
 .inv-slot {
   border-radius: 0;
   border: 2px solid color-mix(in srgb, var(--rc, #2c4c52) 70%, #1a3036);
@@ -754,222 +253,18 @@
   font: 400 11px var(--font-hud);
   color: #4f7a80;
 }
-.inv-gold {
-  font: 400 14px var(--font-px);
-}
-.inv-stats .ist {
-  border-bottom-color: rgba(176, 222, 226, 0.12);
-}
-.it-card {
-  border-radius: 0;
-  border: 1px solid var(--mc-line-hi);
-  background:
-    linear-gradient(rgba(40, 90, 98, 0.4), transparent 60px),
-    rgba(10, 28, 33, 0.95);
-  box-shadow:
-    0 0 0 1px #050607,
-    inset 0 3px 0 var(--rc);
-}
-.it-name {
-  font: 400 12px/1.5 var(--font-px);
-  text-transform: uppercase;
-}
-.it-line.implicit {
-  border-bottom-color: rgba(176, 222, 226, 0.15);
-}
-.it-verdict {
-  font-family: var(--font-hud);
-  letter-spacing: 0.5px;
-}
-.inv-hint,
-.sks-hint {
-  font-family: var(--font-ui);
-  color: var(--mc-dim);
-}
 
 /* ------------------------------------------------------------------ skills window (K) */
-.modal.sks .sks-head h2 {
-  font-size: 28px;
-}
-.sks-cls {
-  font: 400 17px var(--font-hud);
-  letter-spacing: 0.8px;
-}
-.sks-points {
-  font: 400 10px/1.4 var(--font-px);
-  border-radius: 0;
-  border-color: var(--mc-line);
-}
-.sks-row {
-  border-radius: 0;
-  background: rgba(8, 24, 28, 0.78);
-  border: 1px solid rgba(176, 222, 226, 0.18);
-  box-shadow: 0 0 0 1px #050607;
-}
-.sks-row.sel {
-  border-color: #ffffff;
-  background: rgba(24, 58, 64, 0.88);
-}
-.sks-icon {
-  border-radius: 0;
-  border: 3px solid;
-  border-color: var(--mc-bevel-hi) var(--mc-bevel) var(--mc-bevel-dk) var(--mc-bevel);
-  background: #121418;
-  box-shadow: 0 0 0 1px #050607;
-}
-.sks-icon.ult {
-  border-radius: 0;
-  border: 0;
-  background: linear-gradient(135deg, #fff6c8 0 35%, #ffd060 35% 65%, #b07a1a 65%);
-  clip-path: polygon(50% 0, 100% 24%, 100% 76%, 50% 100%, 0 76%, 0 24%);
-}
-.sks-icon.ult .icon {
-  border-radius: 0;
-  width: 38px;
-  height: 38px;
-}
-.sks-key,
-.sk-mini-key,
-.cs-key {
-  font-size: 8px !important;
-  line-height: 14px !important;
-  border: 0 !important;
-  border-radius: 2px !important;
-  font-family: var(--font-px) !important;
-  color: #1d1a12 !important;
-  background: var(--mc-key) !important;
-  box-shadow:
-    0 0 0 1px #050607,
-    inset 0 -2px 0 var(--mc-key-dk) !important;
-}
-.sks-name {
-  font: 400 12px/1.5 var(--font-px);
-  text-transform: uppercase;
-}
-.sks-lvn {
-  font-family: var(--font-hud);
-}
-.sks-pips i {
-  border-radius: 0;
-}
-.sks-plus {
-  border-radius: 0;
-  font-family: var(--font-px);
-  font-size: 14px;
-}
-.sks-tier-h {
-  font-family: var(--font-hud);
-  letter-spacing: 1px;
-}
-.sks-card {
-  border-radius: 0;
-  background: rgba(14, 36, 42, 0.92);
-  border: 1px solid rgba(176, 222, 226, 0.2);
-}
-.sks-card:hover {
-  border-color: var(--mc-line-hi);
-}
-.sks-card.on {
-  border-color: var(--mc-gold);
-  background: rgba(58, 48, 14, 0.9);
-}
-.sks-detail {
-  border-radius: 0;
-  background:
-    linear-gradient(rgba(40, 90, 98, 0.4), transparent 90px),
-    rgba(10, 28, 33, 0.96);
-  border: 1px solid var(--mc-line-hi);
-  box-shadow: 0 0 0 1px #050607;
-}
-.sks-dicon .icon {
-  border-radius: 0;
-  border: 3px solid;
-  border-color: var(--mc-bevel-hi) var(--mc-bevel) var(--mc-bevel-dk) var(--mc-bevel);
-}
 
 /* ------------------------------------------------------------------ pause / results */
-.build-cls {
-  font: 400 16px var(--font-hud);
-  letter-spacing: 0.8px;
-}
-.build-head {
-  font: 400 10px var(--font-px);
-  color: #b4d0d4;
-}
-.build-row.skills .sk-mini {
-  border-radius: 0;
-  border: 3px solid;
-  border-color: var(--mc-bevel-hi) var(--mc-bevel) var(--mc-bevel-dk) var(--mc-bevel);
-  background: #121418;
-  box-shadow: 0 0 0 1px #050607;
-}
-.build-row.skills .sk-mini.ult {
-  border-radius: 0;
-  border-color: #ffe08a #d0a040 #8a6a1a #d0a040;
-}
-.build-row.skills .sk-mini b {
-  font-family: var(--font-px);
-  font-size: 8px;
-  border-radius: 0;
-}
-.stat-grid .kv,
 .modal .kv {
   border-bottom-color: rgba(176, 222, 226, 0.12);
-}
-.record-line {
-  font-family: var(--font-hud);
-  letter-spacing: 0.5px;
 }
 .unlock {
   border-radius: 0;
 }
 
 /* ------------------------------------------------------------------ settings */
-.set-sub {
-  position: relative;
-  padding-left: 16px;
-  font: 400 11px/1.6 var(--font-px);
-  color: #f0b040;
-}
-.set-sub::before {
-  content: '';
-  position: absolute;
-  left: 2px;
-  top: 50%;
-  width: 7px;
-  height: 7px;
-  margin-top: -4px;
-  transform: rotate(45deg);
-  background: #f0b040;
-}
-.settings .set-row {
-  border-bottom-color: rgba(176, 222, 226, 0.12);
-}
-.bind {
-  border-radius: 0;
-  font: 400 10px/1 var(--font-px);
-  color: #1d1a12;
-  background: var(--mc-key);
-  box-shadow:
-    0 0 0 1px #050607,
-    inset 0 -3px 0 var(--mc-key-dk);
-}
-.bind:hover {
-  box-shadow:
-    0 0 0 1px #050607,
-    0 0 0 3px #ffffff,
-    inset 0 -3px 0 var(--mc-key-dk);
-}
-.bind.empty {
-  color: #6a7478;
-  background: rgba(7, 20, 24, 0.82);
-  box-shadow:
-    0 0 0 1px #050607,
-    inset 0 0 0 1px var(--mc-line);
-}
-.bind.wait {
-  background: var(--mc-gold);
-}
 .toggle,
 .seg button,
 .tab {
@@ -990,124 +285,12 @@
   background: #eaf3f3;
   color: #0c2226;
 }
-.set-note:not(:empty) {
-  border-radius: 0;
-}
 
 /* ------------------------------------------------------------------ smaller screens */
-@media (min-width: 1700px) {
-  .hud-top {
-    zoom: 1.15;
-  }
-}
 
 /* press-and-hold skills: the note in the slot tooltip */
-.sk-hold-note { color: #ffc440; font-size: 12px; margin: 2px 0 4px; }
 
 /* ---------------------------------------------------------------- big boss bar (arena fights) */
-.boss-bar.big {
-  width: min(860px, 72vw);
-}
-.boss-bar.big .boss-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 10px;
-  margin-bottom: 4px;
-}
-.boss-bar.big .boss-name {
-  font: 400 20px/1.2 var(--font-px);
-  margin: 0;
-  letter-spacing: 1px;
-}
-.boss-bar.big .boss-title {
-  font: 400 12px var(--font-hud);
-  color: #d8c8b0;
-  text-shadow: 1px 1px 0 #000;
-  opacity: 0.85;
-}
-.boss-bar.big .boss-track {
-  height: 20px;
-}
-.boss-trail {
-  position: absolute;
-  inset: 0;
-  transform-origin: left;
-  background: #fff2e0;
-  opacity: 0.75;
-}
-.boss-bar.big .boss-fill {
-  z-index: 1;
-}
-.boss-marks {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  pointer-events: none;
-}
-.boss-marks i {
-  position: absolute;
-  top: -4px;
-  bottom: -4px;
-  width: 3px;
-  margin-left: -1px;
-  background: #0a0b0d;
-  box-shadow: 0 0 0 1px rgba(255, 210, 120, 0.55);
-}
-.boss-marks i.enr::after {
-  /* enrage marker: a little flame diamond above the notch */
-  content: '';
-  position: absolute;
-  top: -9px;
-  left: -4px;
-  width: 9px;
-  height: 9px;
-  transform: rotate(45deg);
-  background: #ff6a2a;
-  box-shadow: 0 0 0 1px #000;
-}
-.boss-pct {
-  position: absolute;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 4;
-  font: 400 12px var(--font-hud);
-  color: #fff;
-  text-shadow: 1px 1px 0 #000, -1px -1px 0 #000;
-}
-.boss-under {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 18px;
-}
-.boss-under .boss-stag {
-  width: 48%;
-  margin-top: 8px;
-}
-.boss-cast {
-  position: absolute;
-  left: 0;
-  top: 6px;
-  font: 400 13px var(--font-hud);
-  color: #ffd8a0;
-  text-shadow: 1px 1px 0 #000, -1px -1px 0 #000;
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-.boss-cast.on {
-  opacity: 1;
-}
-.boss-cast.on::before {
-  content: '! ';
-  color: #ff5a3a;
-}
-.boss-bar.big.enraged .boss-fill {
-  background: linear-gradient(#ff9a4a 0 30%, #e8401a 30% 75%, #a81808 75%);
-  animation: boss-enr 0.8s ease-in-out infinite alternate;
-}
 @keyframes boss-enr {
   to {
     filter: brightness(1.35);

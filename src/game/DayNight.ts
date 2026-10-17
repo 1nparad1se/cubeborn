@@ -1,5 +1,13 @@
 import { DAY_NIGHT, type DayPeriod, type PhaseLight } from '../config/dayNight';
-import type { Run } from './Run';
+import type { MapDef } from '../data/types';
+import type { FxSink } from './types';
+
+/** What the day/night cycle needs from the world it lights. */
+export interface DayNightHost {
+  map: MapDef;
+  fx: FxSink;
+  events: { emit(type: 'banner' | 'dayPeriod', payload: string): void };
+}
 import { DAY_MINUTES, phaseAt, type GameClock } from './GameClock';
 
 function smooth(x: number): number {
@@ -49,7 +57,7 @@ export class DayNight {
   readonly light: PhaseLight = { ...DAY_NIGHT.light.day };
 
   constructor(
-    private run: Run,
+    private run: DayNightHost,
     readonly clock: GameClock,
   ) {
     this.compute();

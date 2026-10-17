@@ -1,7 +1,7 @@
 import { MAX_CHARS, newChar, type CharSave } from './Characters';
 import { loadSave, writeSave, type SaveData } from './Save';
 
-/** Stored state: settings, created characters and the bestiary. */
+/** Stored state: settings and created characters. */
 export class Profile {
   data: SaveData;
   private saveTimer = 0;
@@ -44,10 +44,10 @@ export class Profile {
   }
 
   /** Creates a character with its own save slot (existing characters are never touched). */
-  createChar(name: string, cls: string): CharSave | null {
+  createChar(name: string, race: string): CharSave | null {
     const d = this.data;
     if (d.chars.length >= MAX_CHARS) return null;
-    const c = newChar(name, cls);
+    const c = newChar(name, race);
     while (d.chars.some((x) => x.id === c.id)) c.id += 'x';
     d.chars.push(c);
     d.activeChar = c.id;

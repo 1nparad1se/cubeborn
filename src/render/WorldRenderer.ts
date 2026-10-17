@@ -4,7 +4,6 @@ import { CELL, type Block, type Terrain } from '../game/Terrain';
 import { hash2 } from '../core/Rng';
 import { ATLAS_VARIANTS, GROUND_ROWS, ROW_RIM, ROW_SOIL, ROW_STONE, SPRITE, SPRITE_COLORED, SPRITE_COUNT, makeBlockAtlas, makeFoliageAtlas, makeGroundAtlas } from './Textures';
 import { TILE_COUNT, tileOf, treeVoxels, type Vox } from './VoxelFlora';
-import { unitCube } from './VoxelGeometry';
 import { DITHER } from './dither';
 import { PropKit } from '../world/render/PropRenderer';
 import { groundTile } from '../world/textures/groundTiles';
@@ -114,6 +113,14 @@ float vnoise(vec2 p) {
  * Static voxel world in a painted dungeon-crawler style: textured ground with sunken water,
  * foam and cliff banks, soft contact shadows, instanced block chunks, grass and flowers.
  */
+/** Unit cube with per-face UVs (0..1), base at y = 0, for terrain blocks. */
+function unitCube(): THREE.BufferGeometry {
+  const g = new THREE.BoxGeometry(1, 1, 1);
+  g.translate(0, 0.5, 0);
+  g.setAttribute('aGlow', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count), 1));
+  return g;
+}
+
 export class WorldRenderer {
   readonly group = new THREE.Group();
   readonly uniforms = {

@@ -1,8 +1,8 @@
 import { h, clear } from './dom';
-import type { Run } from '../game/Run';
+import type { World } from '../rpg/World';
 import type { MenuApi } from './Menus';
 import { settingsPanel, leaveSettings } from './Settings';
-import { tr } from './ClassPreview';
+import { tr } from './tr';
 
 export interface PauseActions {
   resume(): void;
@@ -38,7 +38,7 @@ export class RunModals {
     this.root.classList.add('open');
   }
 
-  pause(_run: Run, a: PauseActions) {
+  pause(_run: World, a: PauseActions) {
     const side = h('div.pz-side');
     const note = h('div.mm-note');
     const btn = (icon: string, label: string, fn: () => void, primary = false) =>

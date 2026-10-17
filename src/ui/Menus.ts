@@ -1,17 +1,11 @@
-import { h, clear, hex } from './dom';
-import { iconImg } from './icons';
-import { thumbImg } from '../render/Thumbnails';
+import { h, clear } from './dom';
 import { t, L } from '../i18n';
 import type { Profile } from '../meta/Profile';
-import { CLASSES, classDef } from '../game/action/classes';
-import type { ClassDef } from '../game/action/types';
-import { SLOT_KEYS } from '../game/action/types';
-import { MAX_CHARS, REGION, type CharSave } from '../meta/Characters';
-import { SkillSandbox, type DemoAction } from '../render/SkillSandbox';
-import { BESTIARY_CATEGORIES, CREATURES, type CreatureEntry } from '../data/bestiary';
-import { MobPreview } from '../render/MobPreview';
+import { MAX_CHARS, type CharSave } from '../meta/Characters';
+import { playableRaces, RACE_BY_ID, type RaceDef } from '../rpg/races';
+import { TEST_MAP } from '../rpg/testMap';
 import { settingsPanel, leaveSettings } from './Settings';
-import { attachTip, classStage, hideTip, skillTipBody, tr } from './ClassPreview';
+import { tr } from './tr';
 import { fmtTime } from './format';
 import './menu.css';
 
@@ -19,8 +13,8 @@ export interface MenuApi {
   profile: Profile;
   version: string;
   sfx(id: string): void;
-  /** Enters the world with a saved character (`mapId` 'showcase': the «Витрина мира» map). */
-  play(charId: string, mapId?: string): void;
+  /** Enters the training meadow with a saved character. */
+  play(charId: string): void;
   /** Captures the next key press for rebinding. */
   captureKey(cb: (code: string) => void): void;
   /** True when a setting changed that only applies after a restart. */
@@ -28,35 +22,22 @@ export interface MenuApi {
   applySettings(): void;
   /** Restores the default settings (characters are kept). */
   resetSettings(): void;
-  /** Menu campfire with the created characters (empty = a single showcase hero). */
-  setCampfire(members: { id: string; cls: string }[], activeId: string | null): void;
-  setShowcase(modelId: string): void;
-  /** Client-space points above the campfire characters' heads. */
-  campfireAnchors(): { id: string; x: number; y: number }[];
   /** Slides the menu backdrop toward the right edge (0 = centred, 1 = right third). */
   setMenuShift(v: number): void;
-  /** Stops drawing the 3D menu backdrop while a screen with its own 3D view is open. */
-  setBackdropPaused(v: boolean): void;
 }
 
-type ScreenId = 'main' | 'continue' | 'create' | 'bestiary' | 'settings';
+type ScreenId = 'main' | 'continue' | 'create' | 'settings';
 
 /** Menu entries in order (main list and the tab bar of the inner screens). */
 const ENTRIES: { id: ScreenId | 'exit'; icon: string; ru: string; en: string }[] = [
   { id: 'continue', icon: 'play', ru: 'Продолжить игру', en: 'Continue' },
   { id: 'create', icon: 'helm', ru: 'Создать персонажа', en: 'Create character' },
-  { id: 'bestiary', icon: 'skull', ru: 'Бестиарий', en: 'Bestiary' },
   { id: 'settings', icon: 'gear', ru: 'Настройки', en: 'Settings' },
   { id: 'exit', icon: 'door', ru: 'Выход', en: 'Exit' },
 ];
 
 /** Small square-pixel glyphs for the menu buttons (CSS draws them, see menu.css). */
 const glyph = (name: string) => h('i.mm-glyph.g-' + name);
-
-/** Class emblem: the class's identity icon in its colour. */
-export function classEmblem(c: ClassDef, cls = 'mm-emblem'): HTMLElement {
-  return iconImg('sk_' + c.identity.icon, c.color, cls);
-}
 
 /** Readable play time: "2 ч 15 мин" / "2 h 15 min". */
 function playTime(sec: number): string {
@@ -75,24 +56,7 @@ export function nameError(p: Profile, raw: string): string | null {
   return null;
 }
 
-/** Real numbers of a class for the creation screen. */
-function classStats(c: ClassDef) {
-  const chain = c.basic.steps.reduce((s, st) => s + st.dur, 0);
-  return {
-    hp: c.baseHp,
-    attack: c.power,
-    armor: c.armor,
-    speed: c.baseSpeed,
-    /** Basic attack hits per second. */
-    aps: chain > 0 ? c.basic.steps.length / chain : 1,
-  };
-}
-const STAT_MAX = (() => {
-  const all = CLASSES.map(classStats);
-  return { hp: Math.max(...all.map((s) => s.hp)), attack: Math.max(...all.map((s) => s.attack)), armor: Math.max(...all.map((s) => s.armor)), speed: Math.max(...all.map((s) => s.speed)), aps: Math.max(...all.map((s) => s.aps)) };
-})();
-
-/** Out-of-game screens: main menu at the campfire, continue, character creation, bestiary, settings. */
+/** Out-of-game screens: main menu, continue, character creation, settings. */
 export class Menus {
   readonly root: HTMLElement;
   private stack: ScreenId[] = ['main'];
@@ -158,10 +122,8 @@ export class Menus {
   render() {
     this.cleanup?.();
     this.cleanup = null;
-    hideTip();
     clear(this.root);
     const id = this.current;
-    this.api.setBackdropPaused(id === 'create');
     const el = this.build(id);
     el.classList.add('screen', 'screen-' + id);
     this.root.appendChild(el);
@@ -176,8 +138,6 @@ export class Menus {
         return this.continueScreen();
       case 'create':
         return this.createScreen();
-      case 'bestiary':
-        return this.bestiaryScreen();
       case 'settings':
         return this.frame(t('menu_settings'), settingsPanel(this.api, () => this.render(), () => this.open('main')), '.mm-full');
     }
@@ -190,86 +150,44 @@ export class Menus {
     else go();
   }
 
-  // ------------------------------------------------------------------ campfire
-  private showCamp() {
-    const p = this.api.profile;
-    const chars = p.chars;
-    if (!this.sel || !chars.some((c) => c.id === this.sel)) this.sel = p.char?.id ?? chars[0]?.id ?? null;
-    if (chars.length) this.api.setCampfire(chars.slice(0, 9).map((c) => ({ id: c.id, cls: c.cls })), this.sel);
-    else this.api.setShowcase(CLASSES[0].id);
-  }
-
   // ------------------------------------------------------------------ main
   private mainScreen(): HTMLElement {
     const p = this.api.profile;
-    this.showCamp();
     const has = p.data.chars.length > 0;
     const nav = h('nav.mm-nav');
+    const note = h('div.mm-note');
     for (const e of ENTRIES) {
       const off = e.id === 'continue' && !has;
-      const b = h(
-        'button.mm-btn' + (off ? '.off' : '') + (e.id === 'continue' && has ? '.primary' : ''),
-        {
-          onclick: () => {
-            if (off) {
-              this.api.sfx('denied');
-              note.textContent = tr('Сохранённых персонажей пока нет. Создайте первого.', 'No saved characters yet. Create your first one.');
-              note.classList.add('show');
-              return;
-            }
-            this.go(e.id);
+      nav.append(
+        h(
+          'button.mm-btn' + (off ? '.off' : '') + ((e.id === 'continue' && has) || (e.id === 'create' && !has) ? '.primary' : ''),
+          {
+            onclick: () => {
+              if (off) {
+                this.api.sfx('denied');
+                note.textContent = tr('Сохранённых персонажей пока нет. Создайте первого.', 'No saved characters yet. Create your first one.');
+                note.classList.add('show');
+                return;
+              }
+              this.go(e.id);
+            },
           },
-        },
-        glyph(e.icon),
-        h('span.mm-label', tr(e.ru, e.en)),
-        h('span.mm-arrow', '›'),
+          glyph(e.icon),
+          h('span.mm-label', tr(e.ru, e.en)),
+          h('span.mm-arrow', '›'),
+        ),
       );
-      nav.append(b);
     }
-    const note = h('div.mm-note');
-    // name cards above the characters at the campfire
-    const cards = h('div.mm-cards');
-    const byId = new Map<string, HTMLElement>();
-    for (const c of p.chars.slice(0, 9)) {
-      const def = classDef(c.cls);
-      const card = h(
-        'button.mm-card' + (c.id === this.sel ? '.sel' : ''),
-        {
-          style: `--hc:${hex(def.color)}`,
-          title: tr('Двойной щелчок — играть', 'Double-click to play'),
-          onclick: () => {
-            if (this.sel === c.id) return;
-            this.api.sfx('select');
-            this.sel = c.id;
-            this.api.profile.selectChar(c.id);
-            this.showCamp();
-            for (const [k, el] of byId) el.classList.toggle('sel', k === c.id);
-          },
-          ondblclick: () => this.api.play(c.id),
-        },
-        classEmblem(def),
-        h('div.mm-card-txt', h('b', c.name), h('span', `${L(def.name)} · ${tr('Уровень', 'Level')} ${c.level}`), h('small', L(REGION))),
-      );
-      byId.set(c.id, card);
-      cards.append(card);
-    }
-    let raf = 0;
-    const place = () => {
-      raf = requestAnimationFrame(place);
-      const host = this.root.getBoundingClientRect();
-      for (const a of this.api.campfireAnchors()) {
-        const el = byId.get(a.id);
-        if (!el) continue;
-        el.style.transform = `translate(${Math.round(a.x - host.left)}px, ${Math.round(a.y - host.top)}px) translate(-50%, -100%)`;
-        el.style.visibility = 'visible';
-      }
-    };
-    if (byId.size) raf = requestAnimationFrame(place);
-    this.cleanup = () => cancelAnimationFrame(raf);
+    const cur = p.char;
     return h(
       'div.mm',
-      h('div.mm-side', h('div.mm-logo', h('div.mm-logo-title', 'CUBEBORN'), h('div.mm-logo-sub', t('game_subtitle'))), nav, note),
-      cards,
+      h(
+        'div.mm-side',
+        h('div.mm-logo', h('div.mm-logo-title', 'CUBEBORN'), h('div.mm-logo-sub', t('game_subtitle'))),
+        nav,
+        note,
+        cur ? h('div.mm-last', tr('Последний персонаж: ', 'Last character: '), h('b', cur.name), ` · ${RACE_BY_ID[cur.race]?.name ?? ''}`) : null,
+      ),
       h('div.mm-ver', this.api.version),
     );
   }
@@ -298,54 +216,42 @@ export class Menus {
   // ------------------------------------------------------------------ continue
   private continueScreen(): HTMLElement {
     const p = this.api.profile;
-    this.showCamp();
     const wrap = h('div.mc');
     const render = () => {
       clear(wrap);
       const chars = p.chars;
       if (!chars.length) {
-        wrap.append(
-          h('div.mc-empty', h('p', tr('Сохранённых персонажей пока нет.', 'There are no saved characters yet.')), h('button.mm-big', { onclick: () => this.go('create') }, tr('Создать персонажа', 'Create character'))),
-        );
+        wrap.append(h('div.mc-empty', h('p', tr('Сохранённых персонажей пока нет.', 'There are no saved characters yet.')), h('button.mm-big', { onclick: () => this.go('create') }, tr('Создать персонажа', 'Create character'))));
         return;
       }
+      if (!this.sel || !chars.some((c) => c.id === this.sel)) this.sel = p.char?.id ?? chars[0].id;
       const list = h('div.mc-list');
       for (const c of chars) {
-        const def = classDef(c.cls);
         list.append(
           h(
             'button.mc-row' + (c.id === this.sel ? '.sel' : ''),
             {
-              style: `--hc:${hex(def.color)}`,
               onclick: () => {
                 if (c.id === this.sel) return;
                 this.api.sfx('select');
                 this.sel = c.id;
                 p.selectChar(c.id);
-                this.showCamp();
                 render();
               },
               ondblclick: () => this.api.play(c.id),
             },
-            thumbImg(c.cls, 'mc-thumb'),
-            h('div.mc-txt', h('b', c.name), h('span', `${L(def.name)} · ${tr('Уровень', 'Level')} ${c.level}`), h('small', `${L(REGION)} · ${playTime(c.playTime)}`)),
-            classEmblem(def),
+            h('div.mc-txt', h('b', c.name), h('span', `${RACE_BY_ID[c.race]?.name ?? ''} · ${tr('Уровень', 'Level')} ${c.level}`), h('small', `${L(TEST_MAP.name)} · ${playTime(c.playTime)}`)),
           ),
         );
       }
       const cur = chars.find((c) => c.id === this.sel) ?? chars[0];
-      const def = classDef(cur.cls);
       const detail = h(
         'div.mc-detail',
-        { style: `--hc:${hex(def.color)}` },
-        h('div.mc-head', classEmblem(def), h('div', h('h2', cur.name), h('span', `${L(def.name)} · ${tr('Уровень', 'Level')} ${cur.level}`))),
-        h('div.mc-kv', h('span', tr('Регион', 'Region')), h('b', L(REGION))),
+        h('div.mc-head', h('div', h('h2', cur.name), h('span', `${RACE_BY_ID[cur.race]?.name ?? ''} · ${tr('Уровень', 'Level')} ${cur.level}`))),
+        h('div.mc-kv', h('span', tr('Локация', 'Location')), h('b', L(TEST_MAP.name))),
         h('div.mc-kv', h('span', tr('Время в игре', 'Play time')), h('b', playTime(cur.playTime))),
-        h('div.mc-kv', h('span', tr('Очки навыков', 'Skill points')), h('b', String(cur.points))),
         h('div.mc-kv', h('span', tr('Последняя игра', 'Last played')), h('b', new Date(cur.lastPlayed).toLocaleDateString())),
         h('button.mm-big', { onclick: () => this.api.play(cur.id) }, tr('Играть', 'Play')),
-        h('button.mm-small.mc-showcase', { title: tr('Прежняя карта: долина 250×250', 'The previous map: a 250×250 vale'), onclick: () => this.api.play(cur.id, 'greenvale') }, tr('Зелёный Дол', 'Greenvale')),
-        h('button.mm-small.mc-showcase', { title: tr('Все объекты мира на одной карте, без монстров', 'Every world object on one map, no monsters'), onclick: () => this.api.play(cur.id, 'showcase') }, tr('Витрина мира', 'World Showcase')),
         h('button.mm-small.danger', { onclick: () => this.deleteDialog(cur, render) }, tr('Удалить персонажа', 'Delete character')),
       );
       wrap.append(h('div.mc-col', h('div.mc-count', tr(`Персонажи: ${chars.length} / ${MAX_CHARS}`, `Characters: ${chars.length} / ${MAX_CHARS}`)), list), detail);
@@ -355,9 +261,8 @@ export class Menus {
   }
 
   private deleteDialog(c: CharSave, done: () => void) {
-    const def = classDef(c.cls);
     this.dialog(
-      tr(`Удалить персонажа «${c.name}» (${L(def.name)}, ур. ${c.level})? Его уровень и навыки будут потеряны навсегда.`, `Delete "${c.name}" (${L(def.name)}, lv ${c.level})? Their level and skills are lost for good.`),
+      tr(`Удалить персонажа «${c.name}» (${RACE_BY_ID[c.race]?.name ?? ''}, ур. ${c.level})? Он и его снаряжение будут потеряны навсегда.`, `Delete "${c.name}"? The character and its gear are lost for good.`),
       [
         { label: tr('Отмена', 'Cancel') },
         {
@@ -366,7 +271,6 @@ export class Menus {
           fn: () => {
             this.api.profile.deleteChar(c.id);
             this.sel = null;
-            this.showCamp();
             done();
           },
         },
@@ -420,33 +324,17 @@ export class Menus {
 
   // ------------------------------------------------------------------ create
   /**
-   * Character creation: class cards along the bottom, the full-height 3D model in the middle
-   * (drag to rotate, wheel to zoom), the class sheet with real numbers, skills, animation
-   * preview, the name field and the Choose button on the right.
+   * Character creation: pick a race (only «Человек» is available for now) and a name, then
+   * confirm. No class, gender, appearance or stats: every human starts the same. The hero stands
+   * in the 3D backdrop beside the panel.
    */
   private createScreen(): HTMLElement {
     const p = this.api.profile;
     const sfx = (x: string) => this.api.sfx(x);
-    const st = classStage(sfx, false);
-    let cur: ClassDef = classDef(p.char?.cls ?? CLASSES[0].id);
-    let sb: SkillSandbox | null = null;
-    const stopDemo = () => {
-      if (st.viewer.demoActive) st.viewer.detachDemo();
-      sb = null;
-    };
-    const demo = (key: string, list: DemoAction[]) => {
-      sfx('select');
-      if (!st.viewer.demoActive || !sb || sb.classId !== cur.id) {
-        stopDemo();
-        sb = new SkillSandbox(cur.id);
-      }
-      sb.play(list);
-      st.viewer.attachDemo(sb, 'demo:' + key);
-    };
-    const panel = h('div.cc2-panel');
-    const strip = h('div.cc2-strip');
-    const err = h('div.cc2-err');
-    const input = h('input.cc2-name', { type: 'text', maxlength: '16', placeholder: tr('Имя персонажа', 'Character name'), spellcheck: 'false', autocomplete: 'off' }) as HTMLInputElement;
+    const races = playableRaces();
+    let race: RaceDef = races[0];
+    const err = h('div.cc-err');
+    const input = h('input.cc-name', { type: 'text', maxlength: '16', placeholder: tr('Имя персонажа', 'Character name'), spellcheck: 'false', autocomplete: 'off' }) as HTMLInputElement;
     const full = p.data.chars.length >= MAX_CHARS;
     const submit = () => {
       if (full) return;
@@ -457,7 +345,7 @@ export class Menus {
         input.focus();
         return;
       }
-      const c = p.createChar(input.value.trim(), cur.id);
+      const c = p.createChar(input.value.trim(), race.id);
       if (!c) return;
       sfx('select');
       this.sel = c.id;
@@ -471,187 +359,33 @@ export class Menus {
         submit();
       }
     });
-    const bar = (label: string, v: number, max: number, text: string, color: string) =>
-      h('div.cc2-stat', h('span', label), h('div.cc2-bar', h('i', { style: `width:${Math.round((v / max) * 100)}%;background:${color}` })), h('b', text));
-    const showPanel = () => {
-      clear(panel);
-      const c = cur;
-      const s = classStats(c);
-      const skill = (sd: ClassDef['skills'][number], key: string, act: DemoAction, cls = '') => {
-        const b = h('button.cc2-skill' + cls, { style: `--sc:${hex(sd.color)}`, onclick: () => demo(sd.id, [act]) }, iconImg('sk_' + sd.icon, sd.color, 'icon'), h('span.key', key));
-        attachTip(b, () => skillTipBody(c, sd, key));
-        return b;
-      };
-      /** A slot the class has no skill for yet. */
-      const emptySlot = (key: string, cls = '') => {
-        const b = h('div.cc2-skill.empty' + cls, h('span.key', key));
-        attachTip(b, () => h('div', tr('Способности для этого слота пока нет.', 'No skill for this slot yet.')));
-        return b;
-      };
-      const slotBtn = (i: number) => (c.skills[i] ? skill(c.skills[i], SLOT_KEYS[i], { k: 'skill', slot: i }) : emptySlot(SLOT_KEYS[i]));
-      panel.append(
-        h('div.cc2-head', { style: `--hc:${hex(c.color)}` }, classEmblem(c, 'cc2-emblem'), h('div', h('h2', L(c.name)), h('div.cc2-role', `${L(c.role)} · ${L(c.weapon)}`))),
-        h('p.cc2-desc', L(c.desc)),
-        h(
-          'div.cc2-stats',
-          bar(tr('Здоровье', 'Health'), s.hp, STAT_MAX.hp, String(s.hp), '#e0454f'),
-          bar(tr('Атака', 'Attack'), s.attack, STAT_MAX.attack, String(s.attack), '#ff8a3a'),
-          bar(tr('Защита', 'Defense'), s.armor, STAT_MAX.armor, String(s.armor), '#4a9aff'),
-          bar(tr('Скорость передвижения', 'Move speed'), s.speed, STAT_MAX.speed, s.speed.toFixed(1), '#f0c040'),
-          bar(tr('Скорость атаки', 'Attack speed'), s.aps, STAT_MAX.aps, tr(`${s.aps.toFixed(1)} уд/с`, `${s.aps.toFixed(1)} hits/s`), '#9a6aff'),
-        ),
-        h('div.cc2-sec', tr('Особенности класса', 'Class features')),
-        h('div.cc2-feat', h('b', L(c.passive.name)), h('span', L(c.passive.desc))),
-        h('div.cc2-feat', { style: `--rc:${c.res.color}` }, h('b', tr('Ресурс: ', 'Resource: ') + L(c.res.name)), h('span', L(c.res.desc))),
-        h('div.cc2-sec', tr('Основные навыки', 'Main skills')),
-        h('div.cc2-skills', ...[0, 1, 2, 3].map(slotBtn)),
-        h('div.cc2-sec', tr('Дополнительные навыки', 'Extra skills')),
-        h('div.cc2-skills', ...[4, 5, 6, 7].map(slotBtn)),
-        h('div.cc2-sec', tr('Ультимативная способность', 'Ultimate')),
-        h('div.cc2-skills', c.ult ? skill(c.ult, 'V', { k: 'ult' }, '.ult') : emptySlot('V', '.ult')),
-        h('div.cc2-hint', tr('Нажмите на навык, чтобы увидеть его в действии.', 'Click a skill to see it in action.')),
-        h('div.cc2-sec', tr('Просмотр анимации', 'Animation preview')),
-        st.anims,
+    const desc = h('p.cc-desc');
+    const cards = h('div.cc-races');
+    const pick = (r: RaceDef) => {
+      race = r;
+      desc.textContent = r.desc;
+      for (const el of cards.children) el.classList.toggle('sel', (el as HTMLElement).dataset.id === r.id);
+    };
+    for (const r of races)
+      cards.append(
+        h('button.cc-race', { 'data-id': r.id, onclick: () => (sfx('select'), pick(r)) }, h('i.cc-race-ico'), h('b', r.name), h('small', tr('Доступна', 'Available'))),
       );
-    };
-    const pick = (c: ClassDef) => {
-      cur = c;
-      stopDemo();
-      st.setClass(c);
-      st.viewer.play('idle');
-      for (const el of strip.children) el.classList.toggle('sel', (el as HTMLElement).dataset.id === c.id);
-      showPanel();
-    };
-    for (const c of CLASSES)
-      strip.append(
-        h(
-          'button.cc2-card',
-          {
-            'data-id': c.id,
-            style: `--hc:${hex(c.color)}`,
-            onclick: () => {
-              if (c.id === cur.id) return;
-              sfx('select');
-              pick(c);
-            },
-          },
-          thumbImg(c.id, 'cc2-thumb'),
-          h('div.cc2-card-name', L(c.name)),
-          classEmblem(c, 'cc2-card-em'),
-        ),
-      );
-    const order = CLASSES.map((c) => c.id);
-    const onKey = (e: KeyboardEvent) => {
-      if (e.repeat || e.defaultPrevented || document.activeElement === input) return;
-      const dir = e.code === 'ArrowLeft' ? -1 : e.code === 'ArrowRight' ? 1 : 0;
-      if (!dir) return;
-      e.preventDefault();
-      sfx('select');
-      pick(classDef(order[(order.indexOf(cur.id) + dir + order.length) % order.length]));
-    };
-    window.addEventListener('keydown', onKey);
-    pick(cur);
-    st.viewer.start();
-    const choose = h(
-      'div.cc2-choose',
-      h('label', tr('Имя персонажа', 'Character name'), h('small', tr(`персонажей ${p.data.chars.length} / ${MAX_CHARS}`, `characters ${p.data.chars.length} / ${MAX_CHARS}`))),
+    pick(race);
+    const b = race.base;
+    const panel = h(
+      'div.cc-panel',
+      h('div.cc-sec', tr('Раса', 'Race')),
+      cards,
+      desc,
+      h('div.cc-base', h('div', h('span', 'Здоровье'), h('b', String(b.maxHp))), h('div', h('span', 'Скорость'), h('b', `${b.moveSpeed} бл/с`)), h('div', h('span', 'Защита'), h('b', String(b.physDef)))),
+      h('p.cc-note', 'Класса нет: стиль боя определяет оружие. Все стартовые предметы уже лежат в сумке.'),
+      h('div.cc-sec', tr('Имя персонажа', 'Character name'), h('small', ` · ${p.data.chars.length} / ${MAX_CHARS}`)),
       input,
       err,
-      full ? h('div.cc2-err', tr('Достигнут предел персонажей — удалите одного в «Продолжить игру».', 'Character limit reached — delete one under Continue.')) : h('button.mm-big.cc2-go', { onclick: submit }, tr('Выбрать', 'Choose')),
-    );
-    this.cleanup = () => {
-      window.removeEventListener('keydown', onKey);
-      stopDemo();
-      st.dispose();
-    };
-    const el = h(
-      'div.cc2',
-      h('div.cc2-stage', st.stage, h('div.cc2-stage-hint', tr('Тяните мышью — вращать · колесо — масштаб · ←/→ — класс', 'Drag to rotate · wheel to zoom · ←/→ — class'))),
-      h('div.cc2-right', panel, choose),
-      strip,
+      full ? h('div.cc-err', tr('Достигнут предел персонажей — удалите одного в «Продолжить игру».', 'Character limit reached.')) : h('button.mm-big.cc-go', { onclick: submit }, tr('Подтвердить', 'Confirm')),
     );
     setTimeout(() => input.focus(), 60);
-    return this.frame(tr('Создание персонажа', 'Create character'), el, '.mm-full');
-  }
-
-  // ------------------------------------------------------------------ bestiary
-  /**
-   * Bestiary: categories on the left, the creature grid and a detail panel with a rotating 3D view.
-   * Entries come from data/bestiary.ts and are unlocked by `profile.data.bestiary` (ids of creatures
-   * met); entries marked `preview` (models made, not spawned in the world yet) are always shown.
-   */
-  private bestiaryScreen(): HTMLElement {
-    const seen = new Set(this.api.profile.data.bestiary);
-    const known = (x: CreatureEntry) => seen.has(x.id) || !!x.preview;
-    let cat = 'all';
-    let sel: string | null = null;
-    let view: MobPreview | null = null;
-    const cats = h('div.mb-cats');
-    const grid = h('div.mb-grid');
-    const detail = h('div.mb-detail');
-    const showDetail = (x: CreatureEntry | undefined) => {
-      view?.dispose();
-      view = null;
-      clear(detail);
-      if (!x) {
-        detail.append(h('p.mb-detail-empty', tr('Выберите существо, чтобы рассмотреть его.', 'Pick a creature to take a closer look.')));
-        return;
-      }
-      view = new MobPreview(x.model);
-      const catDef = BESTIARY_CATEGORIES.find((c) => c.id === x.category);
-      detail.append(
-        h('div.mb-stage', view.canvas, h('small.mb-hint', tr('Потяните, чтобы повернуть', 'Drag to rotate'))),
-        h('h3.mb-name', L(x.name)),
-        h('div.mb-meta', catDef ? h('span.mb-tag', glyph(catDef.icon), L(catDef.name)) : '', x.preview && !seen.has(x.id) ? h('span.mb-tag.mb-preview', tr('Ещё не встречено', 'Not met yet')) : ''),
-      );
-    };
-    const render = () => {
-      clear(cats);
-      for (const c of BESTIARY_CATEGORIES) {
-        const list = CREATURES.filter((x) => c.id === 'all' || x.category === c.id);
-        const found = list.filter(known).length;
-        cats.append(
-          h('button.mb-cat' + (cat === c.id ? '.sel' : ''), {
-            onclick: () => {
-              if (cat === c.id) return;
-              this.api.sfx('ui');
-              cat = c.id;
-              render();
-            },
-          }, glyph(c.icon), h('span', L(c.name)), h('small', c.id === 'all' ? `${found} / ${list.length}` : String(found))),
-        );
-      }
-      clear(grid);
-      const shown = CREATURES.filter((x) => (cat === 'all' || x.category === cat) && known(x));
-      if (!shown.length) {
-        view?.dispose();
-        view = null;
-        clear(detail);
-        grid.append(h('div.mb-empty', glyph('skull'), h('p', tr('Существа пока не обнаружены', 'No creatures discovered yet'))));
-        detail.append(h('p.mb-detail-empty', tr('Встреченные в мире существа появятся здесь: описание, характеристики, добыча и анимации.', 'Creatures you meet in the world appear here: description, stats, loot and animations.')));
-        return;
-      }
-      if (!sel || !shown.some((x) => x.id === sel)) sel = shown[0].id;
-      for (const x of shown) {
-        grid.append(
-          h('button.mb-cell' + (x.id === sel ? '.sel' : ''), {
-            onclick: () => {
-              if (sel === x.id) return;
-              this.api.sfx('ui');
-              sel = x.id;
-              render();
-            },
-          }, thumbImg(x.model, 'mb-thumb'), h('span', L(x.name))),
-        );
-      }
-      showDetail(shown.find((x) => x.id === sel));
-    };
-    render();
-    return this.frame(
-      tr('Бестиарий', 'Bestiary'),
-      h('div.mb', cats, grid, detail, h('button.mm-small.mb-back', { onclick: () => this.back() }, tr('Назад', 'Back'))),
-      '.mm-full',
-    );
+    return this.frame(tr('Создание персонажа', 'Create character'), h('div.cc', panel), '.mm-left');
   }
 }
 

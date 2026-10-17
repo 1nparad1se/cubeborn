@@ -1,9 +1,9 @@
 import { h, clear } from './dom';
 import { LANGS, setLang, type Lang } from '../i18n';
 import { keyName } from '../input/Input';
-import { QUALITY_PRESETS, SKILL_BINDS, defaultKeybinds, defaultSettings, type BindAction, type Quality, type Settings } from '../meta/Save';
+import { QUALITY_PRESETS, defaultKeybinds, defaultSettings, type BindAction, type Quality, type Settings } from '../meta/Save';
 import type { MenuApi } from './Menus';
-import { tr } from './ClassPreview';
+import { tr } from './tr';
 import './settings.css';
 
 const RESOLUTIONS: [number, number][] = [
@@ -37,7 +37,7 @@ const SECTIONS: { id: Section; icon: string; ru: string; en: string }[] = [
 const SECTION_KEYS: Record<Section, (keyof Settings)[]> = {
   screen: ['displayMode', 'resolution', 'vsync', 'fpsLimit', 'uiScale'],
   graphics: ['quality', 'shadows', 'effects', 'particles', 'viewDistance', 'antiAliasing', 'textures', 'postProcessing'],
-  game: ['cameraZoom', 'screenShake', 'damageNumbers', 'enemyHealthBars', 'showMinimap', 'showFps', 'showHints', 'autoPause'],
+  game: ['cameraZoom', 'screenShake', 'damageNumbers', 'showFps', 'showHints', 'autoPause'],
   audio: ['master', 'music', 'sfx', 'ambient', 'ui'],
   controls: ['keybinds', 'swapMouse', 'invertWheel'],
   other: ['lang'],
@@ -46,40 +46,25 @@ const SECTION_KEYS: Record<Section, (keyof Settings)[]> = {
 const SUB_KEYS = ['shadows', 'effects', 'particles', 'viewDistance', 'antiAliasing', 'textures', 'postProcessing'] as const;
 
 const BIND_LABEL: Record<BindAction, [string, string]> = {
-  up: ['Вверх', 'Up'],
-  down: ['Вниз', 'Down'],
+  up: ['Вперёд', 'Up'],
+  down: ['Назад', 'Down'],
   left: ['Влево', 'Left'],
   right: ['Вправо', 'Right'],
   jump: ['Прыжок', 'Jump'],
-  stop: ['Остановиться', 'Stop'],
-  skillQ: ['Навык Q', 'Skill Q'],
-  skillW: ['Навык W', 'Skill W'],
-  skillE: ['Навык E', 'Skill E'],
-  skillR: ['Навык R', 'Skill R'],
-  skillA: ['Навык A', 'Skill A'],
-  skillS: ['Навык S', 'Skill S'],
-  skillD: ['Навык D', 'Skill D'],
-  skillF: ['Навык F', 'Skill F'],
-  ult: ['Ультимативная способность', 'Ultimate'],
-  identity: ['Особая способность класса', 'Class identity'],
-  special: ['Дополнительное действие', 'Special action'],
-  dodge: ['Уклонение', 'Dodge'],
-  attack: ['Базовая атака', 'Basic attack'],
-  attackHere: ['Атаковать на месте (удерживать)', 'Attack in place (hold)'],
-  skills: ['Окно навыков', 'Skills window'],
-  map: ['Карта мира', 'World map'],
+  attack: ['Базовая атака (по цели)', 'Basic attack'],
+  inventory: ['Инвентарь и снаряжение', 'Inventory'],
   pause: ['Пауза', 'Pause'],
   zoomIn: ['Приблизить камеру', 'Zoom in'],
   zoomOut: ['Отдалить камеру', 'Zoom out'],
 };
 const bindLabel = (a: BindAction) => tr(...BIND_LABEL[a]);
 const BIND_GROUPS: [string, string, BindAction[]][] = [
-  ['Передвижение', 'Movement', ['up', 'down', 'left', 'right', 'jump', 'stop']],
-  ['Атаки и способности', 'Attacks and skills', ['attack', 'attackHere', ...SKILL_BINDS, 'ult', 'identity', 'special', 'dodge']],
-  ['Экраны и камера', 'Screens and camera', ['skills', 'map', 'pause', 'zoomIn', 'zoomOut']],
+  ['Передвижение', 'Movement', ['up', 'down', 'left', 'right', 'jump']],
+  ['Бой', 'Combat', ['attack']],
+  ['Экраны и камера', 'Screens and camera', ['inventory', 'pause', 'zoomIn', 'zoomOut']],
 ];
-/** Actions every class needs a key for (warned about when left without one). */
-const ESSENTIAL: BindAction[] = [...SKILL_BINDS, 'ult', 'identity', 'dodge', 'skills', 'map'];
+/** Actions that need a key (warned about when left without one). */
+const ESSENTIAL: BindAction[] = ['jump', 'attack', 'inventory'];
 
 let section: Section = 'screen';
 /** Settings as last applied; edits made since are a preview until «Применить». */
@@ -331,7 +316,7 @@ export function settingsPanel(api: MenuApi, rerender: () => void, onBack: () => 
           seg(tr('Разрешение', 'Resolution'), [{ id: 'native', name: tr('Родное', 'Native') }, ...res.map((r) => ({ id: r, name: r.replace('x', '×') }))], () => (st.resolution === 'native' || res.includes(st.resolution) ? st.resolution : 'native'), (v) => (st.resolution = v), tr('Разрешение отрисовки 3D-сцены; показаны только подходящие вашему монитору.', 'Render resolution of the 3D scene; only ones that fit your monitor are listed.')),
           toggle(tr('Вертикальная синхронизация', 'Vertical sync'), () => st.vsync, (v) => (st.vsync = v)),
           seg(tr('Ограничение кадров', 'Frame limit'), [30, 60, 120, 144, 165, 240, 0].map((n) => ({ id: n, name: n ? String(n) : '∞' })), () => st.fpsLimit, (v) => (st.fpsLimit = v)),
-          slider(tr('Масштаб интерфейса', 'Interface scale'), () => st.uiScale, (v) => (st.uiScale = v), { min: 80, max: 130, hint: tr('Размер меню, панели навыков, карты и подсказок.', 'Size of menus, the skill bar, the map and hints.') }),
+          slider(tr('Масштаб интерфейса', 'Interface scale'), () => st.uiScale, (v) => (st.uiScale = v), { min: 80, max: 130, hint: tr('Размер меню, панелей и подсказок.', 'Size of menus, panels and hints.') }),
         );
         break;
       }
@@ -352,7 +337,7 @@ export function settingsPanel(api: MenuApi, rerender: () => void, onBack: () => 
           seg(tr('Качество текстур', 'Texture quality'), lv3(), () => st.textures, sub('textures'), tr('Фильтрация и мипмапы текстур блоков.', 'Filtering and mipmaps of block textures.')),
           seg(tr('Тени', 'Shadows'), [{ id: 'off' as const, name: off() }, ...lv3()], () => st.shadows, sub('shadows'), tr('Размер карты теней: 1024, 2048 или 4096.', 'Shadow map size: 1024, 2048 or 4096.')),
           seg(tr('Освещение и эффекты', 'Lighting and effects'), lv3(), () => st.effects, sub('effects'), tr('Число динамических источников света (2, 4 или 6), сила свечения и затенение (AO).', 'Dynamic light count (2, 4 or 6), glow strength and ambient occlusion.')),
-          seg(tr('Частицы', 'Particles'), lv3(), () => st.particles, sub('particles'), tr('Количество частиц в эффектах навыков и окружения.', 'How many particles skills and the world spawn.')),
+          seg(tr('Частицы', 'Particles'), lv3(), () => st.particles, sub('particles'), tr('Количество частиц в эффектах ударов и окружения.', 'How many particles hits and the world spawn.')),
           seg(tr('Дальность прорисовки', 'View distance'), [
             { id: 'near', name: tr('Близко', 'Near') },
             { id: 'medium', name: tr('Средне', 'Medium') },
@@ -373,13 +358,7 @@ export function settingsPanel(api: MenuApi, rerender: () => void, onBack: () => 
           slider(tr('Отдаление камеры', 'Camera distance'), () => st.cameraZoom, (v) => (st.cameraZoom = v), { min: 75, max: 135, hint: tr('Также меняется колесом мыши в игре.', 'Also changes with the mouse wheel in game.') }),
           slider(tr('Тряска экрана', 'Screen shake'), () => st.screenShake, (v) => (st.screenShake = v)),
           group(tr('Интерфейс', 'Interface')),
-          toggle(tr('Мини-карта', 'Minimap'), () => st.showMinimap, (v) => (st.showMinimap = v)),
           toggle(tr('Цифры урона', 'Damage numbers'), () => st.damageNumbers, (v) => (st.damageNumbers = v)),
-          seg(tr('Полоски здоровья противников', 'Enemy health bars'), [
-            { id: 'off', name: off() },
-            { id: 'elites', name: tr('Только сильные', 'Strong only') },
-            { id: 'all', name: tr('Все', 'All') },
-          ], () => st.enemyHealthBars, (v) => (st.enemyHealthBars = v)),
           toggle(tr('Подсказки управления', 'Control hints'), () => st.showHints, (v) => (st.showHints = v), tr('Подсказка по клавишам в начале игры новым персонажем.', 'Key hints when a new character starts.')),
           toggle(tr('Счётчик кадров', 'FPS counter'), () => st.showFps, (v) => (st.showFps = v)),
           group(tr('Мир', 'World')),

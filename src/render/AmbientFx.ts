@@ -39,7 +39,7 @@ const POLLEN: LayerDef = { count: 200, size: 0.07, colors: [0xfff4c8, 0xffffff],
 const LEAVES: LayerDef = { count: 70, size: 0.16, colors: [0x7ec23a, 0xd9b23c], glow: false, motion: 'fall', vel: [0.55, -0.45, 0.2], sway: 0.8, freq: 0.6, y: [0, 7], alpha: 0.95, night: -0.4, blink: 0 };
 
 const LAYERS: Record<string, LayerDef[]> = {
-  // Greenvale: sunny meadow with pollen and falling leaves by day, fireflies through dusk and night
+  // meadow: sunny with pollen and falling leaves by day, fireflies through dusk and night
   meadow: [POLLEN, LEAVES, { ...FIREFLY, alpha: 0.12, night: 0.88 }],
 };
 

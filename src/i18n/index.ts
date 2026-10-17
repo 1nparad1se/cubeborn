@@ -1,21 +1,37 @@
 import type { Loc } from '../data/types';
-import { RU } from './ru';
-import { EN } from './en';
-import { RU2, EN2 } from './extra';
-import { RU3, EN3 } from './v3';
-import { RU4, EN4 } from './v4';
-import { RU5, EN5 } from './v5';
-import { RU_A, EN_A } from './arpg';
-import { RU_ACT, EN_ACT } from './action';
-import { RU_W, EN_W } from './world';
 
 export type Lang = 'ru' | 'en';
-const DICTS: Record<Lang, Record<string, string>> = { ru: { ...RU, ...RU2, ...RU3, ...RU4, ...RU5, ...RU_A, ...RU_ACT, ...RU_W }, en: { ...EN, ...EN2, ...EN3, ...EN4, ...EN5, ...EN_A, ...EN_ACT, ...EN_W } };
+
+/** Interface strings looked up by key (most UI text is written inline with tr()). */
+const DICTS: Record<Lang, Record<string, string>> = {
+  ru: {
+    game_subtitle: 'Воксельная RPG',
+    tap_to_start: 'Нажмите любую клавишу или кликните',
+    splash_note: 'Оригинальная игра. Звук и музыка синтезируются в реальном времени.',
+    menu_settings: 'Настройки',
+    btn_no: 'Нет',
+    btn_yes: 'Да',
+    dn_dusk: 'Закат: скоро стемнеет',
+    dn_night: 'Наступила ночь',
+    dn_dawn: 'Рассвет',
+  },
+  en: {
+    game_subtitle: 'A voxel RPG',
+    tap_to_start: 'Press any key or click',
+    splash_note: 'An original game. Sound and music are synthesised in real time.',
+    menu_settings: 'Settings',
+    btn_no: 'No',
+    btn_yes: 'Yes',
+    dn_dusk: 'Dusk: darkness is coming',
+    dn_night: 'Night has fallen',
+    dn_dawn: 'Dawn',
+  },
+};
 let current: Lang = 'ru';
 
 export function setLang(lang: Lang) {
   current = DICTS[lang] ? lang : 'ru';
-  document.documentElement.lang = current;
+  if (typeof document !== 'undefined') document.documentElement.lang = current;
 }
 export function getLang(): Lang {
   return current;

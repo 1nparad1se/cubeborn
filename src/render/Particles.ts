@@ -3,7 +3,6 @@ import type { ParticleKind } from '../game/types';
 import type { EmitKind, EmitLayer } from '../config/vfx';
 import { InstancedBatch } from './InstancedBatch';
 import { makeGlowMaterial, makeVoxelMaterial } from './Materials';
-import { buildVoxelGeometry } from './VoxelGeometry';
 
 interface P {
   x: number;
@@ -97,7 +96,10 @@ export class Particles {
     this.solid.mesh.renderOrder = 3;
     this.puff = new InstancedBatch(sq, makeSquareMaterial(false, 0.7), scene, 128);
     this.puff.mesh.renderOrder = 4;
-    const cube = buildVoxelGeometry({ boxes: [[0, -5, 0, 10, 10, 10, 0xffffff]], scale: 0.1 }, { round: 0 });
+    const cube = new THREE.BoxGeometry(1, 1, 1);
+    const nv = cube.getAttribute('position').count;
+    cube.setAttribute('color', new THREE.Float32BufferAttribute(new Array(nv * 3).fill(1), 3));
+    cube.setAttribute('aGlow', new THREE.Float32BufferAttribute(new Array(nv).fill(0), 1));
     this.debris = new InstancedBatch(cube, makeVoxelMaterial({ map: blockTex, instanced: true }), scene, 256, true);
     // particles live in ground-relative space (floor bounces at y = 0), drawn on the terrain
     for (const b of [this.glow, this.glowSq, this.solid, this.puff, this.debris]) b.lift = onTerrain;

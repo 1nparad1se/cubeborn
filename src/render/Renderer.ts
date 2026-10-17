@@ -1,24 +1,17 @@
 import * as THREE from 'three';
-import type { Run } from '../game/Run';
+import type { World } from '../rpg/World';
 import type { MapDef } from '../data/types';
 import type { FxSink, ParticleKind } from '../game/types';
 import type { Terrain } from '../game/Terrain';
 import { CameraRig } from './CameraRig';
-import { ContinentLod } from './ContinentLod';
-import { NpcRenderer } from './NpcRenderer';
 import { WorldRenderer } from './WorldRenderer';
 import { GROUND } from './ground';
-import { EntityRenderer } from './EntityRenderer';
+import { RpgEntities } from './RpgEntities';
+import { HumanModel } from './human/HumanModel';
 import { Particles } from './Particles';
 import { Overlay } from './Overlay';
 import { LightPool } from './LightPool';
 import { makeBlobTexture, makeBlockTexture } from './Textures';
-import { ArticulatedModel } from './ArticulatedModel';
-import { heroRig } from '../models/rigs';
-import { HeroRig } from './rig/HeroRig';
-import { HeroAnimator } from './rig/Animator';
-import { makeHeroTexture } from './Textures';
-import { getModel } from '../models';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
@@ -26,7 +19,6 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { Pass, FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { AmbientFx } from './AmbientFx';
-import { MenuCampfire, type CampMember } from './MenuCampfire';
 
 import type { Settings } from '../meta/Save';
 
@@ -207,10 +199,10 @@ export class Renderer {
   private blockTex = makeBlockTexture();
   private blobTex = makeBlobTexture();
   private world: WorldRenderer | null = null;
-  private entities: EntityRenderer | null = null;
+  private entities: RpgEntities | null = null;
   private particles: Particles | null = null;
   private lights: LightPool;
-  private run: Run | null = null;
+  private run: World | null = null;
   private quality: Quality = 'medium';
   private s: Settings;
   /** MSAA is fixed when the WebGL context is created. */
@@ -221,17 +213,16 @@ export class Renderer {
   private time = 0;
   private torchTerrain: Terrain | null = null;
   // menu diorama
-  private showModel: ArticulatedModel | null = null;
-  private showRig: HeroRig | null = null;
-  private showAnim: HeroAnimator | null = null;
-  private showActT = 4;
-  private heroTex: THREE.Texture | null = null;
-  private showId = '';
+  /** Menu backdrop: a hero standing at the spawn point. */
+  private showHero: HumanModel | null = null;
   private menuMode = false;
-  private camp: MenuCampfire | null = null;
+  private menuX = 0;
+  private menuZ = 0;
   private menuAngle = 0;
   /** 0 keeps the menu showcase centred; 1 slides it into the right third of the screen. */
   menuShift = 0;
+  /** Fixed camera (eye and look-at point) overriding the follow camera; used for screenshots and previews. */
+  photo: { x: number; y: number; z: number; lx: number; ly: number; lz: number; noFog?: boolean } | null = null;
   private menuShiftNow = 0;
   private w = 1;
   private h = 1;
@@ -324,7 +315,6 @@ export class Renderer {
     this.rig.camera.updateProjectionMatrix();
     this.rig.shake = st.screenShake;
     this.overlay.showNumbers = st.damageNumbers;
-    this.overlay.healthBars = st.enemyHealthBars;
     if (changed) {
       // light count is baked into shaders: rebuild the pool
       for (const l of this.lights.lights) this.scene.remove(l);
@@ -401,9 +391,9 @@ export class Renderer {
     this.overlay.resize(w, h, window.devicePixelRatio || 1);
   }
 
-  /** Camera far plane: the continent's LOD reaches the horizon. */
+  /** Camera far plane from the view distance setting. */
   private applyFar() {
-    this.rig.camera.far = this.lod ? 9000 : 240 * this.viewMul;
+    this.rig.camera.far = 240 * this.viewMul;
     this.rig.camera.updateProjectionMatrix();
   }
 
@@ -417,12 +407,6 @@ export class Renderer {
     this.sun.color.setHex(p.sun).lerp(this.cA.setHex(MCD.sun), MCD.sunMix);
     this.sun.intensity = p.sunIntensity * 2.4 * MCD.sunMul;
   }
-
-  /** Far LOD of the streamed continent (null on fixed maps). */
-  private lod: ContinentLod | null = null;
-  private npcs: NpcRenderer | null = null;
-  /** Near-world rebuilds this run (window shifts), for stats. */
-  worldBuilds = 0;
 
   private buildWorld(terrain: Terrain, map: MapDef) {
     this.disposeWorld();
@@ -438,32 +422,27 @@ export class Renderer {
     this.world?.cull(x, z, 70, 0);
   }
 
-  /** Starts drawing a run; returns the FxSink the game logic should use. */
-  startRun(run: Run, hooks: FxHooks): FxSink {
+  /** Starts drawing the world; returns the FxSink the game logic should use. */
+  startRun(run: World, hooks: FxHooks): FxSink {
     this.menuMode = false;
     this.clearShowcase();
-    this.clearCamp();
     this.run = run;
-    // the terrain can change under a run (streamed continent windows): always ask the current one
     GROUND.fn = (x, z) => run.terrain.groundY(x, z);
     this.buildWorld(run.terrain, run.map);
-    this.worldBuilds = 0;
-    if (run.stream) {
-      this.lod = new ContinentLod(run.stream.data, run.map);
-      this.lod.setWindow(run.terrain.ox, run.terrain.oz, run.terrain.size);
-      this.scene.add(this.lod.mesh);
-      this.npcs = new NpcRenderer(run);
-      this.scene.add(this.npcs.group);
-    }
     this.applyFar();
-    this.entities = new EntityRenderer(this.scene, run, this.blockTex, this.blobTex, this.detail === 'high' && this.s.shadows !== 'low' ? 'high' : this.detail === 'low' ? 'low' : 'medium', this.lights);
+    this.entities = new RpgEntities(run, this.s.shadows !== 'off');
+    this.scene.add(this.entities.group);
     this.particles = new Particles(this.scene, this.blockTex, this.blobTex, this.s.particles);
     this.ambient = new AmbientFx(this.scene, run.map.generator, this.quality, this.particleMul);
     this.overlay.clear();
     this.rig.snap(run.player.x, run.player.z, run.player.y);
-    // streamed (big) worlds: build everything around the start before the first frame
     this.world?.cull(run.player.x, run.player.z, 70, 0);
     return this.makeFx(hooks);
+  }
+
+  /** The hero model being drawn (previews and tests). */
+  get heroModel(): HumanModel | null {
+    return this.entities?.hero ?? null;
   }
 
   private makeFx(hooks: FxHooks): FxSink {
@@ -498,23 +477,16 @@ export class Renderer {
   }
 
   endRun() {
-    this.entities?.dispose();
-    this.entities = null;
+    if (this.entities) {
+      this.scene.remove(this.entities.group);
+      this.entities.dispose();
+      this.entities = null;
+    }
     this.particles?.dispose();
     this.particles = null;
     this.ambient?.dispose();
     this.ambient = null;
     this.disposeWorld();
-    if (this.lod) {
-      this.scene.remove(this.lod.mesh);
-      this.lod.dispose();
-      this.lod = null;
-    }
-    if (this.npcs) {
-      this.scene.remove(this.npcs.group);
-      this.npcs.dispose();
-      this.npcs = null;
-    }
     this.run = null;
     this.applyFar();
     GROUND.fn = null;
@@ -530,86 +502,26 @@ export class Renderer {
     this.torchTerrain = null;
   }
 
-  /** Menu background: a small slice of a map with a hero slowly circled by the camera. */
-  showMenu(map: MapDef, terrain: Terrain, heroModel: string) {
+  /** Menu background: the training meadow with a hero at (x, z), slowly circled by the camera. */
+  showMenu(map: MapDef, terrain: Terrain, x: number, z: number) {
     this.endRun();
     this.menuMode = true;
+    this.menuX = x;
+    this.menuZ = z;
+    GROUND.fn = (px, pz) => terrain.groundY(px, pz);
     this.buildWorld(terrain, map);
     this.scene.fog = new THREE.Fog(map.palette.fog, 14, 44);
-    if (!this.camp) this.setShowcase(heroModel);
-  }
-
-  /** Menu campfire with the player's characters (an empty party falls back to the single showcase). */
-  setCampfire(members: CampMember[], activeId: string | null) {
-    if (!members.length) {
-      this.clearCamp();
-      return;
-    }
+    this.world?.cull(x, z, 60, 0);
     this.clearShowcase();
-    if (!this.camp) {
-      this.heroTex ??= makeHeroTexture();
-      this.camp = new MenuCampfire(this.heroTex);
-      this.scene.add(this.camp.group);
-    }
-    this.camp.setParty(members, activeId);
-  }
-
-  /** Client-space points above the campfire characters' heads (empty outside the menu). */
-  campfireAnchors(): { id: string; x: number; y: number }[] {
-    if (!this.camp || !this.menuMode) return [];
-    const r = this.gl.domElement.getBoundingClientRect();
-    return this.camp.anchors(this.rig.camera).map((a) => ({ id: a.id, x: r.left + ((a.x + 1) / 2) * r.width, y: r.top + ((1 - a.y) / 2) * r.height }));
-  }
-
-  /** Character id of the campfire party under a client point, or null. */
-  pickCampfire(clientX: number, clientY: number): string | null {
-    if (!this.camp || !this.menuMode) return null;
-    const r = this.gl.domElement.getBoundingClientRect();
-    return this.camp.pick(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1, this.rig.camera);
-  }
-
-  private clearCamp() {
-    if (!this.camp) return;
-    this.scene.remove(this.camp.group);
-    this.camp.dispose();
-    this.camp = null;
-  }
-
-  setShowcase(modelId: string) {
-    this.clearCamp();
-    if (this.showId === modelId && (this.showModel || this.showRig)) return;
-    this.clearShowcase();
-    const rd = heroRig(modelId);
-    if (rd) {
-      this.heroTex ??= makeHeroTexture();
-      this.showRig = new HeroRig(rd, this.heroTex, { shadows: true, rim: 0.4 });
-      this.showAnim = new HeroAnimator(this.showRig);
-      this.showAnim.play('victory', { force: true });
-      this.showActT = 3.5;
-      this.showId = modelId;
-      this.scene.add(this.showRig.root);
-      return;
-    }
-    const m = getModel(modelId);
-    if (!m) return;
-    this.showModel = new ArticulatedModel(m, this.blockTex, true);
-    this.showId = modelId;
-    this.scene.add(this.showModel.root);
+    this.showHero = new HumanModel('human', true);
+    this.scene.add(this.showHero.root);
   }
 
   private clearShowcase() {
-    if (this.showRig) {
-      this.scene.remove(this.showRig.root);
-      this.showRig.dispose();
-      this.showRig = null;
-      this.showAnim = null;
-      this.showId = '';
-    }
-    if (this.showModel) {
-      this.scene.remove(this.showModel.root);
-      this.showModel.dispose();
-      this.showModel = null;
-      this.showId = '';
+    if (this.showHero) {
+      this.scene.remove(this.showHero.root);
+      this.showHero.dispose();
+      this.showHero = null;
     }
   }
 
@@ -647,79 +559,43 @@ export class Renderer {
   }
 
   private menuFrame(dt: number) {
-    const c = (this.torchTerrain?.size ?? 64) / 2;
-    const camp = this.camp;
-    // around the campfire the camera only sways a little in front of the party
-    if (camp) this.menuAngle = Math.sin(this.time * 0.07) * 0.22;
-    else this.menuAngle += dt * 0.12;
+    const cx = this.menuX;
+    const cz = this.menuZ;
+    const gy = this.torchTerrain ? this.torchTerrain.groundY(cx, cz) : 0;
+    this.menuAngle += dt * 0.12;
     const cam = this.rig.camera;
     const portrait = this.h > this.w;
-    const dist = camp ? (portrait ? 17 : 14) : portrait ? 13 : 10;
+    const dist = portrait ? 9 : 7;
     this.menuShiftNow += (this.menuShift - this.menuShiftNow) * (1 - Math.exp(-6 * dt));
-    // pan the camera sideways so the model sits right of centre, leaving room for panels
     const off = portrait ? 0 : this.menuShiftNow * dist * Math.tan((cam.fov * Math.PI) / 360) * cam.aspect * 0.58;
     const fx = -Math.sin(this.menuAngle);
     const fz = -Math.cos(this.menuAngle);
     const ox = fz * off;
     const oz = -fx * off;
-    cam.position.set(c + Math.sin(this.menuAngle) * dist + ox, portrait ? 7.5 : camp ? 6.5 : 6, c + Math.cos(this.menuAngle) * dist + oz);
-    cam.lookAt(c + ox, camp ? 0.9 : 1.4, c + oz - (camp ? 0.6 : 0));
-    // the campfire is its own little set: hide the map slice behind it
-    if (this.world) this.world.group.visible = !camp;
-    if (camp) {
-      camp.group.position.set(c, 0, c);
-      camp.update(dt);
-      this.lights.request(c, 1.6, c, 0xff9038, 2.4 * camp.flicker, 11, c, c);
-      // night mood at the campfire: cool blue ambient and moonlight, dark blue fog
-      // (setAtmosphere restores the map lighting when a run starts)
-      this.hemi.color.setHex(0x3a4c8a);
-      this.hemi.groundColor.setHex(0x141a30);
-      this.hemi.intensity = 0.9;
-      this.sun.color.setHex(0x7a90d0);
-      this.sun.intensity = 0.55;
-      if (this.scene.fog instanceof THREE.Fog) {
-        this.scene.fog.color.setHex(0x0c1430);
-        this.scene.fog.near = 12;
-        this.scene.fog.far = 34;
-      }
-      if (this.scene.background instanceof THREE.Color) this.scene.background.setHex(0x0c1430);
+    cam.position.set(cx + Math.sin(this.menuAngle) * dist + ox, gy + (portrait ? 4.5 : 3.6), cz + Math.cos(this.menuAngle) * dist + oz);
+    cam.lookAt(cx + ox, gy + 1.1, cz + oz);
+    this.sun.position.set(cx + 10, 25, cz + 6);
+    this.sun.target.position.set(cx, 0, cz);
+    const hero = this.showHero;
+    if (hero) {
+      hero.root.position.set(cx, gy, cz);
+      hero.root.rotation.y = this.menuAngle + Math.sin(this.time * 0.5) * 0.3;
+      hero.pose({ walk: 0, moving: 0, airborne: false, vy: 0, attack: null, time: this.time });
     }
-    this.sun.position.set(c + 10, 25, c + 6);
-    this.sun.target.position.set(c, 0, c);
-    if (this.showModel) {
-      const m = this.showModel;
-      m.root.position.set(c, 0, c);
-      m.root.rotation.y = this.menuAngle + Math.sin(this.time * 0.6) * 0.4;
-      m.pose({ walk: 0, moving: 0, attack: 0, cast: Math.max(0, Math.sin(this.time * 0.7)) * 0.3, time: this.time, flash: 0 });
-    }
-    if (this.showRig && this.showAnim) {
-      const r = this.showRig;
-      r.root.position.set(c, 0, c);
-      r.root.rotation.y = this.menuAngle + Math.sin(this.time * 0.6) * 0.4;
-      // the menu hero idles and now and then shows off an attack
-      this.showActT -= dt;
-      if (this.showActT <= 0) {
-        this.showActT = 6 + Math.random() * 4;
-        this.showAnim.play(Math.random() < 0.7 ? 'attack' : 'ability');
-      }
-      this.showAnim.update(Math.min(dt, 0.05));
-    }
-    if (!camp) this.lights.request(c + 1.5, 2.5, c + 1.5, 0xffc070, 1.2, 9, c, c);
+    this.lights.request(cx + 1.5, gy + 2.5, cz + 1.5, 0xffc070, 1.0, 9, cx, cz);
   }
 
   private runFrame(dt: number) {
     const run = this.run!;
     const p = run.player;
-    if (run.terrain !== this.torchTerrain) {
-      // the streamed continent moved its window: rebuild the near world around the hero
-      this.buildWorld(run.terrain, run.map);
-      this.world?.cull(p.x, p.z, 70, 0);
-      this.lod?.setWindow(run.terrain.ox, run.terrain.oz, run.terrain.size);
-      this.worldBuilds++;
-    }
     const lead = { x: p.vx * 0.18, z: p.vz * 0.18 };
     this.rig.zoom += (this.zoomLevel - this.rig.zoom) * (1 - Math.exp(-10 * Math.max(dt, 1 / 120)));
-    this.rig.update(dt, p.x, p.z, lead, p.jumpPhase === 'air' ? Math.min(p.y, p.ground + 0.5) : p.ground);
+    this.rig.update(dt, p.x, p.z, lead, p.airborne ? Math.min(p.y, p.ground + 0.5) : p.ground);
+    if (this.photo) {
+      const ph = this.photo;
+      this.rig.camera.position.set(ph.x, ph.y, ph.z);
+      this.rig.camera.lookAt(ph.lx, ph.ly, ph.lz);
+    }
     const zoom = this.rig.zoom;
     const t = this.rig.target;
     const pal = run.map.palette;
@@ -753,6 +629,10 @@ export class Renderer {
     fog.near = Math.max(camD * 0.75, camD - 6 + (pal.fogNear - 18) * vm * nearK);
     fog.far = Math.max(camD + 12, camD - 6 + (pal.fogFar - 6) * vm * farK);
     // shadow box grows with zoom so the whole view stays shadowed
+    if (this.photo?.noFog) {
+      fog.near = 400;
+      fog.far = 900;
+    }
     const ext = 26 * Math.max(1, zoom * this.rig.autoZoom);
     const sc = this.sun.shadow.camera;
     if (sc.right !== ext) {
@@ -777,14 +657,12 @@ export class Renderer {
     this.sun.position.set(cx + Math.cos(ang) * 17, t.y + elev, cz + Math.sin(ang) * 17);
     this.sun.target.position.set(cx, t.y, cz);
     this.world?.uniforms.uFocus.value.set(p.x, p.y, p.z);
-    if (this.lod) this.lod.uHaze.value.copy(fog.color);
-    this.npcs?.update(dt, run.dayNight.clock.minutes / 60);
     if (this.world) this.world.uniforms.uNight.value = nightK;
     this.world?.uniforms.uCamDir.value.set(this.rig.toCam.x, this.rig.toCam.z);
     // a warm light pool follows the hero on dark maps
     if (pal.heroLight) this.lights.request(p.x, 2.6, p.z, pal.heroLight, 1.6 + nightK * 0.4, 9, t.x, t.z);
     else if (nightK > 0.05) this.lights.request(p.x, 2.6, p.z, 0xffd8a0, 2.6 * nightK, 10, t.x, t.z);
-    this.entities!.update(dt, t.x, t.z, this.rig.camera);
+    this.entities!.update(dt);
     this.particles!.update(dt);
     const cam = this.rig.camera;
     const px = (this.h * this.gl.getPixelRatio()) / (2 * Math.tan((cam.fov * Math.PI) / 360));
@@ -792,7 +670,7 @@ export class Renderer {
   }
 
   dispose() {
-    this.clearCamp();
+    this.clearShowcase();
     this.endRun();
     this.gl.dispose();
   }
