@@ -978,14 +978,6 @@ h2.glow {
 /* ------------------------------------------------------------------ action-RPG HUD (v3) */
 /* inventory */
 .modal.inventory { width: min(1120px, 96vw); max-height: 94vh; overflow: auto; text-align: left; }
-.inv-body { display: grid; grid-template-columns: 250px 1fr 330px; gap: 16px; margin-top: 12px; }
-.inv-slot { position: relative; width: 62px; height: 62px; border-radius: 7px; border: 2px solid var(--rc, #3a3f48); background: color-mix(in srgb, var(--rc, #222) 14%, #111418); display: grid; place-items: center; cursor: pointer; }
-.inv-slot .icon { width: 44px; height: 44px; }
-.inv-slot.empty { border-style: dashed; border-color: #2e333b; cursor: default; }
-.inv-slot.sel { box-shadow: 0 0 0 2px #fff, 0 0 12px var(--rc); }
-.inv-slot:not(.empty):hover { filter: brightness(1.2); }
-.inv-ph { font: 10px var(--font-ui); color: #5c636f; text-align: center; }
-.inv-bag { display: grid; grid-template-columns: repeat(6, 62px); gap: 6px; }
 
 /* skill points: frames that can take a point pulse gold, with a "+" badge */
 @keyframes sk-learn { 0%, 100% { box-shadow: 0 0 6px #ffc04066, inset 0 0 0 1px #000; } 50% { box-shadow: 0 0 18px #ffd34acc, inset 0 0 8px #ffd34a66; } }

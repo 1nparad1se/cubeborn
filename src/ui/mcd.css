@@ -225,35 +225,6 @@
   text-transform: uppercase;
 }
 
-/* ------------------------------------------------------------------ class select */
-
-/* ------------------------------------------------------------------ inventory (I) */
-.inv-slot {
-  border-radius: 0;
-  border: 2px solid color-mix(in srgb, var(--rc, #2c4c52) 70%, #1a3036);
-  background:
-    linear-gradient(to top, color-mix(in srgb, var(--rc, transparent) 22%, transparent), transparent 60%),
-    var(--mc-cell);
-  box-shadow:
-    0 0 0 1px #050607,
-    inset 0 0 0 1px rgba(0, 0, 0, 0.6);
-}
-.inv-slot.empty {
-  border: 2px solid #1e3a40;
-  border-style: solid;
-  background: rgba(6, 18, 22, 0.7);
-}
-.inv-slot.sel {
-  border-color: #ffffff;
-  box-shadow:
-    0 0 0 1px #050607,
-    0 0 10px var(--rc, #fff);
-}
-.inv-ph {
-  font: 400 11px var(--font-hud);
-  color: #4f7a80;
-}
-
 /* ------------------------------------------------------------------ skills window (K) */
 
 /* ------------------------------------------------------------------ pause / results */
